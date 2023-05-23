@@ -104,9 +104,6 @@ class GPTQ:
 
         table.header(['name', 'weight_error', 'fp_inp_SNR', 'q_inp_SNR', 'time'])
 
-        # assign weight
-        self.layer.weight.data = q_weight.reshape(self.layer.weight.shape).to(self.layer.weight.data.dtype)
-
         if self.inp1 is not None:
             # quantize input to int8
             quantizer = quant.Quantizer()
@@ -217,6 +214,9 @@ class GPTQ:
 
         if isinstance(self.layer, transformers.Conv1D):
             Q = Q.t()
+
+        # assign weight for predicting the output of next layer
+        self.layer.weight.data = Q.reshape(self.layer.weight.shape).to(self.layer.weight.data.dtype)
 
         self.print_loss(name=name, q_weight=Q, weight_error=error, timecost=(time.time() - tick))
 

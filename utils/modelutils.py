@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
+import loralib
 
 DEV = torch.device('cuda:0')
 
 
-def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):
+def find_layers(module, layers=[nn.Conv2d, nn.Linear, loralib.MergedLinear, loralib.Linear], name=''):
     if type(module) in layers:
         return {name: module}
     res = {}

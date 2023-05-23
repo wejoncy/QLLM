@@ -305,7 +305,7 @@ class QuantLinear(nn.Module):
 
     def __init__(self, bits, groupsize, infeatures, outfeatures, bias):
         super().__init__()
-        if bits not in [2, 4, 8]:
+        if bits not in [2, 3, 4, 8]:
             raise NotImplementedError("Only 2,4,8 bits are supported.")
         self.infeatures = infeatures
         self.outfeatures = outfeatures
@@ -321,6 +321,52 @@ class QuantLinear(nn.Module):
             self.register_buffer('bias', torch.zeros((outfeatures), dtype=torch.float16))
         else:
             self.bias = None
+
+    def quant_weight(self, linear, scales, zeros, g_idx=None):
+        self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
+
+        scales = scales.t().contiguous()
+        zeros = zeros.t().contiguous()
+        scale_zeros = zeros * scales
+        self.scales = scales.clone().half()
+
+        if linear.bias is not None:
+            self.bias = linear.bias.clone().half()
+
+        # intweight = []
+        # for idx in range(self.infeatures):
+        #     intweight.append(torch.round((linear.weight.data[:, idx].cuda() + scale_zeros[self.g_idx[idx]].cuda()) / self.scales[self.g_idx[idx]].cuda()).to(torch.int)[:, None])
+        # intweight = torch.cat(intweight, dim=1)
+
+        scales = scales.cuda()
+        scale_zeros = scale_zeros.cuda()
+        scale_mat=scales[self.g_idx.long().cuda()]
+        scale_zeros_mat=scale_zeros[self.g_idx.long().cuda()]
+        intweight_T  = torch.round((linear.weight.cuda().T+scale_zeros_mat)/scale_mat).to(torch.int)
+
+        #assert (intweight_T.T == intweight).all()
+
+        return intweight_T.T.cpu()
+    
+    def dequant_weight(self, intweight, linear, scales, zeros):
+        scales = scales.t().contiguous()
+        zeros = zeros.t().contiguous()
+        scale_zeros = zeros * scales
+
+        # qdq_weight=linear.weight.clone().cuda()
+        # for idx in range(self.infeatures):
+        #     qdq_weight[:, idx] = intweight[:,idx].cuda()*self.scales[self.g_idx[idx]].cuda() - scale_zeros[self.g_idx[idx]].cuda().half()
+
+        scale_mat=self.scales[self.g_idx.long()].cuda()
+        scale_zeros_mat=scale_zeros[self.g_idx.long()].cuda().half()
+        qdq_weight_T = intweight.cuda().T*scale_mat-scale_zeros_mat.half()
+
+        #assert (qdq_weight_T.T == qdq_weight).all()
+        return qdq_weight_T.T.cpu()
+
+    def weight_qdq(self, linear, scales, zeros, g_idx=None):
+        q_weight = self.quant_weight(linear,scales, zeros, g_idx)
+        return self.dequant_weight(q_weight, linear, scales, zeros)
 
     def pack(self, linear, scales, zeros, g_idx=None):
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
@@ -359,7 +405,7 @@ class QuantLinear(nn.Module):
         i = 0
         col = 0
         while col < qzeros.shape[1]:
-            if self.bits in [2, 4, 8]:
+            if self.bits in [2, 3, 4, 8]:
                 for j in range(i, i + (32 // self.bits)):
                     qzeros[:, col] |= zeros[:, j] << (self.bits * (j - i))
                 i += 32 // self.bits
@@ -388,6 +434,18 @@ def make_quant_linear(module, names, bits, groupsize, name=''):
             setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
     for name1, child in module.named_children():
         make_quant_linear(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
+
+def make_linear_qdq_back(module, names, name=''):
+    if isinstance(module, QuantLinear):
+        return
+    for attr in dir(module):
+        tmp = getattr(module, attr)
+        name1 = name + '.' + attr if name != '' else attr
+        if name1 in names:
+            delattr(module, attr)
+            setattr(module, attr, names[name1])
+    for name1, child in module.named_children():
+        make_linear_qdq_back(child, names, name + '.' + name1 if name != '' else name1)
 
 
 def autotune_warmup_linear(model, transpose=False):
