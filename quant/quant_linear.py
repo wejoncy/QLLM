@@ -322,7 +322,7 @@ class QuantLinear(nn.Module):
         else:
             self.bias = None
 
-    def quant_weight(self, linear, scales, zeros, g_idx=None):
+    def quant_weight(self, linear, scales, zeros, g_idx=None, need_transpose=True):
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
 
         scales = scales.t().contiguous()
@@ -345,7 +345,8 @@ class QuantLinear(nn.Module):
         intweight_T  = torch.round((linear.weight.cuda().T+scale_zeros_mat)/scale_mat).to(torch.int)
 
         #assert (intweight_T.T == intweight).all()
-
+        if not need_transpose:
+            return intweight_T.cpu()
         return intweight_T.T.cpu()
     
     def dequant_weight(self, intweight, linear, scales, zeros):
@@ -367,6 +368,70 @@ class QuantLinear(nn.Module):
     def weight_qdq(self, linear, scales, zeros, g_idx=None):
         q_weight = self.quant_weight(linear,scales, zeros, g_idx)
         return self.dequant_weight(q_weight, linear, scales, zeros)
+
+    def unpack(self):
+        wf=torch.tensor(list(range(0,32,self.bits)), dtype=torch.int32).unsqueeze(0)
+        zeros = torch.bitwise_right_shift(torch.unsqueeze(self.qzeros, 2).expand(-1, -1, 32 // self.bits), wf.unsqueeze(0)).to(torch.int16 if self.bits == 8 else torch.int8)
+        torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
+            
+        zeros = zeros + 1
+        zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
+
+        scales = self.scales
+        scales = scales.reshape(-1, 1, scales.shape[-1])
+        
+        weight = torch.bitwise_right_shift(torch.unsqueeze(self.qweight, 1).expand(-1, 32 // self.bits, -1), wf.unsqueeze(-1)).to(torch.int16 if self.bits == 8 else torch.int8)
+        torch.bitwise_and(weight,(2 ** self.bits) - 1, out=weight)
+        weight = weight.reshape(-1, self.groupsize, weight.shape[2])
+
+        # weight = (scales * (weight - zeros))
+        # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
+        return weight,zeros
+
+    def pack_gpu(self, linear, scales, zeros, g_idx=None):
+        self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
+        intweight = self.quant_weight(linear,scales, zeros, g_idx, need_transpose=False)
+
+        zeros = zeros.t().contiguous()
+
+        assert intweight.shape[0] // 32 * self.bits == int(round(intweight.shape[0] * self.bits/ 32 + 0.5))
+        import time
+        s=time.time()
+        intweight_gpu=intweight.cuda()
+        qweight_gpu = torch.zeros((intweight.shape[0] // 32 * self.bits, intweight.shape[1]), dtype=torch.int32, device=intweight_gpu.device)
+        i = 0
+        row = 0
+        while row < qweight_gpu.shape[0]:
+            if self.bits in [2, 4, 8]:
+                compress_ratio = (32 // self.bits)
+                for j in range(i, i + compress_ratio):
+                    qweight_gpu[row:] |= intweight_gpu[j::compress_ratio] << (self.bits * (j - i))
+                #i += compress_ratio
+                #row += 1
+                break
+            else:
+                raise NotImplementedError("Only 2,4,8 bits are supported.")
+        e1=time.time()-s
+        self.qweight = qweight_gpu.cpu()
+
+        assert zeros.shape[1] // 32 * self.bits == int(round(zeros.shape[1] * self.bits/ 32 + 0.5))
+        s=time.time()
+        zeros_cuda = (zeros - 1).cuda().int()
+        qzeros_cuda = torch.zeros((zeros.shape[0], zeros.shape[1] // 32 * self.bits), dtype=torch.int32, device=zeros_cuda.device)
+        i = 0
+        col = 0
+        qzeros_cuda=qzeros_cuda.T
+        zeros_cuda=zeros_cuda.T
+        while col < qzeros_cuda.shape[0]:
+            if self.bits in [2, 4, 8]:
+                compress_ratio = (32 // self.bits)
+                for j in range(i, i + compress_ratio):
+                    qzeros_cuda[col:] |= zeros_cuda[j::compress_ratio] << (self.bits * (j - i))
+                break
+            else:
+                raise NotImplementedError("Only 2,4,8 bits are supported.")
+        self.qzeros =qzeros_cuda.T.cpu()
+        e2=time.time()-s
 
     def pack(self, linear, scales, zeros, g_idx=None):
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
@@ -405,7 +470,7 @@ class QuantLinear(nn.Module):
         i = 0
         col = 0
         while col < qzeros.shape[1]:
-            if self.bits in [2, 3, 4, 8]:
+            if self.bits in [2, 4, 8]:
                 for j in range(i, i + (32 // self.bits)):
                     qzeros[:, col] |= zeros[:, j] << (self.bits * (j - i))
                 i += 32 // self.bits

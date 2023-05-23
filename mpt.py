@@ -1,25 +1,28 @@
 import argparse
 import time
 import numpy as np
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 import torch
 import torch.nn as nn
 import quant
-import os
+
 import sys
 sys.path.append('/home/jicwen/GPTQ-for-LLaMa')
 sys.path.append('/home/jicwen/AdsLR_MTL')
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 from gptq import GPTQ, Observer
 from utils import find_layers, DEV, set_seed, get_wikitext2, get_ptb, get_c4, get_ptb_new, get_c4_new, get_loaders, export_quant_table, gen_conditions
 from texttable import Texttable
-DO_QDQ = True
+DO_QDQ = False
 
 
 def get_mpt(model, argv_user,nsamples):
     import examples_ads
-    from examples_ads import run_mpt_prompt
     argv_back = sys.argv
     sys.argv = argv_user
+    from examples_ads import run_mpt_prompt
     model,data_sets = run_mpt_prompt.main(True)
     new_data = []
     for idx, indata in enumerate(data_sets):
@@ -162,6 +165,7 @@ def mpt_sequential(model, dataloader, dev):
         inps, outs = outs, inps
         print('+------------------+--------------+------------+-----------+-------+')
         print('\n')
+        break
         
 
     if args.observe:
@@ -222,21 +226,25 @@ def mpt_pack(model, quantizers, wbits, groupsize):
     for name in qlayers:
         print(name)
         quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
+        # rewrite weight as quantized
+        layers[name].weight.data = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx)
+        layers[name].ENABLE_QUANT = True
+        layers[name].ENABLE_QUANT = True
+        
         if DO_QDQ:
-            layers[name].weight.data = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx)
-            if type(layers[name]) in [nn.Linear]:
-                #layers[name].weight.data = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx)
-                pass
-            else:
-                layers[name].ENABLE_QUANT = True
-                layers[name].ENABLE_QUANT = True
+            if type(layers[name]) not in [nn.Linear]: #lora
                 layers[name].scales = scale.T.contiguous()
                 layers[name].qzeros = zero.T.contiguous()
                 layers[name].g_idx = g_idx
         else:
-            qlayers[name].pack(layers[name], scale, zero, g_idx)
-    if DO_QDQ:
-        quant.make_linear_qdq_back(model,layers)
+            qlayers[name].pack_gpu(layers[name], scale, zero, g_idx)
+            layers[name].scales = qlayers[name].scales
+            layers[name].qzeros = qlayers[name].qzeros
+            layers[name].g_idx = qlayers[name].g_idx
+            layers[name].qweight = qlayers[name].qweight
+
+
+    quant.make_linear_qdq_back(model,layers)
 
     print('Done.')
     return model.cuda()
