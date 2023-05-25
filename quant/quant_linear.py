@@ -535,8 +535,8 @@ class QuantLinear(nn.Module):
         # would contiguous() here imflect accuracy? the default soudl be contiguous().T
         #out =  torch.matmul(x.reshape(-1, x.shape[-1]),self.oweight.T.contiguous())
         out_shape = x.shape[:-1] + (self.outfeatures, )
-        out = QuantLinearFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.maxq)
-        #out_1 = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize)
+        #out = QuantLinearFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.maxq)
+        out = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize)
         #if (out_1!=out).sum() != 0:
         #    print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
         out = out + self.bias if self.bias is not None else out

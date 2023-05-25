@@ -49,19 +49,20 @@ def get_mpt(model, argv_user,nsamples):
     return model
 
 def load_quant(model, argv_user, args):
-    os.environ["nbits"] = "4"
+    if argv_user[argv_user.index('--model_name_or_path')+1] not in ['ckpt/mpt-7b/', 'ckpt/mpt-7b']:
+        os.environ["nbits"] = "4"
 
     model,dataloader = get_mpt(args.model, argv_user, args.nsamples)
     import loralib as lora
     layers = find_layers(model,layers=[lora.GptqQuantLinear])
-    quant.replace_quant_linear_layer(model,layers ,args.wbits, args.groupsize)
-    quant.autotune_warmup_linear(model, transpose=False)
+    #quant.replace_quant_linear_layer(model,layers ,args.wbits, args.groupsize)
+    #quant.autotune_warmup_linear(model, transpose=False)
     return model,dataloader
 
 @torch.no_grad()
 def mpt_sequential(model, dataloader, dev):
     print('Starting ...')
-
+    model=model.cpu()
     use_cache = model.config.use_cache
     model.config.use_cache = False
     layers = model.get_decoder().blocks
@@ -141,8 +142,8 @@ def mpt_sequential(model, dataloader, dev):
             for name in subset:
                 handles.append(subset[name].register_forward_hook(add_batch(name)))
             for j in range(args.nsamples):
-                layer.attn.Wqkv.ENABLE_QUANT = False
-                layer.attn.out_proj.ENABLE_QUANT = False
+                layer.attn.Wqkv.nbits = 16
+                layer.attn.out_proj.nbits = 16
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, #position_ids=position_ids
                 )[0]
             for h in handles:
@@ -209,7 +210,7 @@ def mpt_sequential(model, dataloader, dev):
             gptq.free()
 
     model.config.use_cache = use_cache
-
+    model=model.cuda()
     return quantizers
 
 
@@ -236,8 +237,7 @@ def mpt_pack(model, quantizers, wbits, groupsize):
         qlayers[name].oweight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
         layers[name].weight.data = qlayers[name].oweight
         assert (qlayers[name].oweight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
-        layers[name].ENABLE_QUANT = True
-        layers[name].ENABLE_QUANT = True
+        layers[name].nbits = qlayers[name].bits
 
         if DO_QDQ:
             if type(layers[name]) not in [nn.Linear]: #lora
@@ -315,12 +315,15 @@ def benchmark(model, input_ids, check=False):
             print('PPL:', torch.exp(tot / (input_ids.numel() - 1)).item())
             print('max memory(MiB):', max_memory)
 
-import sys
 argv_user = sys.argv
+if argv_user[argv_user.index('--model_name_or_path')+1] not in ['ckpt/mpt-7b/', 'ckpt/mpt-7b']:
+    lora_ind = argv_user.index('--use_lora')
+    argv_user[lora_ind+1] = 'False'
 
 if __name__ == '__main__':
+
     #,'--observe','--act-order'
-    sys.argv = ['', '--wbits', '4', '--groupsize', '128','--eval', '--nsamples','512']#,'--load', './']
+    sys.argv = ['', '--wbits', '4', '--groupsize', '128','--eval', '--nsamples','512','--load', './']
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--model', type=str, default='mosaicml/mpt-7b', help='mpt model to load')
