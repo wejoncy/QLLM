@@ -2,7 +2,7 @@ import argparse
 import time
 import numpy as np
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 
 import torch
 import torch.nn as nn
@@ -48,6 +48,15 @@ def get_mpt(model, argv_user,nsamples):
 
     return model
 
+def load_quant(model, argv_user, args):
+    os.environ["nbits"] = "4"
+
+    model,dataloader = get_mpt(args.model, argv_user, args.nsamples)
+    import loralib as lora
+    layers = find_layers(model,layers=[lora.GptqQuantLinear])
+    quant.replace_quant_linear_layer(model,layers ,args.wbits, args.groupsize)
+    quant.autotune_warmup_linear(model, transpose=False)
+    return model,dataloader
 
 @torch.no_grad()
 def mpt_sequential(model, dataloader, dev):
@@ -136,8 +145,6 @@ def mpt_sequential(model, dataloader, dev):
                 layer.attn.out_proj.ENABLE_QUANT = False
                 outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, #position_ids=position_ids
                 )[0]
-                #layer.attn.Wqkv.ENABLE_QUANT = True
-                #layer.attn.out_proj.ENABLE_QUANT = True
             for h in handles:
                 h.remove()
 
@@ -165,7 +172,6 @@ def mpt_sequential(model, dataloader, dev):
         inps, outs = outs, inps
         print('+------------------+--------------+------------+-----------+-------+')
         print('\n')
-        break
         
 
     if args.observe:
@@ -227,10 +233,12 @@ def mpt_pack(model, quantizers, wbits, groupsize):
         print(name)
         quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
         # rewrite weight as quantized
-        layers[name].weight.data = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx)
+        qlayers[name].oweight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
+        layers[name].weight.data = qlayers[name].oweight
+        assert (qlayers[name].oweight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
         layers[name].ENABLE_QUANT = True
         layers[name].ENABLE_QUANT = True
-        
+
         if DO_QDQ:
             if type(layers[name]) not in [nn.Linear]: #lora
                 layers[name].scales = scale.T.contiguous()
@@ -244,106 +252,12 @@ def mpt_pack(model, quantizers, wbits, groupsize):
             layers[name].qweight = qlayers[name].qweight
 
 
-    quant.make_linear_qdq_back(model,layers)
+    #quant.make_linear_qdq_back(model,layers)
+    #if not DO_QDQ:
+    #    quant.autotune_warmup_linear(model, transpose=False)
 
     print('Done.')
     return model.cuda()
-
-
-def load_quant(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, eval=True, warmup_autotune=True):
-    from transformers import mptConfig, mptForCausalLM, modeling_utils
-    config = mptConfig.from_pretrained(model)
-
-    def noop(*args, **kwargs):
-        pass
-
-    torch.nn.init.kaiming_uniform_ = noop
-    torch.nn.init.uniform_ = noop
-    torch.nn.init.normal_ = noop
-
-    torch.set_default_dtype(torch.half)
-    modeling_utils._init_weights = False
-    torch.set_default_dtype(torch.half)
-    model = mptForCausalLM(config)
-    torch.set_default_dtype(torch.float)
-    if eval:
-        model = model.eval()
-    layers = find_layers(model)
-    for name in ['lm_head']:
-        if name in layers:
-            del layers[name]
-    quant.make_quant_linear(model, layers, wbits, groupsize)
-
-    del layers
-
-    print('Loading model ...')
-    if checkpoint.endswith('.safetensors'):
-        from safetensors.torch import load_file as safe_load
-        model.load_state_dict(safe_load(checkpoint))
-    else:
-        model.load_state_dict(torch.load(checkpoint))
-
-    if eval:
-        quant.make_quant_attn(model)
-        quant.make_quant_norm(model)
-        if fused_mlp:
-            quant.make_fused_mlp(model)
-
-    if warmup_autotune:
-        quant.autotune_warmup_linear(model, transpose=not (eval))
-        if eval and fused_mlp:
-            quant.autotune_warmup_fused(model)
-    model.seqlen = 2048
-    print('Done.')
-
-    return model
-
-
-def mpt_multigpu(model, gpus, gpu_dist):
-    model.get_decoder().wte = model.get_decoder().wte.to(gpus[0])
-    if hasattr(model.model, 'norm') and model.get_decoder().norm_f:
-        model.get_decoder().norm_f = model.get_decoder().norm_f.to(gpus[-1])
-    import copy
-    model.lm_head = copy.deepcopy(model.lm_head).to(gpus[-1])
-
-    cache = {'mask': None}
-
-    class MoveModule(nn.Module):
-
-        def __init__(self, module):
-            super().__init__()
-            self.module = module
-            self.dev = next(iter(self.module.parameters())).device
-
-        def forward(self, *inp, **kwargs):
-            inp = list(inp)
-            if inp[0].device != self.dev:
-                inp[0] = inp[0].to(self.dev)
-            if cache['mask'] is None or cache['mask'].device != self.dev:
-                cache['mask'] = kwargs['attention_mask'].to(self.dev)
-            kwargs['attention_mask'] = cache['mask']
-            tmp = self.module(*inp, **kwargs)
-            return tmp
-
-    layers = model.transformer.blocks
-    from math import ceil
-    if not gpu_dist:
-        pergpu = ceil(len(layers) / len(gpus))
-        for i in range(len(layers)):
-            layers[i] = MoveModule(layers[i].to(gpus[i // pergpu]))
-    else:
-        assigned_gpus = []
-        for i in range(len(gpu_dist)):
-            assigned_gpus = assigned_gpus + [i] * gpu_dist[i]
-
-        remaining_assignments = len(layers)-len(assigned_gpus)
-        if remaining_assignments > 0:
-            assigned_gpus = assigned_gpus + [-1] * remaining_assignments
-
-        for i in range(len(layers)):
-            layers[i] = MoveModule(layers[i].to(gpus[assigned_gpus[i]]))
-
-    model.gpus = gpus
 
 
 def benchmark(model, input_ids, check=False):
@@ -406,7 +320,7 @@ argv_user = sys.argv
 
 if __name__ == '__main__':
     #,'--observe','--act-order'
-    sys.argv = ['', '--wbits', '4', '--groupsize', '128','--eval', '--nsamples','512']
+    sys.argv = ['', '--wbits', '4', '--groupsize', '128','--eval', '--nsamples','512']#,'--load', './']
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--model', type=str, default='mosaicml/mpt-7b', help='mpt model to load')
@@ -446,7 +360,8 @@ if __name__ == '__main__':
         args.load = args.load.as_posix()
 
     if args.load:
-        model = load_quant(args.model, args.load, args.wbits, args.groupsize)
+        model,dataloader = load_quant(args.model, argv_user, args)
+        model.eval()
     else:
         model,dataloader = get_mpt(args.model, argv_user, args.nsamples)
         model.eval()
@@ -456,20 +371,17 @@ if __name__ == '__main__':
     if not args.load and args.wbits < 16 and not args.nearest:
         tick = time.time()
         quantizers = mpt_sequential(model, dataloader, DEV)
+        model = mpt_pack(model, quantizers, args.wbits, args.groupsize)
         print(time.time() - tick)
 
     if args.benchmark:
         gpus = [torch.device('cuda:%d' % i) for i in range(torch.cuda.device_count())]
-        if len(gpus) > 1:
-            mpt_multigpu(model, gpus, gpu_dist)
-        else:
-            model = model.to(DEV)
+        model = model.to(DEV)
         if args.benchmark:
             input_ids = next(iter(dataloader))[0][:, :args.benchmark]
             benchmark(model, input_ids, check=args.check)
 
     if args.eval:
-        model = mpt_pack(model, quantizers, args.wbits, args.groupsize)
         mpt_eval(model, argv_user, DEV)
 
     if args.quant_directory is not None:

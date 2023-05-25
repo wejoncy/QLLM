@@ -1,8 +1,10 @@
 import math
+import os
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
+import loralib
 
 try:
     import triton
@@ -118,14 +120,16 @@ try:
             zeros = tl.load(zeros_ptrs + g_idx[:, None] * stride_zeros)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
 
             zeros = (zeros >> zeros_shifter[None, :]) & maxq
-            zeros = (zeros + 1)
+            #zeros = (zeros + 1)
 
             a = tl.load(a_ptrs, mask=a_mask, other=0.)  # (BLOCK_SIZE_M, BLOCK_SIZE_K)
             b = tl.load(b_ptrs)  # (BLOCK_SIZE_K, BLOCK_SIZE_N), but repeated
 
             # Now we need to unpack b (which is N-bit values) into 32-bit values
             b = (b >> shifter[:, None]) & maxq  # Extract the N-bit values
-            b = (b - zeros) * scales  # Scale and shift
+            #b = (b - zeros) * scales  # Scale and shift
+
+            b = b * scales- (scales*zeros).to(tl.float16)  # Scale and shift
 
             accumulator += tl.dot(a, b)
             a_ptrs += BLOCK_SIZE_K
@@ -134,7 +138,7 @@ try:
 
         c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bn[None, :]
         c_mask = (offs_am[:, None] < M) & (offs_bn[None, :] < N)
-        tl.store(c_ptrs, accumulator, mask=c_mask)
+        tl.store(c_ptrs, accumulator.to(tl.float16), mask=c_mask)
 
     @custom_autotune.autotune(configs=[
         triton.Config({
@@ -256,11 +260,12 @@ try:
         c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bk[None, :]
         c_mask = (offs_am[:, None] < M) & (offs_bk[None, :] < K)
         tl.store(c_ptrs, accumulator, mask=c_mask)
-except:
-    print('trioton not installed.')
+except Exception as e:
+    print('triton not installed.')
 
 
 def matmul248(input, qweight, scales, qzeros, g_idx, bits, maxq):
+    os.environ['TOKENIZERS_PARALLELISM']="false"
     with torch.cuda.device(input.device):
         output = torch.empty((input.shape[0], qweight.shape[1]), device=input.device, dtype=torch.float16)
         grid = lambda META: (triton.cdiv(input.shape[0], META['BLOCK_SIZE_M']) * triton.cdiv(qweight.shape[1], META['BLOCK_SIZE_N']), )
@@ -284,9 +289,9 @@ class QuantLinearFunction(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
     def forward(ctx, input, qweight, scales, qzeros, g_idx, bits, maxq):
-        output = matmul248(input, qweight, scales, qzeros, g_idx, bits, maxq)
-        ctx.save_for_backward(qweight, scales, qzeros, g_idx)
-        ctx.bits, ctx.maxq = bits, maxq
+        output = matmul248(input, qweight.contiguous(), scales, qzeros, g_idx, bits, maxq)
+        #ctx.save_for_backward(qweight, scales, qzeros, g_idx)
+        #ctx.bits, ctx.maxq = bits, maxq
         return output
 
     @staticmethod
@@ -300,6 +305,30 @@ class QuantLinearFunction(torch.autograd.Function):
             grad_input = transpose_matmul248(grad_output, qweight, scales, qzeros, g_idx, bits, maxq)
         return grad_input, None, None, None, None, None, None
 
+class QuantLinearTorchFunction(torch.autograd.Function):
+
+    @staticmethod
+    def forward(ctx, input, qweight, scales, qzeros, g_idx, bits,groupsize):
+        wf=torch.tensor(list(range(0,32,bits)), dtype=torch.int32, device=input.device).unsqueeze(0)
+        zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // bits), wf.unsqueeze(0)).to(torch.int16 if bits == 8 else torch.int8)
+        zeros=torch.bitwise_and(zeros, (2 ** bits) - 1)
+            
+        #zeros = zeros + 1
+        zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
+
+        scales = scales.reshape(-1, 1, scales.shape[-1])
+
+        weight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // bits, -1), wf.unsqueeze(-1)).to(torch.int16 if bits == 8 else torch.int8)
+        torch.bitwise_and(weight,(2 ** bits) - 1, out=weight)
+        weight = weight.reshape(-1, groupsize, weight.shape[2])
+
+        scale_zeros = zeros * scales
+        weight = (scales * weight - scale_zeros.half())
+
+        #weight = (scales * (weight - zeros))
+        weight = weight.reshape(-1, weight.shape[2])
+        out = torch.matmul(input, weight.contiguous())
+        return out
 
 class QuantLinear(nn.Module):
 
@@ -310,6 +339,7 @@ class QuantLinear(nn.Module):
         self.infeatures = infeatures
         self.outfeatures = outfeatures
         self.bits = bits
+        self.oweight = None
         self.maxq = 2**self.bits - 1
         self.groupsize = groupsize if groupsize != -1 else infeatures
 
@@ -322,35 +352,34 @@ class QuantLinear(nn.Module):
         else:
             self.bias = None
 
-    def quant_weight(self, linear, scales, zeros, g_idx=None, need_transpose=True):
-        self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
-
+    def quant_weight(self, weight, scales, zeros, g_idx=None, need_transpose=True):
         scales = scales.t().contiguous()
         zeros = zeros.t().contiguous()
         scale_zeros = zeros * scales
-        self.scales = scales.clone().half()
-
-        if linear.bias is not None:
-            self.bias = linear.bias.clone().half()
+        self.scales = scales.clone().half() if self.scales.sum() ==0 else self.scales
 
         # intweight = []
         # for idx in range(self.infeatures):
         #     intweight.append(torch.round((linear.weight.data[:, idx].cuda() + scale_zeros[self.g_idx[idx]].cuda()) / self.scales[self.g_idx[idx]].cuda()).to(torch.int)[:, None])
         # intweight = torch.cat(intweight, dim=1)
 
-        scales = scales.cuda()
-        scale_zeros = scale_zeros.cuda()
-        scale_mat=scales[self.g_idx.long().cuda()]
-        scale_zeros_mat=scale_zeros[self.g_idx.long().cuda()]
-        intweight_T  = torch.round((linear.weight.cuda().T+scale_zeros_mat)/scale_mat).to(torch.int)
+        scale_mat=scales[self.g_idx.long()]
+        scale_zeros_mat=scale_zeros[self.g_idx.long()]
+        intweight_T  = torch.round((weight.T+scale_zeros_mat)/scale_mat).to(torch.int)
+
+        # when shouldn't use scale_zeros_mat
+        #zeros=zeros.cuda()
+        #zeros_mat = zeros[self.g_idx.long().cuda()]
+        #intweight_T  = torch.round((linear.weight.cuda().T/scale_mat)+zeros_mat).to(torch.int)
 
         #assert (intweight_T.T == intweight).all()
         if not need_transpose:
             return intweight_T.cpu()
         return intweight_T.T.cpu()
     
-    def dequant_weight(self, intweight, linear, scales, zeros):
-        scales = scales.t().contiguous()
+    def dequant_weight(self, intweight, zeros):
+        #scales = scales.t().contiguous()
+        scales = self.scales
         zeros = zeros.t().contiguous()
         scale_zeros = zeros * scales
 
@@ -358,46 +387,63 @@ class QuantLinear(nn.Module):
         # for idx in range(self.infeatures):
         #     qdq_weight[:, idx] = intweight[:,idx].cuda()*self.scales[self.g_idx[idx]].cuda() - scale_zeros[self.g_idx[idx]].cuda().half()
 
-        scale_mat=self.scales[self.g_idx.long()].cuda()
-        scale_zeros_mat=scale_zeros[self.g_idx.long()].cuda().half()
-        qdq_weight_T = intweight.cuda().T*scale_mat-scale_zeros_mat.half()
+        scale_mat=self.scales[self.g_idx.long()]
+        scale_zeros_mat=scale_zeros[self.g_idx.long()].half()
+        qdq_weight_T = intweight.T*scale_mat-scale_zeros_mat.half()
+
+        # when shouldn't use scale_zeros_mat
+        #zeros=zeros.cuda()
+        #zeros_mat=zeros[self.g_idx.long().cuda()]
+        #qdq_weight_T = (intweight.cuda().T-zeros_mat)*scale_mat
 
         #assert (qdq_weight_T.T == qdq_weight).all()
         return qdq_weight_T.T.cpu()
 
     def weight_qdq(self, linear, scales, zeros, g_idx=None):
-        q_weight = self.quant_weight(linear,scales, zeros, g_idx)
-        return self.dequant_weight(q_weight, linear, scales, zeros)
+        self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
+        if linear.bias is not None:
+            self.bias = linear.bias.clone().half()
+        q_weight = self.quant_weight(linear.weight.data.cuda(), scales.cuda(), zeros.cuda(), g_idx.cuda())
+        return self.dequant_weight(q_weight.cuda(), zeros.cuda())
 
     def unpack(self):
-        wf=torch.tensor(list(range(0,32,self.bits)), dtype=torch.int32).unsqueeze(0)
-        zeros = torch.bitwise_right_shift(torch.unsqueeze(self.qzeros, 2).expand(-1, -1, 32 // self.bits), wf.unsqueeze(0)).to(torch.int16 if self.bits == 8 else torch.int8)
+        qzeros = self.qzeros.cuda()
+        wf=torch.tensor(list(range(0,32,self.bits)), dtype=torch.int32, device=qzeros.device).unsqueeze(0)
+        zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // self.bits), wf.unsqueeze(0)).to(torch.int16 if self.bits == 8 else torch.int8)
         torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
             
-        zeros = zeros + 1
+        #zeros = zeros + 1
         zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
 
         scales = self.scales
         scales = scales.reshape(-1, 1, scales.shape[-1])
         
-        weight = torch.bitwise_right_shift(torch.unsqueeze(self.qweight, 1).expand(-1, 32 // self.bits, -1), wf.unsqueeze(-1)).to(torch.int16 if self.bits == 8 else torch.int8)
+        qweight = self.qweight.cuda()
+        weight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // self.bits, -1), wf.unsqueeze(-1)).to(torch.int16 if self.bits == 8 else torch.int8)
         torch.bitwise_and(weight,(2 ** self.bits) - 1, out=weight)
         weight = weight.reshape(-1, self.groupsize, weight.shape[2])
 
+        weight = weight.view(-1,weight.shape[-1])
+        zeros = zeros.view(-1,zeros.shape[-1])
+        fp16_weight = self.dequant_weight(weight.T, zeros.T).cuda()
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
-        return weight,zeros
+        return fp16_weight,weight,zeros
 
     def pack_gpu(self, linear, scales, zeros, g_idx=None):
+        scales=scales.cuda()
+        zeros=zeros.cuda()
+        layer_weight = linear.weight.data.cuda()
+        #!!!!! arbitrary or with -1 is -1
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
-        intweight = self.quant_weight(linear,scales, zeros, g_idx, need_transpose=False)
+        intweight = self.quant_weight(layer_weight, scales, zeros, g_idx, need_transpose=False)
+        intweight_gpu=intweight.cuda()
 
-        zeros = zeros.t().contiguous()
+        zeros = zeros.t().contiguous().int()
 
         assert intweight.shape[0] // 32 * self.bits == int(round(intweight.shape[0] * self.bits/ 32 + 0.5))
         import time
         s=time.time()
-        intweight_gpu=intweight.cuda()
         qweight_gpu = torch.zeros((intweight.shape[0] // 32 * self.bits, intweight.shape[1]), dtype=torch.int32, device=intweight_gpu.device)
         i = 0
         row = 0
@@ -416,12 +462,14 @@ class QuantLinear(nn.Module):
 
         assert zeros.shape[1] // 32 * self.bits == int(round(zeros.shape[1] * self.bits/ 32 + 0.5))
         s=time.time()
-        zeros_cuda = (zeros - 1).cuda().int()
+        # why -1?
+        #zeros_cuda = (zeros - 1).cuda().int()
+        zeros_cuda = (zeros).int()
         qzeros_cuda = torch.zeros((zeros.shape[0], zeros.shape[1] // 32 * self.bits), dtype=torch.int32, device=zeros_cuda.device)
         i = 0
         col = 0
-        qzeros_cuda=qzeros_cuda.T
-        zeros_cuda=zeros_cuda.T
+        qzeros_cuda=qzeros_cuda.T.contiguous()
+        zeros_cuda=zeros_cuda.T.contiguous()
         while col < qzeros_cuda.shape[0]:
             if self.bits in [2, 4, 8]:
                 compress_ratio = (32 // self.bits)
@@ -432,6 +480,8 @@ class QuantLinear(nn.Module):
                 raise NotImplementedError("Only 2,4,8 bits are supported.")
         self.qzeros =qzeros_cuda.T.cpu()
         e2=time.time()-s
+        fw,iw,iz=self.unpack()
+        assert (fw == self.oweight).all()
 
     def pack(self, linear, scales, zeros, g_idx=None):
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
@@ -482,8 +532,13 @@ class QuantLinear(nn.Module):
         self.qzeros = torch.from_numpy(qzeros)
 
     def forward(self, x):
+        # would contiguous() here imflect accuracy? the default soudl be contiguous().T
+        #out =  torch.matmul(x.reshape(-1, x.shape[-1]),self.oweight.T.contiguous())
         out_shape = x.shape[:-1] + (self.outfeatures, )
         out = QuantLinearFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.maxq)
+        #out_1 = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize)
+        #if (out_1!=out).sum() != 0:
+        #    print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
         out = out + self.bias if self.bias is not None else out
         return out.reshape(out_shape)
 
@@ -499,6 +554,23 @@ def make_quant_linear(module, names, bits, groupsize, name=''):
             setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
     for name1, child in module.named_children():
         make_quant_linear(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
+
+def replace_quant_linear_layer(module, names, bits, groupsize, name=''):
+    if isinstance(module, QuantLinear):
+        return
+    for attr in dir(module):
+        tmp_layer = getattr(module, attr)
+        name1 = name + '.' + attr if name != '' else attr
+        if name1 in names:
+            ql=QuantLinear(bits, groupsize, tmp_layer.in_features, tmp_layer.out_features, tmp_layer.bias is not None)
+            ql.qweight = tmp_layer.qweight
+            ql.qzeros = tmp_layer.qzeros
+            ql.scales = tmp_layer.scales
+            ql.g_idx = tmp_layer.g_idx
+            delattr(module, attr)
+            setattr(module, attr, ql)
+    for name1, child in module.named_children():
+        replace_quant_linear_layer(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
 
 def make_linear_qdq_back(module, names, name=''):
     if isinstance(module, QuantLinear):
@@ -523,6 +595,7 @@ def autotune_warmup_linear(model, transpose=False):
 
     for _, m in model.named_modules():
         if not isinstance(m, QuantLinear):
+        #if not isinstance(m, nn.Linear,loralib.MergedLinear, loralib.Linear):
             continue
 
         k = m.infeatures
