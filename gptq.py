@@ -217,7 +217,13 @@ class GPTQ:
 
         # assign weight for predicting the output of next layer
         self.layer.weight.data = Q.reshape(self.layer.weight.shape).to(self.layer.weight.data.dtype)
-
+        #LUT
+        #aa=torch.round(self.layer.weight/scale[:,g_idx.long()])+zero[:,g_idx.long()]
+        #aa=torch.clamp(aa,0,15)
+        #tobe=self.layer.weight/scale[:,g_idx.long()]+zero[:,g_idx.long()]
+        #cc=[aa.int()==i for i in range(16)]
+        #mp=torch.tensor([tobe[cc[i]].mean() for i in range(16)]).cuda()
+        #aa1=mp[aa.reshape(-1).long()].reshape(aa.shape)
         self.print_loss(name=name, q_weight=Q, weight_error=error, timecost=(time.time() - tick))
 
         if scale == []:

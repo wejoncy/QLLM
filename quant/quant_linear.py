@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
-import loralib
 
 try:
     import triton
@@ -306,13 +305,66 @@ class QuantLinearFunction(torch.autograd.Function):
         return grad_input, None, None, None, None, None, None
 
 class QuantLinearTorchFunction(torch.autograd.Function):
+    @staticmethod
+    def symbolic(g,  x, qself_qweight, qself_scales, qself_qzeros, qself_sbias, qself_g_idx, bits, groupsize):
+        return g.op("com.microsoft::QuantNbitsGemm", x, qself_qweight, qself_scales, qself_qzeros, qself_sbias, qself_g_idx, 
+        outputs=1,outfeatures_i=0,bits_i=bits,groupsize_i=groupsize)
 
     @staticmethod
-    def forward(ctx, input, qweight, scales, qzeros, g_idx, bits,groupsize):
+    def forward(ctx, input, qweight, scales, qzeros, sbias, g_idx, bits,groupsize):
         wf=torch.tensor(list(range(0,32,bits)), dtype=torch.int32, device=input.device).unsqueeze(0)
         zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // bits), wf.unsqueeze(0)).to(torch.int16 if bits == 8 else torch.int8)
         zeros=torch.bitwise_and(zeros, (2 ** bits) - 1)
             
+        #zeros = zeros + 1
+        zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
+
+        scales = scales.reshape(-1, 1, scales.shape[-1])
+
+        weight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // bits, -1), wf.unsqueeze(-1)).to(torch.int16 if bits == 8 else torch.int8)
+        torch.bitwise_and(weight,(2 ** bits) - 1, out=weight)
+        weight = weight.reshape(-1, groupsize, weight.shape[2])
+
+        # if g_idx is not sorted
+        #sz=scale_zeros[g_idx.long()].squeeze(1)
+        #ss=scales[g_idx.long()].squeeze(1)
+        #weight=weight.reshape(-1,12288)*ss-sz
+
+        scale_zeros = zeros * scales
+        weight = (scales * weight - scale_zeros.half())
+
+        #weight = (scales * (weight - zeros))
+        weight = weight.reshape(-1, weight.shape[2])
+        out = torch.matmul(input, weight.contiguous())
+        return out
+
+class QuantLinearTorchBitShift(torch.autograd.Function):
+    @staticmethod
+    def symbolic(g, qself_qweight,wf):
+        return g.op("com.microsoft::BitShift", qself_qweight,wf, outputs=1, direction_s="RIGHT")
+
+    @staticmethod
+    def forward(ctx, qweight,wf):
+        return torch.bitwise_right_shift(qweight,wf)
+class QuantLinearTorchBitAnd(torch.autograd.Function):
+    @staticmethod
+    def symbolic(g, qself_qweight,wf):
+        return g.op("com.microsoft::BitwiseAnd", qself_qweight, wf, outputs=1)
+
+    @staticmethod
+    def forward(ctx, qweight,wf):
+        return torch.bitwise_and(qweight,wf)
+
+class DequantAndUnpack(torch.autograd.Function):
+    @staticmethod
+    def symbolic(g, qself_qweight,scales, qzeros, groupsize, bits):
+        return g.op("com.microsoft::DequantizeAndUnpackWeight", qself_qweight, scales, qzeros, outputs=1,groupsize_i=groupsize,bits_i=bits)
+
+    @staticmethod
+    def forward(ctx, qweight,scales, qzeros, groupsize, bits):
+        wf=torch.tensor(list(range(0,32,bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
+        zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // bits), wf.unsqueeze(0)).to(torch.int16 if bits == 8 else torch.int8)
+        zeros=torch.bitwise_and(zeros, (2 ** bits) - 1)
         #zeros = zeros + 1
         zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
 
@@ -327,9 +379,43 @@ class QuantLinearTorchFunction(torch.autograd.Function):
 
         #weight = (scales * (weight - zeros))
         weight = weight.reshape(-1, weight.shape[2])
-        out = torch.matmul(input, weight.contiguous())
-        return out
+        return weight
 
+def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits,groupsize):
+    if 0:
+        wf=torch.tensor(list(range(0,32,bits)), dtype=torch.int32, device=input.device).unsqueeze(0)
+        #zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // bits), wf.unsqueeze(0)).to(torch.int16 if bits == 8 else torch.int8)
+        zeros = QuantLinearTorchBitShift().apply(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // bits),wf.unsqueeze(0)).to(torch.int16 if bits == 8 else torch.int8)
+        #zeros=torch.bitwise_and(zeros, (2 ** bits) - 1)
+        and_15=torch.tensor([(2 ** bits) - 1], dtype=torch.int8).cuda()
+        zeros=QuantLinearTorchBitAnd().apply(zeros, and_15)
+            
+        #zeros = zeros + 1
+        zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
+
+        scales = scales.reshape(-1, 1, scales.shape[-1])
+
+        #weight = torch.bitwise_right_shift(torch.unsqueeze(qweight, 1).expand(-1, 32 // bits, -1), wf.unsqueeze(-1)).to(torch.int16 if bits == 8 else torch.int8)
+        weight = QuantLinearTorchBitShift().apply(torch.unsqueeze(qweight, 1).expand(-1, 32 // bits, -1), wf.unsqueeze(-1)).to(torch.int16 if bits == 8 else torch.int8)
+        #torch.bitwise_and(weight,(2 ** bits) - 1, out=weight)
+        weight=QuantLinearTorchBitAnd().apply(weight, and_15)
+        weight = weight.reshape(-1, groupsize, weight.shape[2])
+
+        # if g_idx is not sorted
+        #sz=scale_zeros[g_idx.long()].squeeze(1)
+        #ss=scales[g_idx.long()].squeeze(1)
+        #weight=weight.reshape(-1,12288)*ss-sz
+
+        scale_zeros = zeros * scales
+        weight = (scales * weight - scale_zeros.half())
+
+        #weight = (scales * (weight - zeros))
+        weight = weight.reshape(-1, weight.shape[2])
+    else:
+        weight= DequantAndUnpack().apply( qweight, scales, qzeros, groupsize,bits)
+    out = torch.matmul(input, weight.contiguous())
+    return out
+        
 class QuantLinear(nn.Module):
 
     def __init__(self, bits, groupsize, infeatures, outfeatures, bias):
@@ -481,7 +567,7 @@ class QuantLinear(nn.Module):
         self.qzeros =qzeros_cuda.T.cpu()
         e2=time.time()-s
         fw,iw,iz=self.unpack()
-        assert (fw == self.oweight).all()
+        assert (fw == self.oweight.cuda()).all()
 
     def pack(self, linear, scales, zeros, g_idx=None):
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
@@ -536,7 +622,9 @@ class QuantLinear(nn.Module):
         #out =  torch.matmul(x.reshape(-1, x.shape[-1]),self.oweight.T.contiguous())
         out_shape = x.shape[:-1] + (self.outfeatures, )
         #out = QuantLinearFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.maxq)
-        out = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize)
+        #sbias = self.bias if self.bias is not None else torch.tensor([0],dtype=torch.float16)
+        #out = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, sbias, self.g_idx, self.bits, self.groupsize)
+        out = QuantLinearTorchFunction_forward(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize)
         #if (out_1!=out).sum() != 0:
         #    print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
         out = out + self.bias if self.bias is not None else out
