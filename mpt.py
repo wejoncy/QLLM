@@ -1,61 +1,92 @@
+from texttable import Texttable
+import os
+
+import torch.nn as nn
+import torch
+import numpy as np
+
 import argparse
 import time
-import numpy as np
-import os
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
-
-import torch
-import torch.nn as nn
-import quant
+from pathlib import Path
+import json
 
 import sys
+sys.path.append(os.path.dirname(__file__)) # NOQA
+sys.path.append(os.getcwd())   # NOQA
 
-sys.path.append(os.path.dirname(__file__))
-sys.path.append(os.getcwd())
-import  loralib as lora
-
+from utils import find_layers, DEV,export_quant_table, gen_conditions
 from gptq import GPTQ, Observer
-from utils import find_layers, DEV, set_seed, get_wikitext2, get_ptb, get_c4, get_ptb_new, get_c4_new, get_loaders, export_quant_table, gen_conditions
-from texttable import Texttable
-DO_QDQ = False
+import loralib as lora
+import quant
 
 
-def get_mpt(model, argv_user,nsamples):
-    if argv_user[argv_user.index('--model_name_or_path')+1] not in ['ckpt/mpt-7b-storywriter/', 'ckpt/mpt-7b-storywriter']:
+if "CUDA_VISIBLE_DEVICES" not in os.environ:
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
+NEED_CHECK_PACK = False
+
+
+def get_mpt(model, argv_user, nsamples):
+    if 'ckpt/mpt-' not in argv_user[argv_user.index('--model_name_or_path')+1]:
         lora_ind = argv_user.index('--use_lora')
         argv_user[lora_ind+1] = 'False'
 
-
-    import examples_ads    
+    import examples_ads
     from examples_ads import run_mpt_prompt
     argv_user.insert(0, run_mpt_prompt.__file__)
     argv_back = sys.argv
     sys.argv = argv_user
 
-    model,data_sets = run_mpt_prompt.main(True)
+    os.environ['init_device'] = "cpu"
+    model, data_sets = run_mpt_prompt.main(True)
     new_data = []
     for idx, indata in enumerate(data_sets):
-        if idx>=nsamples:break
-        input_ = (torch.tensor([indata["input_ids"]]), torch.tensor([indata["attention_mask"]]))            
+        if idx >= nsamples:
+            break
+        input_ = (torch.tensor([indata["input_ids"]]), torch.tensor([indata["attention_mask"]]))
         new_data.append(input_)
-    return model.half(),new_data
+    return model.half(), new_data
 
 
 def load_quant(qmodel, argv_user, args):
     argv_user[argv_user.index('--model_name_or_path')+1] = os.path.abspath(qmodel)
-    os.environ["nbits"] = "4"
-
-    model,dataloader = get_mpt(args.model, argv_user, args.nsamples)
+    # do not init model twice as it slow initialization
+    import torch.nn.init
+    torch.nn.init.kaiming_uniform_ = lambda x, *args, **kwargs: x
+    torch.nn.init.uniform_ = lambda x, *args, **kwargs: x
+    torch.nn.init.kaiming_normal_ = lambda x, *args, **kwargs: x
+    model, dataloader = get_mpt(args.model, argv_user, args.nsamples)
     import transformers
-    layers = find_layers(model,layers=[transformers.models.mpt.fewbits_quant_linear.FewBitsQuantLinear])
-    quant.replace_quant_linear_layer(model,layers ,args.wbits, args.groupsize)
-    #quant.autotune_warmup_linear(model, transpose=False)
-    return model.cuda(),dataloader
+    layers = find_layers(model, layers=[torch.nn.Linear, lora.MergedLinear, lora.Linear])
+    # backward compatability
+    if not (Path(qmodel)/"quant.op.json").exists():
+        quant_layers_json = {layer_name: {"groupsize": args.groupsize, "wbits": args.wbits}
+                             for layer_name in layers.keys() if len(layer_name.split('.')) > 3}
+        open(Path(qmodel)/"quant.op.json").write(json.dumps(quant_layers_json))
+
+    # load quant info
+    with open(Path(qmodel)/"quant.op.json") as fp:
+        qunat_info = json.load(fp)
+    for layer_name in list(layers.keys()):
+        if layer_name not in qunat_info:
+            del layers[layer_name]
+
+    quant.make_mixbits_quant_linear(model, layers, qunat_info)
+    del layers
+    import glob
+    weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
+    weight_dict = torch.load(weight_bins[0])
+    for i in range(1, len(weight_bins)):
+        weight_dict.update(torch.load(weight_bins[i]))
+    model.load_state_dict(weight_dict)
+    # quant.autotune_warmup_linear(model, transpose=False)
+    return model.cuda(), dataloader
+
 
 @torch.no_grad()
 def mpt_sequential(model, dataloader, dev):
     print('Starting ...')
-    model=model.cpu()
+    model = model.cpu()
     use_cache = model.config.use_cache
     model.config.use_cache = False
     layers = model.get_decoder().blocks
@@ -65,8 +96,8 @@ def mpt_sequential(model, dataloader, dev):
     layers[0] = layers[0].to(dev)
 
     dtype = next(iter(model.parameters())).dtype
-    #model.config.max_seq_len
-    inps = torch.zeros((args.nsamples, dataloader[0][0].shape[-1], model.config.d_model), dtype=dtype, device=dev)
+    # model.config.max_seq_len
+    inps = torch.zeros((args.nsamples, dataloader[0][0].shape[-1], model.config.d_model), dtype=dtype)
     cache = {'i': 0, 'attention_mask': None}
 
     class Catcher(nn.Module):
@@ -76,10 +107,10 @@ def mpt_sequential(model, dataloader, dev):
             self.module = module
 
         def forward(self, inp, **kwargs):
-            inps[cache['i']] = inp
+            inps[cache['i']] = inp.cpu()
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']
-            #cache['position_ids'] = kwargs['position_ids']
+            # cache['position_ids'] = kwargs['position_ids']
             raise ValueError
 
     layers[0] = Catcher(layers[0])
@@ -97,7 +128,7 @@ def mpt_sequential(model, dataloader, dev):
 
     outs = torch.zeros_like(inps)
     attention_mask = cache['attention_mask']
-    #position_ids = cache['position_ids']
+    # position_ids = cache['position_ids']
 
     print('Ready.')
 
@@ -111,9 +142,10 @@ def mpt_sequential(model, dataloader, dev):
         print('+==================+==============+============+===========+=======+')
 
         layer = layers[i].to(dev)
-        full = find_layers(layer,[torch.nn.Linear, lora.MergedLinear, lora.Linear])
+        full = find_layers(layer, [torch.nn.Linear, lora.MergedLinear, lora.Linear])
         if args.true_sequential:
-            sequential = [['self_attn.k_proj', 'self_attn.v_proj', 'self_attn.q_proj'], ['self_attn.o_proj'], ['mlp.up_proj', 'mlp.gate_proj'], ['mlp.down_proj']]
+            sequential = [['self_attn.k_proj', 'self_attn.v_proj', 'self_attn.q_proj'], [
+                'self_attn.o_proj'], ['mlp.up_proj', 'mlp.gate_proj'], ['mlp.down_proj']]
         else:
             sequential = [list(full.keys())]
 
@@ -137,14 +169,16 @@ def mpt_sequential(model, dataloader, dev):
             for j in range(args.nsamples):
                 layer.attn.Wqkv.nbits = 16
                 layer.attn.out_proj.nbits = 16
-                outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, #position_ids=position_ids
-                )[0]
+                outs[j] = layer(inps[j].unsqueeze(0).to(dev), attention_mask=attention_mask,  # position_ids=position_ids
+                                )[0].cpu()
             for h in handles:
                 h.remove()
 
             for name in subset:
-                scale, zero, g_idx, error = gptq[name].fasterquant(percdamp=args.percdamp, groupsize=args.groupsize, actorder=args.act_order, name=name)
-                quantizers['transformer.blocks.%d.%s' % (i, name)] = (gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
+                scale, zero, g_idx, error = gptq[name].fasterquant(
+                    percdamp=args.percdamp, groupsize=args.groupsize, actorder=args.act_order, name=name)
+                quantizers['transformer.blocks.%d.%s' % (i, name)] = (
+                    gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
 
                 if args.observe:
                     observer.submit(name=name, layerid=i, gptq=gptq[name], error=error)
@@ -152,11 +186,11 @@ def mpt_sequential(model, dataloader, dev):
                     gptq[name].free()
 
         # [ TODO ]
-        # I am supposing layer's weight should be quantized and modified, we are statisting the error 
+        # I am supposing layer's weight should be quantized and modified, we are statisting the error
         # accumulated from the previous layers and compensate next layer
         for j in range(args.nsamples):
-            outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, #position_ids=position_ids
-            )[0]
+            outs[j] = layer(inps[j].unsqueeze(0).to(dev), attention_mask=attention_mask,  # position_ids=position_ids
+                            )[0].cpu()
 
         layers[i] = layer.cpu()
         del layer
@@ -166,7 +200,6 @@ def mpt_sequential(model, dataloader, dev):
         inps, outs = outs, inps
         print('+------------------+--------------+------------+-----------+-------+')
         print('\n')
-        
 
     if args.observe:
         observer.print()
@@ -192,10 +225,12 @@ def mpt_sequential(model, dataloader, dev):
 
                 gptq.quantizer.configure(wbits, perchannel=True, sym=args.sym, mse=False)
 
-                scale, zero, g_idx, error = gptq.fasterquant(percdamp=args.percdamp, groupsize=groupsize, actorder=args.act_order, name=name)
+                scale, zero, g_idx, error = gptq.fasterquant(
+                    percdamp=args.percdamp, groupsize=groupsize, actorder=args.act_order, name=name)
 
                 table.add_row([wbits, groupsize, error])
-                quantizers['transformer.blocks.%d.%s' % (layerid, name)] = (gptq.quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), wbits, groupsize)
+                quantizers['transformer.blocks.%d.%s' % (layerid, name)] = (
+                    gptq.quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), wbits, groupsize)
 
             print(table.draw())
             print('\n')
@@ -203,7 +238,6 @@ def mpt_sequential(model, dataloader, dev):
             gptq.free()
 
     model.config.use_cache = use_cache
-    model=model.cuda()
     return quantizers
 
 
@@ -213,98 +247,92 @@ def mpt_eval(model, argv_user, dev):
     sys.argv = argv_user
     import examples_ads
     from examples_ads import run_mpt_prompt
-    run_mpt_prompt.main(quant_model = model)
+    run_mpt_prompt.main(quant_model=model.to(dev))
 
 
 # TODO: perform packing on GPU
-def mpt_pack(model, quantizers, wbits, groupsize):
+def mpt_pack(model, quantizers):
     layers = find_layers(model, [torch.nn.Linear, lora.MergedLinear, lora.Linear])
     layers = {n: layers[n] for n in quantizers}
-    quant.make_quant_linear(model, quantizers, wbits, groupsize)
+    quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
+    quant.make_mixbits_quant_linear(model, quantizers, quant_info)
     qlayers = find_layers(model, [quant.QuantLinear])
     print('Packing ...')
     for name in qlayers:
         print(name)
         quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
         # rewrite weight as quantized
-        qlayers[name].oweight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
-        layers[name].weight.data = qlayers[name].oweight
-        assert (qlayers[name].oweight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
-        layers[name].nbits = qlayers[name].bits
+        if NEED_CHECK_PACK:
+            qlayers[name].oweight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
+            layers[name].weight.data = qlayers[name].oweight
+            assert (qlayers[name].oweight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
+            layers[name].nbits = qlayers[name].bits
 
-        if DO_QDQ:
-            if type(layers[name]) not in [nn.Linear]: #lora
-                layers[name].scales = scale.T.contiguous()
-                layers[name].qzeros = zero.T.contiguous()
-                layers[name].g_idx = g_idx
-        else:
-            qlayers[name].pack_gpu(layers[name], scale, zero, g_idx)
-            layers[name].scales = qlayers[name].scales
-            layers[name].qzeros = qlayers[name].qzeros
-            layers[name].g_idx = qlayers[name].g_idx
-            layers[name].qweight = qlayers[name].qweight
+        qlayers[name].pack_gpu(layers[name], scale, zero, g_idx)
 
-
-    #quant.make_linear_qdq_back(model,layers)
-    #if not DO_QDQ:
-    #    quant.autotune_warmup_linear(model, transpose=False)
+    # quant.make_linear_qdq_back(model,layers)
+    # quant.autotune_warmup_linear(model, transpose=False)
 
     print('Done.')
-    return model.cuda()
+    return model, quant_info
 
 
-def export_onnx(model, onnx_path, sample_inputs:tuple):
+def export_onnx(model, onnx_path, sample_inputs: tuple):
     from pathlib import Path
     import shutil
     onnx_path = Path(onnx_path).absolute()
     assert onnx_path.suffix == '.onnx'
-    inputs = {'input_ids':sample_inputs[0].to(model.device),"attention_mask":sample_inputs[1].to(model.device)}
+    inputs = {'input_ids': sample_inputs[0].to(model.device), "attention_mask": sample_inputs[1].to(model.device)}
     onnx_filepath = (onnx_path.parent/'tmp'/'tmp.onnx')
     onnx_filepath.parent.exists() and shutil.rmtree(onnx_filepath.parent)
     os.makedirs(onnx_filepath.parent)
 
-    input_ids=inputs['input_ids']
-    attention_mask=inputs['attention_mask']
-    past_key_values=None
-    onnx_inputs = (input_ids,past_key_values,attention_mask,None,None,None,True,False,False,False)
+    input_ids = inputs['input_ids']
+    attention_mask = inputs['attention_mask']
+    past_key_values = None
+    onnx_inputs = (input_ids, past_key_values, attention_mask, None, None, None, True, False, False, False)
     onnx_inp_names = ("input_ids", "attention_mask")
     onnx_out_names = ("logits",)
-    onnx_dynamic_axes = {"input_ids": {0 : 'batch_size', 1:"seq_len"}, "attention_mask": {0 : 'batch_size', 1:"seq_len"}}
-    torch.onnx.export(model=model, args=onnx_inputs, f=str(onnx_filepath), verbose=False, opset_version=16, input_names=onnx_inp_names, output_names=onnx_out_names, dynamic_axes=onnx_dynamic_axes)
+    onnx_dynamic_axes = {"input_ids": {0: 'batch_size', 1: "seq_len"},
+                         "attention_mask": {0: 'batch_size', 1: "seq_len"}}
+    torch.onnx.export(model=model, args=onnx_inputs, f=str(onnx_filepath), verbose=False, opset_version=16,
+                      input_names=onnx_inp_names, output_names=onnx_out_names, dynamic_axes=onnx_dynamic_axes)
     import onnx
-    onnx_model=onnx.load(str(onnx_filepath))
+    onnx_model = onnx.load(str(onnx_filepath))
     onnx_filepath = onnx_path
-    onnx.save_model(onnx_model, str(onnx_filepath), save_as_external_data=True, all_tensors_to_one_file=True, location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
-    
+    onnx.save_model(onnx_model, str(onnx_filepath), save_as_external_data=True, all_tensors_to_one_file=True,
+                    location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
+
 
 def append_default_args():
     if '--wbits' not in sys.argv:
         sys.argv += ['--wbits', '4']
-    
+
     if '--groupsize' not in sys.argv:
         sys.argv += ['--groupsize', '128']
-    
+
     if '--nsamples' not in sys.argv:
         sys.argv += ['--nsamples', '512']
 
-    if '--export_onnx' not in sys.argv:
-        sys.argv += ['--export_onnx', './mpt_onnx_q4/mpt.onnx']
- 
-    if '--eval' not in sys.argv:
-        sys.argv += ['--eval']
+    #if '--export_onnx' not in sys.argv:
+    #    sys.argv += ['--export_onnx', './mpt_onnx_q4/mpt.onnx']
+ #
+    #if '--eval' not in sys.argv:
+    #    sys.argv += ['--eval']
 
     #if '--save' not in sys.argv:
     #    sys.argv += ['--save', './mpt_q4']
     #if '--load' not in sys.argv:
     #    sys.argv += ['--load', './mpt_q4']
 
+
 def process_forward_args(args):
     argv_user = args.forward_args
     import re
     vs = re.findall(r'(".*")', argv_user)
     argv_map = {}
-    for idx,v in enumerate(vs):
-        argv_user = re.sub(v, f'____{idx}___',argv_user)
+    for idx, v in enumerate(vs):
+        argv_user = re.sub(v, f'____{idx}___', argv_user)
         argv_map[f'____{idx}___'] = v
     argv_user = argv_user.split(' ')
     argv_user = list(filter(None, argv_user))
@@ -314,7 +342,7 @@ def process_forward_args(args):
             argv_user[i] = argv_map[f'____{idx}___']
             idx += 1
     args.forward_args = argv_user
-    
+
 
 if __name__ == '__main__':
     #,'--observe','--act-order'
@@ -322,35 +350,43 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--model', type=str, default='mosaicml/mpt-7b', help='mpt model to load')
-    parser.add_argument('--dataset', type=str, default='c4',choices=['wikitext2', 'ptb', 'c4'], help='Where to extract calibration data from.')
+    parser.add_argument('--dataset', type=str, default='c4',
+                        choices=['wikitext2', 'ptb', 'c4'], help='Where to extract calibration data from.')
     parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration data samples.')
-    parser.add_argument('--percdamp', type=float, default=.01, help='Percent of the average Hessian diagonal to use for dampening.')
+    parser.add_argument('--percdamp', type=float, default=.01,
+                        help='Percent of the average Hessian diagonal to use for dampening.')
     parser.add_argument('--nearest', action='store_true', help='Whether to run the RTN baseline.')
-    parser.add_argument('--wbits', type=int, default=16, choices=[2, 3, 4, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
+    parser.add_argument('--wbits', type=int, default=16,
+                        choices=[2, 3, 4, 5, 6, 7, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
-    parser.add_argument('--groupsize', type=int, default=-1, help='Groupsize to use for quantization; default uses full row.')
+    parser.add_argument('--groupsize', type=int, default=-1,
+                        help='Groupsize to use for quantization; default uses full row.')
     parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
     parser.add_argument('--save', type=str, default='', help='Save quantized checkpoint under this name.')
-    parser.add_argument('--save_safetensors', type=str, default='', help='Save quantized `.safetensors` checkpoint under this name.')
+    parser.add_argument('--save_safetensors', type=str, default='',
+                        help='Save quantized `.safetensors` checkpoint under this name.')
     parser.add_argument('--load', type=str, default='', help='Load quantized model.')
-    parser.add_argument('--check', action='store_true', help='Whether to compute perplexity during benchmarking for verification.')
+    parser.add_argument('--check', action='store_true',
+                        help='Whether to compute perplexity during benchmarking for verification.')
     parser.add_argument('--sym', action='store_true', help='Whether to perform symmetric quantization.')
     parser.add_argument('--act-order', action='store_true', help='Whether to apply the activation order GPTQ heuristic')
     parser.add_argument('--true-sequential', action='store_true', help='Whether to run in true sequential model.')
     parser.add_argument('--new-eval', action='store_true', help='Whether to use the new PTB and C4 eval')
-    parser.add_argument('--layers-dist', type=str, default='', help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
+    parser.add_argument('--layers-dist', type=str, default='',
+                        help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
     parser.add_argument('--observe',
                         action='store_true',
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
             When this feature enabled, `--save` or `--save_safetensors` would be disable.')
-    parser.add_argument('--quant-directory', type=str, default=None, help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
+    parser.add_argument('--quant-directory', type=str, default=None,
+                        help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--forward_args', type=str, default=None, help='args for run_prompts_mpt.py')
 
     args = parser.parse_args()
     process_forward_args(args)
-    
+
     if args.layers_dist:
         gpu_dist = [int(x) for x in args.layers_dist.split(':')]
     else:
@@ -360,16 +396,16 @@ if __name__ == '__main__':
         args.load = args.load.as_posix()
 
     if args.load:
-        model,dataloader = load_quant(args.load, args.forward_args, args)
+        model, dataloader = load_quant(args.load, args.forward_args, args)
         model.eval()
     else:
-        model,dataloader = get_mpt(args.model, args.forward_args, args.nsamples)
+        model, dataloader = get_mpt(args.model, args.forward_args, args.nsamples)
         model.eval()
 
     if not args.load and args.wbits < 16 and not args.nearest:
         tick = time.time()
         quantizers = mpt_sequential(model, dataloader, DEV)
-        model = mpt_pack(model, quantizers, args.wbits, args.groupsize)
+        model, quant_info = mpt_pack(model, quantizers)
         print(time.time() - tick)
 
     if args.eval:
@@ -380,6 +416,7 @@ if __name__ == '__main__':
 
     if not args.observe and args.save:
         model.save_pretrained(args.save)
+        open(args.save+"/quant.op.json", 'w').write(json.dumps(quant_info))
 
     if args.export_onnx:
         export_onnx(model, args.export_onnx, dataloader[0])
