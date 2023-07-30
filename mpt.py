@@ -80,11 +80,11 @@ def load_quant(qmodel, argv_user, args):
         weight_dict.update(torch.load(weight_bins[i]))
     model.load_state_dict(weight_dict)
     # quant.autotune_warmup_linear(model, transpose=False)
-    return model.cuda(), dataloader
+    return model, dataloader
 
 
 @torch.no_grad()
-def mpt_sequential(model, dataloader, dev):
+def mpt_sequential(model, dataloader, mix_qlayer_conf, dev):
     print('Starting ...')
     model = model.cpu()
     use_cache = model.config.use_cache
@@ -135,6 +135,10 @@ def mpt_sequential(model, dataloader, dev):
     quantizers = {}
     observer = Observer()
     for i in range(len(layers)):
+        if str(i+1) in mix_qlayer_conf:
+            layer_key = str(i+1)
+            args.wbits = mix_qlayer_conf[layer_key].get('wbits', args.wbits)
+            args.groupsize = mix_qlayer_conf[layer_key].get('groupsize', args.groupsize)
 
         print(f'Quantizing layer {i+1}/{len(layers)}..')
         print('+------------------+--------------+------------+-----------+-------+')
@@ -278,14 +282,16 @@ def mpt_pack(model, quantizers):
 
 
 def export_onnx(model, onnx_path, sample_inputs: tuple):
+    #model = model.cpu().float()
+    model=model.cuda()
     from pathlib import Path
     import shutil
     onnx_path = Path(onnx_path).absolute()
     assert onnx_path.suffix == '.onnx'
     inputs = {'input_ids': sample_inputs[0].to(model.device), "attention_mask": sample_inputs[1].to(model.device)}
-    onnx_filepath = (onnx_path.parent/'tmp'/'tmp.onnx')
-    onnx_filepath.parent.exists() and shutil.rmtree(onnx_filepath.parent)
-    os.makedirs(onnx_filepath.parent)
+    onnx_filepath_export_multi_files_tmp = onnx_filepath.parent/'tmp/tmp.onnx'
+    onnx_filepath_export_multi_files_tmp.parent.exists() and shutil.rmtree(onnx_filepath_export_multi_files_tmp.parent)
+    os.makedirs(onnx_filepath_export_multi_files_tmp.parent)
 
     input_ids = inputs['input_ids']
     attention_mask = inputs['attention_mask']
@@ -295,13 +301,16 @@ def export_onnx(model, onnx_path, sample_inputs: tuple):
     onnx_out_names = ("logits",)
     onnx_dynamic_axes = {"input_ids": {0: 'batch_size', 1: "seq_len"},
                          "attention_mask": {0: 'batch_size', 1: "seq_len"}}
-    torch.onnx.export(model=model, args=onnx_inputs, f=str(onnx_filepath), verbose=False, opset_version=16,
+    torch.onnx.export(model=model, args=onnx_inputs, f=str(onnx_filepath_export_multi_files_tmp), verbose=False, opset_version=16,
                       input_names=onnx_inp_names, output_names=onnx_out_names, dynamic_axes=onnx_dynamic_axes)
     import onnx
-    onnx_model = onnx.load(str(onnx_filepath))
-    onnx_filepath = onnx_path
-    onnx.save_model(onnx_model, str(onnx_filepath), save_as_external_data=True, all_tensors_to_one_file=True,
+    onnx_model = onnx.load(str(onnx_filepath_export_multi_files_tmp))
+
+    onnx_path.exists() and onnx_path.unlink()
+    (onnx_path.parent/'mpt_ext.data').exists() and (onnx_path.parent/'mpt_ext.data').unlink()
+    onnx.save_model(onnx_model, str(onnx_path), save_as_external_data=True, all_tensors_to_one_file=True,
                     location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
+
 
 
 def append_default_args():
@@ -329,11 +338,11 @@ def append_default_args():
 def process_forward_args(args):
     argv_user = args.forward_args
     import re
-    vs = re.findall(r'(".*")', argv_user)
+    key_with_space = re.findall(r'(".*"|\'.*\')', argv_user)
     argv_map = {}
-    for idx, v in enumerate(vs):
+    for idx, v in enumerate(key_with_space):
         argv_user = re.sub(v, f'____{idx}___', argv_user)
-        argv_map[f'____{idx}___'] = v
+        argv_map[f'____{idx}___'] = v.strip('"')
     argv_user = argv_user.split(' ')
     argv_user = list(filter(None, argv_user))
     idx = 0
@@ -360,6 +369,7 @@ if __name__ == '__main__':
     parser.add_argument('--wbits', type=int, default=16,
                         choices=[2, 3, 4, 5, 6, 7, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
+    parser.add_argument('--mix_qlayer_conf', type=str, default=None, help='Mix quantization layer configuration.(groupsize,wbits)')
     parser.add_argument('--groupsize', type=int, default=-1,
                         help='Groupsize to use for quantization; default uses full row.')
     parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
@@ -403,13 +413,14 @@ if __name__ == '__main__':
         model.eval()
 
     if not args.load and args.wbits < 16 and not args.nearest:
+        if args.mix_qlayer_conf:
+            args.mix_qlayer_conf = json.load(open(args.mix_qlayer_conf))
+        else:
+            args.mix_qlayer_conf = {}
         tick = time.time()
-        quantizers = mpt_sequential(model, dataloader, DEV)
+        quantizers = mpt_sequential(model, dataloader, args.mix_qlayer_conf, DEV)
         model, quant_info = mpt_pack(model, quantizers)
         print(time.time() - tick)
-
-    if args.eval:
-        mpt_eval(model, args.forward_args, DEV)
 
     if args.quant_directory is not None:
         export_quant_table(quantizers, args.quant_directory)
@@ -417,6 +428,9 @@ if __name__ == '__main__':
     if not args.observe and args.save:
         model.save_pretrained(args.save)
         open(args.save+"/quant.op.json", 'w').write(json.dumps(quant_info))
+
+    if args.eval:
+        mpt_eval(model, args.forward_args, DEV)
 
     if args.export_onnx:
         export_onnx(model, args.export_onnx, dataloader[0])

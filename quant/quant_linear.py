@@ -6,6 +6,13 @@ import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 try:
+    module__use_cuda_dequant = False
+    import dequantize_nbit_ops # cuda dequant
+    module__use_cuda_dequant = True
+except ImportError:
+    print("torch implementation of dequantization would be used")
+    pass
+try:
     import triton
     import triton.language as tl
     from . import custom_autotune
@@ -306,12 +313,12 @@ class QuantLinearFunction(torch.autograd.Function):
 
 class QuantLinearTorchFunction(torch.autograd.Function):
     @staticmethod
-    def symbolic(g,  x, qself_qweight, qself_scales, qself_qzeros, qself_sbias, qself_g_idx, bits, groupsize):
+    def symbolic(g,  x, qself_qweight, qself_scales, qself_qzeros, qself_sbias, qself_g_idx, bits, groupsize,in_features):
         return g.op("com.microsoft::QuantNbitsGemm", x, qself_qweight, qself_scales, qself_qzeros, qself_sbias, qself_g_idx, 
-        outputs=1,outfeatures_i=0,bits_i=bits,groupsize_i=groupsize)
+        outputs=1,in_features_i=in_features,bits_i=bits,groupsize_i=groupsize)
 
     @staticmethod
-    def forward(ctx, input, qweight, scales, qzeros, sbias, g_idx, bits,groupsize):
+    def forward(ctx, input, qweight, scales, qzeros, sbias, g_idx, bits,groupsize,in_features):
         wf=torch.tensor(list(range(0,32,bits)), dtype=torch.int32, device=input.device).unsqueeze(0)
         zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // bits), wf.unsqueeze(0)).to(torch.int16 if bits == 8 else torch.int8)
         zeros=torch.bitwise_and(zeros, (2 ** bits) - 1)
@@ -397,7 +404,8 @@ class DequantAndUnpack(torch.autograd.Function):
     @staticmethod
     def forward(ctx, qweight,scales, qzeros, groupsize, bits, in_features):
         scales = scales.reshape(-1, 1, scales.shape[-1])
-
+        if module__use_cuda_dequant and qweight.is_cuda:
+            return dequantize_nbit_ops.dequant(qweight,scales, qzeros, groupsize, bits, in_features)
         if bits in [2,4,8]:
             wf=torch.tensor(list(range(0,32,bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
             zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2).expand(-1, -1, 32 // bits), 
@@ -629,7 +637,7 @@ class QuantLinear(nn.Module):
         zeros_cuda=zeros_cuda.T.contiguous()
         general_pack_on_row(qzeros_cuda, zeros_cuda)
 
-        self.qzeros =qzeros_cuda.T.cpu()
+        self.qzeros = qzeros_cuda.T.contiguous().cpu()
         e2=time.time()-s
         
         if self.oweight != None:
@@ -667,7 +675,7 @@ class QuantLinear(nn.Module):
         qzeros_cuda=qzeros_cuda.T.contiguous()
         zeros_cuda=zeros_cuda.T.contiguous()
         pack_on_row_fast_4bit(qzeros_cuda, zeros_cuda)
-        self.qzeros =qzeros_cuda.T.cpu()
+        self.qzeros =qzeros_cuda.T.contiguous().cpu()
         e2=time.time()-s
         
         if self.oweight != None:
@@ -745,7 +753,7 @@ class QuantLinear(nn.Module):
         out_shape = x.shape[:-1] + (self.outfeatures, )
         #out = QuantLinearFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.maxq)
         #sbias = self.bias if self.bias is not None else torch.tensor([0],dtype=torch.float16)
-        #out = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, sbias, self.g_idx, self.bits, self.groupsize)
+        #out = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, sbias, self.g_idx, self.bits, self.groupsize, self.infeatures)
         out = QuantLinearTorchFunction_forward(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize, self.infeatures)
         #if (out_1!=out).sum() != 0:
         #    print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
