@@ -1,5 +1,7 @@
 from texttable import Texttable
 import os
+if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
 
 import torch.nn as nn
 import torch
@@ -18,10 +20,6 @@ from utils import find_layers, DEV,export_quant_table, gen_conditions
 from gptq import GPTQ, Observer
 import loralib as lora
 import quant
-
-
-if "CUDA_VISIBLE_DEVICES" not in os.environ:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 NEED_CHECK_PACK = False
 
@@ -286,8 +284,8 @@ def export_onnx(model, onnx_path, sample_inputs: tuple):
     model=model.cuda()
     from pathlib import Path
     import shutil
-    onnx_path = Path(onnx_path).absolute()
-    assert onnx_path.suffix == '.onnx'
+    onnx_filepath = Path(onnx_path).absolute()
+    assert onnx_filepath.suffix == '.onnx'
     inputs = {'input_ids': sample_inputs[0].to(model.device), "attention_mask": sample_inputs[1].to(model.device)}
     onnx_filepath_export_multi_files_tmp = onnx_filepath.parent/'tmp/tmp.onnx'
     onnx_filepath_export_multi_files_tmp.parent.exists() and shutil.rmtree(onnx_filepath_export_multi_files_tmp.parent)
@@ -306,9 +304,9 @@ def export_onnx(model, onnx_path, sample_inputs: tuple):
     import onnx
     onnx_model = onnx.load(str(onnx_filepath_export_multi_files_tmp))
 
-    onnx_path.exists() and onnx_path.unlink()
-    (onnx_path.parent/'mpt_ext.data').exists() and (onnx_path.parent/'mpt_ext.data').unlink()
-    onnx.save_model(onnx_model, str(onnx_path), save_as_external_data=True, all_tensors_to_one_file=True,
+    onnx_filepath.exists() and onnx_filepath.unlink()
+    (onnx_filepath.parent/'mpt_ext.data').exists() and (onnx_filepath.parent/'mpt_ext.data').unlink()
+    onnx.save_model(onnx_model, str(onnx_filepath), save_as_external_data=True, all_tensors_to_one_file=True,
                     location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
 
 
