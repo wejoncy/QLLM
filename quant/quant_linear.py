@@ -754,11 +754,9 @@ class QuantLinear(nn.Module):
         #out = QuantLinearFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.maxq)
         #sbias = self.bias if self.bias is not None else torch.tensor([0],dtype=torch.float16)
         #out = QuantLinearTorchFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, sbias, self.g_idx, self.bits, self.groupsize, self.infeatures)
-        out = QuantLinearTorchFunction_forward(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize, self.infeatures)
-        #if (out_1!=out).sum() != 0:
-        #    print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+        out = QuantLinearTorchFunction_forward(x, self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.groupsize, self.infeatures)
         out = out + self.bias if self.bias is not None else out
-        return out.reshape(out_shape)
+        return out
 
 
 def make_mixbits_quant_linear(module, names, quant_info:dict, name=''):
