@@ -23,7 +23,7 @@ class MPT(model_quantization_base.ModelQuantizationBase):
         self.argv_user = None
         self.quant_layers = [torch.nn.Linear, lora.MergedLinear, lora.Linear]
 
-    def get_torch_model(self, model, nsamples):
+    def get_torch_model(self, args):
         argv_user = self.argv_user
         if 'ckpt/mpt-' not in argv_user[argv_user.index('--model_name_or_path')+1]:
             lora_ind = argv_user.index('--use_lora')
@@ -39,7 +39,7 @@ class MPT(model_quantization_base.ModelQuantizationBase):
         model, data_sets = run_mpt_prompt.main(True)
         new_data = []
         for idx, indata in enumerate(data_sets):
-            if idx >= nsamples:
+            if idx >= args.nsamples:
                 break
             input_ = (torch.tensor([indata["input_ids"]]), torch.tensor([indata["attention_mask"]]))
             new_data.append(input_)

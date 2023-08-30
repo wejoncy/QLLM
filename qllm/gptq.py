@@ -4,9 +4,9 @@ import time
 import torch
 import torch.nn as nn
 import transformers
-import quant
+from . import quant
 from texttable import Texttable
-from utils import torch_snr_error
+from .utils import torch_snr_error
 
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
@@ -119,7 +119,7 @@ class GPTQ:
             q_SNR = '-'
             fp_SNR = '-'
 
-        table.add_row([name, weight_error, fp_SNR, q_SNR, timecost])
+        table.add_row([name[-16:], weight_error, fp_SNR, q_SNR, timecost])
         print(table.draw().split('\n')[-2])
 
     def fasterquant(self, blocksize=128, percdamp=.01, groupsize=-1, actorder=False, name=''):

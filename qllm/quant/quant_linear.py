@@ -10,8 +10,19 @@ try:
     import dequantize_nbit_ops # cuda dequant
     has_module_dequantize_nbit_ops = True
 except ImportError:
+    pass
+
+try:
+    if has_module_dequantize_nbit_ops == False:
+        import subprocess
+        import sys
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'git+https://github.com/wejoncy/Nbit_DQ_GemV.git@0.1#egg=dequantize_nbit_ops'])
+        import dequantize_nbit_ops # cuda dequant
+        has_module_dequantize_nbit_ops = True
+except:
     print("torch implementation of dequantization would be used")
     pass
+
 try:
     import triton
     import triton.language as tl

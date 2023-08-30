@@ -8,4 +8,4 @@ texttable
 toml
 #numpy
 #protobuf==3.20.2
-dequantize_nbit_ops @ git+https://github.com/wejoncy/Nbit_DQ_GemV.git@0.1
+#dequantize_nbit_ops @git+https://github.com/wejoncy/Nbit_DQ_GemV.git@0.1#egg=dequantize_nbit_ops

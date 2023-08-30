@@ -1,7 +1,7 @@
 from texttable import Texttable
 import os
-if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
+#if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
+#    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
 
 import torch.nn as nn
 import torch
@@ -12,31 +12,68 @@ import time
 from pathlib import Path
 import json
 import sys
-from abc import ABC, abstractmethod
+import contextlib
 
-from utils import find_layers, DEV,export_quant_table, gen_conditions
-from gptq import GPTQ, Observer
-import quant
+from .utils import get_loaders
+from .utils import find_layers, DEV,export_quant_table, gen_conditions
+from .gptq import GPTQ, Observer
+from .quant import make_mixbits_quant_linear,QuantLinear
 
 NEED_CHECK_PACK = False
 
-class ModelQuantizationBase(ABC):
+def disable_huggingface_init():
+    # do not init model twice as it slow initialization
+    import torch
+    import torch.nn.init
+    torch.nn.init.kaiming_uniform_ = lambda x, *args, **kwargs: x
+    torch.nn.init.uniform_ = lambda x, *args, **kwargs: x
+    torch.nn.init.normal_ = lambda x, *args, **kwargs: x
+    torch.nn.init.constant_ = lambda x, *args, **kwargs: x
+    torch.nn.init.xavier_uniform_ = lambda x, *args, **kwargs: x
+    torch.nn.init.xavier_normal_ = lambda x, *args, **kwargs: x
+    torch.nn.init.kaiming_normal_ = lambda x, *args, **kwargs: x
+    torch.nn.init.orthogonal_ = lambda x, *args, **kwargs: x
+
+class ModelQuantizationBase(object):
     def __init__(self) -> None:
         super().__init__()
         self.quant_layers = [torch.nn.Linear]
     
-    @abstractmethod
-    def get_torch_model(self, model_name_or_path, dev):
-        return None,None # model, dataloader
+    def get_torch_model(self, args, dev='cpu'):
+        print(f"loading model from {args.model}")
+        disable_huggingface_init()
+        from transformers import AutoModelForCausalLM
+        llm = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, trust_remote_code=True).to(dev)
+        from pathlib import Path
+        cache_dir = Path(f"/tmp/qllm_v1/{args.model.replace(' ','_')}_{args.dataset}_dataloader.pt")
+        cache_dir.parent.mkdir(parents=True, exist_ok=True)
+        print(f"loading dataset from {args.dataset}")
+        if cache_dir.exists():
+            print(f"found cached dataloader in {cache_dir}")
+            dataloader = torch.load(cache_dir)
+        else:
+            dataloader, _ = get_loaders(args.dataset, nsamples=args.nsamples, 
+                seed=args.seed, model=args.tokenizer, seqlen=2048)
+            torch.save(dataloader, str(cache_dir))
+        return llm,dataloader # model, dataloader
 
     def __load_quant(self, qmodel, args):
         print(f"loading quantized model from {qmodel}")
-        # do not init model twice as it slow initialization
-        import torch.nn.init
-        torch.nn.init.kaiming_uniform_ = lambda x, *args, **kwargs: x
-        torch.nn.init.uniform_ = lambda x, *args, **kwargs: x
-        torch.nn.init.kaiming_normal_ = lambda x, *args, **kwargs: x
-        model, dataloader = self.get_torch_model(args.model, args.nsamples)
+        args.model = args.load
+
+        @contextlib.contextmanager
+        def stack_attr(attrs:list):
+            old_attr = []
+            new_method = lambda x, *args, **kwargs: x
+            for attr in attrs:
+                old_attr.append(getattr(torch.Tensor, attr))
+                setattr(torch.Tensor, attr, new_method)
+            yield
+            for idx,attr in enumerate(attrs):
+                setattr(torch.Tensor, attr, old_attr[idx])
+
+        with stack_attr(['normal_','uniform_','kaiming_uniform_','kaiming_normal_']):
+            model, dataloader = self.get_torch_model(args, dev='cpu')
         import transformers
         layers = find_layers(model, layers=self.quant_layers)
         # backward compatability
@@ -52,7 +89,7 @@ class ModelQuantizationBase(ABC):
             if layer_name not in qunat_info:
                 del layers[layer_name]
 
-        quant.make_mixbits_quant_linear(model, layers, qunat_info)
+        make_mixbits_quant_linear(model, layers, qunat_info)
         del layers
         import glob
         weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
@@ -73,7 +110,12 @@ class ModelQuantizationBase(ABC):
 
         attention_layers = None
         pre_layers_of_attention = [] # enmbedding layer, norm layer
-        for name,layer in model.get_decoder().named_children():
+
+        transformer_model = model
+        while len(list(transformer_model.named_children())) <=2:
+            decoder_name = next(transformer_model.named_children())[0]
+            transformer_model = getattr(transformer_model, decoder_name)
+        for name,layer in transformer_model.named_children():
             if type(layer) in [torch.nn.ModuleList]:
                 attention_layers = layer
                 break
@@ -92,21 +134,24 @@ class ModelQuantizationBase(ABC):
         attention_layers[0] = attention_layers[0].to(dev)
 
         dtype = next(iter(model.parameters())).dtype
-        # model.config.max_seq_len
-        inps = torch.zeros((args.nsamples, dataloader[0][0].shape[-1], model.config.d_model), dtype=dtype)
+        swap_device = torch.device('cpu')
+        #torch.zeros((args.nsamples, dataloader[0][0].shape[-1], model.config.d_model), dtype=dtype)
+        inps = [0 for i in range(len(dataloader))]
         cache = {'i': 0, 'attention_mask': None}
 
         class Catcher(nn.Module):
-
             def __init__(self, module):
                 super().__init__()
                 self.module = module
 
             def forward(self, inp, **kwargs):
-                inps[cache['i']] = inp.cpu()
+                inps[cache['i']] = inp.to(swap_device)
                 cache['i'] += 1
                 cache['attention_mask'] = kwargs['attention_mask']
-                # cache['position_ids'] = kwargs['position_ids']
+                if 'position_ids' in kwargs:
+                    cache['position_ids'] = kwargs['position_ids']
+                if 'alibi' in kwargs:
+                    cache['alibi'] = kwargs['alibi']
                 raise ValueError
 
         attention_layers[0] = Catcher(attention_layers[0])
@@ -122,9 +167,14 @@ class ModelQuantizationBase(ABC):
             layer = layer.cpu()
         torch.cuda.empty_cache()
 
+        inps = torch.cat(inps, dim=0)
         outs = torch.zeros_like(inps)
         attention_mask = cache['attention_mask']
-        # position_ids = cache['position_ids']
+        layer_input_args = {'attention_mask': cache['attention_mask']}
+        if 'position_ids' in cache:
+            layer_input_args['position_ids'] = cache['position_ids']
+        if 'alibi' in cache:
+            layer_input_args['alibi'] = cache['alibi']
 
         print('Ready.')
 
@@ -165,9 +215,8 @@ class ModelQuantizationBase(ABC):
                 handles = []
                 for name in subset:
                     handles.append(subset[name].register_forward_hook(add_batch(name)))
-                for j in range(args.nsamples):
-                    outs[j] = layer(inps[j].unsqueeze(0).to(dev), attention_mask=attention_mask,  # position_ids=position_ids
-                                    )[0].cpu()
+                for j in range(len(dataloader)):
+                    outs[j] = layer(inps[j].unsqueeze(0).to(dev), **layer_input_args)[0].to(swap_device)
                 for h in handles:
                     h.remove()
 
@@ -185,9 +234,8 @@ class ModelQuantizationBase(ABC):
             # [ TODO ]
             # I am supposing layer's weight should be quantized and modified, we are statisting the error
             # accumulated from the previous layers and compensate next layer
-            for j in range(args.nsamples):
-                outs[j] = layer(inps[j].unsqueeze(0).to(dev), attention_mask=attention_mask,  # position_ids=position_ids
-                                )[0].cpu()
+            for j in range(len(dataloader)):
+                outs[j] = layer(inps[j].unsqueeze(0).to(dev), **layer_input_args)[0].cpu()
 
             attention_layers[i] = layer.cpu()
             del layer
@@ -248,8 +296,8 @@ class ModelQuantizationBase(ABC):
         attention_layers = find_layers(model, self.quant_layers)
         attention_layers = {n: attention_layers[n] for n in quantizers}
         quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
-        quant.make_mixbits_quant_linear(model, quantizers, quant_info)
-        qlayers = find_layers(model, [quant.QuantLinear])
+        make_mixbits_quant_linear(model, quantizers, quant_info)
+        qlayers = find_layers(model, [QuantLinear])
         print('Packing ...')
         for name in qlayers:
             print(name)
@@ -374,7 +422,8 @@ class ModelQuantizationBase(ABC):
         self.append_default_args()
         parser = argparse.ArgumentParser()
 
-        parser.add_argument('--model', type=str, default='mosaicml/mpt-7b', help='mpt model to load')
+        parser.add_argument('--model', type=str, default="", help='float/float16 model to load, such as [mosaicml/mpt-7b]')
+        parser.add_argument('--tokenizer', type=str, default="", help='default same as [model]')
         parser.add_argument('--dataset', type=str, default='c4',
                             choices=['wikitext2', 'ptb', 'c4'], help='Where to extract calibration data from.')
         parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
@@ -413,6 +462,8 @@ class ModelQuantizationBase(ABC):
 
 
     def run(self, args):
+        if args.tokenizer == "":
+            args.tokenizer = args.model
         if args.layers_dist:
             gpu_dist = [int(x) for x in args.layers_dist.split(':')]
         else:
@@ -424,9 +475,11 @@ class ModelQuantizationBase(ABC):
         if args.load:
             model, dataloader = self.__load_quant(args.load, args)
             model.eval()
-        else:
-            model, dataloader = self.get_torch_model(args.model, args.nsamples)
+        elif args.model:
+            model, dataloader = self.get_torch_model(args, dev='cpu')
             model.eval()
+        else:
+            raise ValueError("either --model or --load must be specified")
 
         if not args.load and args.wbits < 16 and not args.nearest:
             if args.mix_qlayer_conf:
@@ -436,7 +489,7 @@ class ModelQuantizationBase(ABC):
             tick = time.time()
             quantizers = self.__quant_by_sequential(model, dataloader, args, DEV)
             model, quant_info = self.pack_model(model, quantizers)
-            print(time.time() - tick)
+            print("Finished quantization and packing weight, time cost:", time.time() - tick)
 
         if args.quant_directory is not None:
             export_quant_table(quantizers, args.quant_directory)
@@ -458,8 +511,13 @@ class ModelQuantizationBase(ABC):
             safe_save(state_dict, args.save_safetensors)
 
 
-if __name__ == '__main__':
+def main():
+    print("quantize LLM with base engine")
     model_quanter = ModelQuantizationBase()
     parser = model_quanter.define_basic_args()
     args = parser.parse_args()
+    print(args)
     model_quanter.run(args)
+    
+if __name__ == '__main__':
+    main()
