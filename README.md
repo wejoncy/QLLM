@@ -1,8 +1,8 @@
 # QLLM
+![qllm](https://github.com/wejoncy/QLLM/assets/9417365/776a8ebd-43ea-4657-853a-2ebcfd4bed34)
 
 Supporting GPTQ quantization method.
-
-We support 2-8 bits quantization and conresspoing kernels on Nvidia-GPU, we will consider support AMD GPU too.
+We support 2-8 bits quantization and conresspoing kernels on **Nvidia-GPU**, we will consider support **AMD-GPU** too.
 
 ## Installation
 ```
@@ -16,14 +16,8 @@ pip install git+https://github.com/wejoncy/GPTQ-for-LLMs.git@aaf4e73eff732f85974
 * `safetensors`: tested on v0.3.0
 
 # Language Generation
-## LLaMA
 
 ```
-#convert LLaMA to hf
-python convert_llama_weights_to_hf.py --input_dir /path/to/downloaded/llama/weights --model_size 7B --output_dir ./llama-hf
-
-# Benchmark language generation with 4-bit LLaMA-7B:
-
 # Save compressed model
 CUDA_VISIBLE_DEVICES=0 python -m qllm.model_quantization_base --model=meta-llama/Llama-2-7b-hf --save ./Llama-2-7b-4bit
 
@@ -35,6 +29,7 @@ CUDA_VISIBLE_DEVICES=0 python -m qllm.model_quantization_base --load ./Llama-2-7
 
 # model inference with ORT
 TO be DONE
+```
 
 # Acknowledgements
 This code is based on [GPTQ](https://github.com/IST-DASLab/gptq)
