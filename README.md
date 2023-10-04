@@ -1,5 +1,5 @@
 # QLLM
-![qllm](https://github.com/wejoncy/QLLM/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg)
+<img src="https://github.com/wejoncy/QLLM/blob/main/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg?raw=true" width="420">
 
 Supporting GPTQ quantization method.
 We support 2-8 bits quantization and conresspoing kernels on **Nvidia-GPU**, we will consider support **AMD-GPU** too.
