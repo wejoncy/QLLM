@@ -1,12 +1,12 @@
 # QLLM
-![qllm](https://github.com/wejoncy/QLLM/assets/9417365/776a8ebd-43ea-4657-853a-2ebcfd4bed34)
+![qllm](https://github.com/wejoncy/QLLM/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg)
 
 Supporting GPTQ quantization method.
 We support 2-8 bits quantization and conresspoing kernels on **Nvidia-GPU**, we will consider support **AMD-GPU** too.
 
 ## Installation
 ```
-pip install git+https://github.com/wejoncy/GPTQ-for-LLMs.git@aaf4e73eff732f85974cf7f03245901007c039dc
+pip install git+https://github.com/wejoncy/QLLM.git
 ```
 ## Dependencies
 
