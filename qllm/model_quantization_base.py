@@ -14,25 +14,13 @@ import json
 import sys
 import contextlib
 
-from .utils import get_loaders
+from .utils import get_loaders, disable_huggingface_init
 from .utils import find_layers, DEV,export_quant_table, gen_conditions
 from .gptq import GPTQ, Observer
 from .quant import make_mixbits_quant_linear,QuantLinear
 
 NEED_CHECK_PACK = False
 
-def disable_huggingface_init():
-    # do not init model twice as it slow initialization
-    import torch
-    import torch.nn.init
-    torch.nn.init.kaiming_uniform_ = lambda x, *args, **kwargs: x
-    torch.nn.init.uniform_ = lambda x, *args, **kwargs: x
-    torch.nn.init.normal_ = lambda x, *args, **kwargs: x
-    torch.nn.init.constant_ = lambda x, *args, **kwargs: x
-    torch.nn.init.xavier_uniform_ = lambda x, *args, **kwargs: x
-    torch.nn.init.xavier_normal_ = lambda x, *args, **kwargs: x
-    torch.nn.init.kaiming_normal_ = lambda x, *args, **kwargs: x
-    torch.nn.init.orthogonal_ = lambda x, *args, **kwargs: x
 
 class ModelQuantizationBase(object):
     def __init__(self) -> None:

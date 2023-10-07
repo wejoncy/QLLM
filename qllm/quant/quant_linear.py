@@ -4,19 +4,16 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
+import importlib
+
 
 try:
-    has_module_dequantize_nbit_ops = False
-    import dequantize_nbit_ops # cuda dequant
-    has_module_dequantize_nbit_ops = True
-except ImportError:
-    pass
+    has_module_dequantize_nbit_ops = importlib.util.find_spec("dequantize_nbit_ops")
 
-try:
     if has_module_dequantize_nbit_ops == False:
         import subprocess
         import sys
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'git+https://github.com/wejoncy/Nbit_DQ_GemV.git@0.1#egg=dequantize_nbit_ops'])
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'git+https://github.com/wejoncy/DQOps.git@0.1#egg=dequantize_nbit_ops'])
         import dequantize_nbit_ops # cuda dequant
         has_module_dequantize_nbit_ops = True
 except:
