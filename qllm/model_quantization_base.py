@@ -84,12 +84,12 @@ class ModelQuantizationBase(object):
             if layer_name not in qunat_info:
                 del layers[layer_name]
 
-        if quant_layers_json["method"] == "gptq":
+        if qunat_info["method"] == "gptq":
             target_layer = QuantLinear
-        elif quant_layers_json["method"] == "awq" and has_awq_inference_engine():
+        elif qunat_info["method"] == "awq" and has_awq_inference_engine():
             target_layer = WQLinear_GEMM
         else:
-            raise ValueError(f"unknown quantization method {quant_layers_json['method']}")
+            raise ValueError(f"unknown quantization method {qunat_info['method']}")
         make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
         del layers
         import glob
