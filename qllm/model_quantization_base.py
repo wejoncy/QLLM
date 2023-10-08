@@ -119,6 +119,8 @@ class ModelQuantizationBase(object):
             target_layer = QuantLinear
         elif args.method == "awq" and has_awq_inference_engine():
             target_layer = WQLinear_GEMM
+        else:
+            target_layer = QuantLinear
         make_mixbits_quant_linear(model, quantizers, quant_info, target_layer=target_layer)
         qlayers = find_layers(model, [target_layer])
         print('Packing ...')
