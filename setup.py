@@ -40,6 +40,18 @@ def get_requirements() -> List[str]:
         requirements = f.read().strip().split("\n")
     return requirements
 
+def get_nvcc_cuda_version(cuda_dir: str) -> Version:
+    """Get the CUDA version from nvcc.
+
+    Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
+    """
+    nvcc_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"],
+                                          universal_newlines=True)
+    output = nvcc_output.split()
+    release_idx = output.index("release") + 1
+    nvcc_cuda_version = parse(output[release_idx].split(",")[0])
+    return nvcc_cuda_version
+
 def get_compute_capabilities():
     # Collect the compute capabilities of all available GPUs.
     compute_capabilities = set()
@@ -49,8 +61,12 @@ def get_compute_capabilities():
             raise RuntimeError("GPUs with compute capability less than 8.0 are not supported.")
         compute_capabilities.add(major * 10 + minor)
 
-    # figure out compute capability
-    compute_capabilities = {80, 86, 89, 90}
+    nvcc_cuda_version = get_nvcc_cuda_version(CUDA_HOME)
+    if nvcc_cuda_version < Version("11.1"):
+        compute_capabilities.discard(86)
+    if nvcc_cuda_version < Version("11.8"):
+        compute_capabilities.discard(89)
+        compute_capabilities.discard(90)
 
     capability_flags = []
     for cap in compute_capabilities:
@@ -60,6 +76,7 @@ def get_compute_capabilities():
 
 def get_include_dirs():
     include_dirs = []
+    from distutils.sysconfig import get_python_lib
 
     conda_cuda_include_dir = os.path.join(get_python_lib(), "nvidia/cuda_runtime/include")
     if os.path.isdir(conda_cuda_include_dir):
@@ -111,11 +128,11 @@ if torch.cuda.get_device_properties(0).major >= 8:
         CUDAExtension(
             "awq_inference_engine",
             [
-                "awq_cuda/pybind_awq.cpp",
-                "awq_cuda/quantization/gemm_cuda_gen.cu",
-                #"awq_cuda/layernorm/layernorm.cu",
-                #"awq_cuda/position_embedding/pos_encoding_kernels.cu",
-                "awq_cuda/quantization/gemv_cuda.cu"
+                "src/awq_cuda/pybind_awq.cpp",
+                "src/awq_cuda/quantization/gemm_cuda_gen.cu",
+                #"src/awq_cuda/layernorm/layernorm.cu",
+                #"src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                "src/awq_cuda/quantization/gemv_cuda.cu"
             ], extra_compile_args=extra_compile_args
         )
     ]
