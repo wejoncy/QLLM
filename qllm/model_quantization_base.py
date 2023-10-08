@@ -56,11 +56,15 @@ class ModelQuantizationBase(object):
             old_attr = []
             new_method = lambda x, *args, **kwargs: x
             for attr in attrs:
-                old_attr.append(getattr(torch.Tensor, attr))
-                setattr(torch.Tensor, attr, new_method)
+                try:
+                    old_attr.append(getattr(torch.Tensor, attr))
+                    setattr(torch.Tensor, attr, new_method)
+                except:
+                    old_attr.append(None)
             yield
             for idx, attr in enumerate(attrs):
-                setattr(torch.Tensor, attr, old_attr[idx])
+                if old_attr[idx] is not None:
+                    setattr(torch.Tensor, attr, old_attr[idx])
 
         with stack_attr(['normal_', 'uniform_', 'kaiming_uniform_', 'kaiming_normal_']):
             model, dataloader = self.get_torch_model(args, dev='cpu')
