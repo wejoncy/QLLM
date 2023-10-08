@@ -8,6 +8,7 @@ def clear_memory(weight=None):
     gc.collect()
     torch.cuda.empty_cache()
 
+
 def disable_huggingface_init():
     # do not init model twice as it slow initialization
     import torch

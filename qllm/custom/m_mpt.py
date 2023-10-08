@@ -1,7 +1,10 @@
+from ..quant import make_mixbits_quant_linear, QuantLinear
+from ..utils import find_layers, DEV, export_quant_table, gen_conditions
+from ..gptq import GPTQ, Observer
 from texttable import Texttable
 import os
-if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
+if "CUDA_VISIBLE_DEVICES" not in os.environ:  # NOQA
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # NOQA
 
 import torch.nn as nn
 import torch
@@ -13,14 +16,11 @@ from pathlib import Path
 import json
 
 import sys
-#sys.path.append(os.path.dirname(__file__)) # NOQA
+# sys.path.append(os.path.dirname(__file__)) # NOQA
 print("adding path", os.getcwd())
 sys.path.append(os.getcwd())   # NOQA
+import loralib as lora # NOQA
 
-from ..utils import find_layers, DEV,export_quant_table, gen_conditions
-from ..gptq import GPTQ, Observer
-import loralib as lora
-from ..quant import make_mixbits_quant_linear,QuantLinear
 
 NEED_CHECK_PACK = False
 
@@ -244,7 +244,7 @@ def mpt_sequential(model, dataloader, mix_qlayer_conf, dev):
     return quantizers
 
 
-#@torch.no_grad()
+# @torch.no_grad()
 def mpt_eval(model, argv_user, dev):
     print('Evaluating ...')
     sys.argv = argv_user
@@ -281,8 +281,8 @@ def mpt_pack(model, quantizers):
 
 
 def export_onnx(model, onnx_path, sample_inputs: tuple):
-    #model = model.cpu().float()
-    model=model.cuda()
+    # model = model.cpu().float()
+    model = model.cuda()
     from pathlib import Path
     import shutil
     onnx_filepath = Path(onnx_path).absolute()
@@ -311,7 +311,6 @@ def export_onnx(model, onnx_path, sample_inputs: tuple):
                     location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
 
 
-
 def append_default_args():
     if '--wbits' not in sys.argv:
         sys.argv += ['--wbits', '4']
@@ -322,15 +321,15 @@ def append_default_args():
     if '--nsamples' not in sys.argv:
         sys.argv += ['--nsamples', '512']
 
-    #if '--export_onnx' not in sys.argv:
+    # if '--export_onnx' not in sys.argv:
     #    sys.argv += ['--export_onnx', './mpt_onnx_q4/mpt.onnx']
  #
-    #if '--eval' not in sys.argv:
+    # if '--eval' not in sys.argv:
     #    sys.argv += ['--eval']
 
-    #if '--save' not in sys.argv:
+    # if '--save' not in sys.argv:
     #    sys.argv += ['--save', './mpt_q4']
-    #if '--load' not in sys.argv:
+    # if '--load' not in sys.argv:
     #    sys.argv += ['--load', './mpt_q4']
 
 
@@ -353,7 +352,7 @@ def process_forward_args(args):
 
 
 if __name__ == '__main__':
-    #,'--observe','--act-order'
+    # ,'--observe','--act-order'
     append_default_args()
     parser = argparse.ArgumentParser()
 
@@ -368,7 +367,8 @@ if __name__ == '__main__':
     parser.add_argument('--wbits', type=int, default=16,
                         choices=[2, 3, 4, 5, 6, 7, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
-    parser.add_argument('--mix_qlayer_conf', type=str, default=None, help='Mix quantization layer configuration.(groupsize,wbits)')
+    parser.add_argument('--mix_qlayer_conf', type=str, default=None,
+                        help='Mix quantization layer configuration.(groupsize,wbits)')
     parser.add_argument('--groupsize', type=int, default=-1,
                         help='Groupsize to use for quantization; default uses full row.')
     parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
@@ -439,4 +439,3 @@ if __name__ == '__main__':
         state_dict = model.state_dict()
         state_dict = {k: v.clone().contiguous() for k, v in state_dict.items()}
         safe_save(state_dict, args.save_safetensors)
-

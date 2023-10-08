@@ -1,4 +1,4 @@
-#https://github.com/fpgaminer/GPTQ-triton
+# https://github.com/fpgaminer/GPTQ-triton
 """
 Mostly the same as the autotuner in Triton, but with a few changes like using 40 runs instead of 100.
 """
@@ -15,12 +15,12 @@ class Autotuner(triton.KernelInterface):
 
     def __init__(self, fn, arg_names, configs, key, reset_to_zero, prune_configs_by: Dict = None, nearest_power_of_two: bool = False):
         '''
-		:param prune_configs_by: a dict of functions that are used to prune configs, fields:
-			'perf_model': performance model used to predicate running time with different configs, returns running time
-			'top_k': number of configs to bench
-			'prune_num_stages_by'(optional): a function used to prune num_stages. It take configs:List[Config] as its input, and returns pruned configs.
-			'nearest_power_of_two'(optional): whether to round key arguments to the nearest power of two when caching tuning results
-		'''
+                :param prune_configs_by: a dict of functions that are used to prune configs, fields:
+                        'perf_model': performance model used to predicate running time with different configs, returns running time
+                        'top_k': number of configs to bench
+                        'prune_num_stages_by'(optional): a function used to prune num_stages. It take configs:List[Config] as its input, and returns pruned configs.
+                        'nearest_power_of_two'(optional): whether to round key arguments to the nearest power of two when caching tuning results
+                '''
         if not configs:
             self.configs = [triton.Config({}, num_warps=4, num_stages=2)]
         else:
@@ -110,7 +110,8 @@ class Autotuner(triton.KernelInterface):
             if isinstance(top_k, float) and top_k <= 1.0:
                 top_k = int(len(self.configs) * top_k)
             if len(pruned_configs) > top_k:
-                est_timing = {config: self.perf_model(**self.nargs, **kwargs, **config.kwargs, num_stages=config.num_stages, num_warps=config.num_warps) for config in pruned_configs}
+                est_timing = {config: self.perf_model(
+                    **self.nargs, **kwargs, **config.kwargs, num_stages=config.num_stages, num_warps=config.num_warps) for config in pruned_configs}
                 pruned_configs = sorted(est_timing.keys(), key=lambda x: est_timing[x])[:top_k]
         return pruned_configs
 
@@ -129,34 +130,34 @@ class Autotuner(triton.KernelInterface):
 
 def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, nearest_power_of_two=False):
     """
-	Decorator for auto-tuning a :code:`triton.jit`'d function.
-	.. highlight:: python
-	.. code-block:: python
-		@triton.autotune(configs=[
-			triton.Config(meta={'BLOCK_SIZE': 128}, num_warps=4),
-			triton.Config(meta={'BLOCK_SIZE': 1024}, num_warps=8),
-			],
-			key=['x_size'] # the two above configs will be evaluated anytime
-							# the value of x_size changes
-		)
-		@triton.jit
-		def kernel(x_ptr, x_size, **META):
-			BLOCK_SIZE = META['BLOCK_SIZE']
-	:note: When all the configurations are evaluated, the kernel will run multiple time.
-			This means that whatever value the kernel updates will be updated multiple times.
-			To avoid this undesired behavior, you can use the `reset_to_zero` argument, which
-			reset the value of the provided tensor to `zero` before running any configuration.
-	:param configs: a list of :code:`triton.Config` objects
-	:type configs: list[triton.Config]
-	:param key: a list of argument names whose change in value will trigger the evaluation of all provided configs.
-	:type key: list[str]
-	:param prune_configs_by: a dict of functions that are used to prune configs, fields:
-		'perf_model': performance model used to predicate running time with different configs, returns running time
-		'top_k': number of configs to bench
-		'early_config_prune'(optional): a function used to do early prune (eg, num_stages). It take configs:List[Config] as its input, and returns pruned configs.
-	:param reset_to_zero: a list of argument names whose value will be reset to zero before evaluating any configs.
-	:type reset_to_zero: list[str]
-	"""
+        Decorator for auto-tuning a :code:`triton.jit`'d function.
+        .. highlight:: python
+        .. code-block:: python
+                @triton.autotune(configs=[
+                        triton.Config(meta={'BLOCK_SIZE': 128}, num_warps=4),
+                        triton.Config(meta={'BLOCK_SIZE': 1024}, num_warps=8),
+                        ],
+                        key=['x_size'] # the two above configs will be evaluated anytime
+                                                        # the value of x_size changes
+                )
+                @triton.jit
+                def kernel(x_ptr, x_size, **META):
+                        BLOCK_SIZE = META['BLOCK_SIZE']
+        :note: When all the configurations are evaluated, the kernel will run multiple time.
+                        This means that whatever value the kernel updates will be updated multiple times.
+                        To avoid this undesired behavior, you can use the `reset_to_zero` argument, which
+                        reset the value of the provided tensor to `zero` before running any configuration.
+        :param configs: a list of :code:`triton.Config` objects
+        :type configs: list[triton.Config]
+        :param key: a list of argument names whose change in value will trigger the evaluation of all provided configs.
+        :type key: list[str]
+        :param prune_configs_by: a dict of functions that are used to prune configs, fields:
+                'perf_model': performance model used to predicate running time with different configs, returns running time
+                'top_k': number of configs to bench
+                'early_config_prune'(optional): a function used to do early prune (eg, num_stages). It take configs:List[Config] as its input, and returns pruned configs.
+        :param reset_to_zero: a list of argument names whose value will be reset to zero before evaluating any configs.
+        :type reset_to_zero: list[str]
+        """
 
     def decorator(fn):
         return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, prune_configs_by, nearest_power_of_two)
@@ -189,5 +190,5 @@ def matmul248_kernel_config_pruner(configs, nargs):
             'BLOCK_SIZE_K': block_size_k,
             'GROUP_SIZE_M': group_size_m
         },
-                            num_stages=config.num_stages,
-                            num_warps=config.num_warps)
+            num_stages=config.num_stages,
+            num_warps=config.num_warps)
