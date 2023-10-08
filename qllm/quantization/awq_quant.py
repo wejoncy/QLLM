@@ -75,6 +75,8 @@ class AWQQuant(QuantFrameBase):
                 input_tensor = input_tensor.unsqueeze(0)
                 input_tensor = input_tensor.to(dev)
                 outs.append(layer_block(input_tensor, **layer_kwargs)[0])
+            for key in input_feat:
+                input_feat[key] = [torch.cat(input_feat[key], dim=0)]
             outs = torch.concat(outs, dim=0)
         for h in handles:
             h.remove()
@@ -109,14 +111,11 @@ class AWQQuant(QuantFrameBase):
         model = self.prepare(model)
         state_dict_prefix = self.extract_prefix(model)
         inps, outs, attention_layers, layer_kwargs = self.hijack_block_inputs(model, dataloader, args, dev)
-        layer_kwargs['attention_mask'] = layer_kwargs['attention_mask'].expand(len(dataloader), -1, -1, -1)
+        if not USE_ACCUMULATE_BATCH:
+            layer_kwargs['attention_mask'] = layer_kwargs['attention_mask'].expand(len(dataloader), -1, -1, -1)
         print('Ready.')
 
         quantizers = {}
-        awq_results = {
-            "scale": [],
-            "clip": [],
-        }
         # solve layer by layer
         for i in tqdm.tqdm(range(len(attention_layers)), desc="Running AWQ..."):
             layer = attention_layers[i]
@@ -128,10 +127,10 @@ class AWQQuant(QuantFrameBase):
             in_quantizer.configure(args.wbits, self.q_config, self.auto_scale, self.auto_clip)
 
             in_quantizer.fast_quant_layer(layer_kwargs, input_feat, layer, attention_layers, i)
+            self._apply_quant(model, named_linears, quantizers, f"{state_dict_prefix}.{i}")
 
             layer = layer.cpu()
             # Haotian: check activation replacement
             clear_memory(input_feat)
-            self._apply_quant(model, named_linears, quantizers, f"{state_dict_prefix}.{i}")
         # real_quantize_model_weight(attention_layers, args.wbits, self.q_config)
         return quantizers
