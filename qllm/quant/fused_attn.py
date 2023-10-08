@@ -69,8 +69,10 @@ def triton_rotate_half_(qk, position_ids, config=None):
     assert qk.stride(4) == 1
     assert position_ids.shape == (batch_size, seq_len)
     assert position_ids.stride(1) == 1, 'position_ids must be contiguous in the last dimension'
-    assert (2 * num_heads) % config['BLOCK_HEIGHT'] == 0, f'number of rows not evenly divisible by {config["BLOCK_HEIGHT"]}'
-    assert (head_dim // 2) % config['BLOCK_WIDTH'] == 0, f'number of columns ({head_dim // 2}) not evenly divisible by {config["BLOCK_WIDTH"]}'
+    assert (
+        2 * num_heads) % config['BLOCK_HEIGHT'] == 0, f'number of rows not evenly divisible by {config["BLOCK_HEIGHT"]}'
+    assert (
+        head_dim // 2) % config['BLOCK_WIDTH'] == 0, f'number of columns ({head_dim // 2}) not evenly divisible by {config["BLOCK_WIDTH"]}'
 
     qk_by_seq = qk.view(batch_size * seq_len, 2 * num_heads * head_dim)
     grid = (qk_by_seq.shape[0], (2 * num_heads // config['BLOCK_HEIGHT']) * (head_dim // 2 // config['BLOCK_WIDTH']))
@@ -179,7 +181,8 @@ def make_quant_attn(model):
         g_idx = torch.cat([q_proj.g_idx, k_proj.g_idx, v_proj.g_idx], dim=0)
         bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
-        qkv_layer = QuantLinear(q_proj.bits, q_proj.groupsize, q_proj.infeatures, q_proj.outfeatures + k_proj.outfeatures + v_proj.outfeatures, True if q_proj.bias is not None else False)
+        qkv_layer = QuantLinear(q_proj.bits, q_proj.groupsize, q_proj.infeatures, q_proj.outfeatures +
+                                k_proj.outfeatures + v_proj.outfeatures, True if q_proj.bias is not None else False)
         qkv_layer.qweight = qweights
         qkv_layer.qzeros = qzeros
         qkv_layer.scales = scales
@@ -198,6 +201,6 @@ def make_quant_attn(model):
             parent = model
             child_name = name
 
-        #print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
+        # print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
 
         setattr(parent, child_name, attn)
