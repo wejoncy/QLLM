@@ -4,6 +4,7 @@ import triton
 import triton.language as tl
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
+
 @triton.jit
 def rms_norm_fwd_fused(
     X,  # pointer to the input
@@ -38,6 +39,7 @@ def rms_norm_fwd_fused(
         # Write output
         tl.store(Y + cols, y, mask=mask)
 
+
 class TritonLlamaRMSNorm(nn.Module):
     def __init__(self, weight, eps=1e-6):
         """
@@ -60,12 +62,12 @@ class TritonLlamaRMSNorm(nn.Module):
         # heuristics for number of warps
         num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
         # enqueue kernel
-        rms_norm_fwd_fused[(M,)](x_arg, y, self.weight, 
+        rms_norm_fwd_fused[(M,)](x_arg, y, self.weight,
                                  x_arg.stride(0), N, self.variance_epsilon,
                                  BLOCK_SIZE=BLOCK_SIZE, num_warps=num_warps)
         return y
-        
-        
+
+
 def make_quant_norm(model):
     """
     Replace all LlamaRMSNorm modules with TritonLlamaRMSNorm modules
@@ -86,6 +88,6 @@ def make_quant_norm(model):
             parent = model
             child_name = name
 
-        #print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
+        # print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
 
         setattr(parent, child_name, norm)

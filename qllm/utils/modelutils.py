@@ -3,6 +3,7 @@ import torch.nn as nn
 
 DEV = torch.device('cuda:0')
 
+
 def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):
     if type(module) in layers:
         return {name: module}
@@ -35,13 +36,13 @@ def gen_conditions(_wbits, _groupsize):
 def torch_snr_error(y_pred: torch.Tensor, y_real: torch.Tensor, reduction: str = 'mean') -> torch.Tensor:
     """
     Compute SNR between y_pred(tensor) and y_real(tensor)
-    
+
     SNR can be calcualted as following equation:
-    
+
         SNR(pred, real) = (pred - real) ^ 2 / (real) ^ 2
-    
+
     if x and y are matrixs, SNR error over matrix should be the mean value of SNR error over all elements.
-    
+
         SNR(pred, real) = mean((pred - real) ^ 2 / (real) ^ 2)
     Args:
         y_pred (torch.Tensor): _description_

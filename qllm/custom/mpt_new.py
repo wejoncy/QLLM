@@ -1,14 +1,14 @@
 from texttable import Texttable
 import os
-if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
+if "CUDA_VISIBLE_DEVICES" not in os.environ:  # NOQA
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # NOQA
 
 import torch.nn as nn
 import torch
 from pathlib import Path
 
 import sys
-sys.path.append(os.path.dirname(__file__)) # NOQA
+sys.path.append(os.path.dirname(__file__))  # NOQA
 sys.path.append(os.getcwd())   # NOQA
 
 import loralib as lora
@@ -54,9 +54,10 @@ class MPT(model_quantization_base.ModelQuantizationBase):
         run_mpt_prompt.main(quant_model=model.to(dev))
 
     def export_onnx(self, model, onnx_path, sample_inputs: tuple):
-        model = self.pipeline_to_multiple_gpu(model, [torch.device(i) for i in range(torch.cuda.device_count())],sample_inputs)
-        #model = model.cpu().float()
-        #model = model.cuda()
+        model = self.pipeline_to_multiple_gpu(model, [torch.device(i)
+                                              for i in range(torch.cuda.device_count())], sample_inputs)
+        # model = model.cpu().float()
+        # model = model.cuda()
         os.environ["export_onnx"] = "1"
         from pathlib import Path
         import shutil
@@ -74,9 +75,9 @@ class MPT(model_quantization_base.ModelQuantizationBase):
         onnx_inp_names = ("input_ids", "attention_mask")
         onnx_out_names = ("logits",)
         onnx_dynamic_axes = {"input_ids": {0: 'batch_size', 1: "seq_len"},
-                            "attention_mask": {0: 'batch_size', 1: "seq_len"}}
+                             "attention_mask": {0: 'batch_size', 1: "seq_len"}}
         torch.onnx.export(model=model, args=onnx_inputs, f=str(onnx_filepath_export_multi_files_tmp), verbose=False, opset_version=16,
-                        input_names=onnx_inp_names, output_names=onnx_out_names, dynamic_axes=onnx_dynamic_axes)
+                          input_names=onnx_inp_names, output_names=onnx_out_names, dynamic_axes=onnx_dynamic_axes)
         import onnx
         onnx_model = onnx.load(str(onnx_filepath_export_multi_files_tmp))
 
@@ -84,7 +85,6 @@ class MPT(model_quantization_base.ModelQuantizationBase):
         (onnx_path.parent/'mpt_ext.data').exists() and (onnx_path.parent/'mpt_ext.data').unlink()
         onnx.save_model(onnx_model, str(onnx_path), save_as_external_data=True, all_tensors_to_one_file=True,
                         location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
-
 
     def process_forward_args(self, args):
         argv_user = args.forward_args
@@ -102,7 +102,7 @@ class MPT(model_quantization_base.ModelQuantizationBase):
                 argv_user[i] = argv_map[f'____{idx}___']
                 idx += 1
         self.argv_user = argv_user
-        
+
 
 if __name__ == '__main__':
     mpt_quanter = MPT()
@@ -115,4 +115,3 @@ if __name__ == '__main__':
         mpt_quanter.argv_user[mpt_quanter.argv_user.index('--model_name_or_path')+1] = os.path.abspath(args.load)
 
     mpt_quanter.run(args)
-
