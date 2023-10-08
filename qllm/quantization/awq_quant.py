@@ -102,8 +102,8 @@ class AWQQuant(QuantFrameBase):
             layer_key = f"{state_dict_prefix}.{name}"
             quantizers[layer_key] = (
                 None, scales.cpu(), zeros.cpu(), None, self.args.wbits, self.args.groupsize)
-
-            clear_memory()
+            linear_layer.cpu()
+            clear_memory(scales, zeros)
 
     @torch.no_grad()
     def quantize(self, model, dataloader, dev):

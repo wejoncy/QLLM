@@ -394,7 +394,7 @@ class InternalAWQuantizer(nn.Module):
             w_max = get_weight_scale(
                 weight, q_group_size=self.q_config.get("q_group_size", -1))
             # Clear GPU memory
-            clear_memory(weight=weight)
+            clear_memory(weight)
 
             x = x.to(next(block.parameters()).device)
             with torch.no_grad():

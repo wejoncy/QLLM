@@ -2,8 +2,8 @@ import gc
 import torch
 
 
-def clear_memory(weight=None):
-    if weight is not None:
+def clear_memory(*args):
+    for weight in args:
         del weight
     gc.collect()
     torch.cuda.empty_cache()
