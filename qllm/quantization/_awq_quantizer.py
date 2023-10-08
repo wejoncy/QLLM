@@ -5,9 +5,7 @@ import math
 from ..utils.comm_utils import clear_memory
 from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name, ScaledLinear
 
-
-USE_ACCUMULATE_BATCH = False
-
+USE_ACCUMULATE_BATCH = -1
 
 
 def get_model_specific_quant_layer(module, input_feat, module_kwargs):
@@ -398,10 +396,11 @@ class InternalAWQuantizer(nn.Module):
 
             x = x.to(next(block.parameters()).device)
             with torch.no_grad():
-                if USE_ACCUMULATE_BATCH:
+                if USE_ACCUMULATE_BATCH != -1:
                     org_outs = []
-                    for single_x in x:
-                        single_x = single_x.unsqueeze(0)
+                    for start in range(0, len(x), USE_ACCUMULATE_BATCH):
+                        end = min(start + USE_ACCUMULATE_BATCH, len(x))
+                        single_x = x[start:end]
                         org_outs.append(block(single_x, **kwargs)[0])
                     org_out = torch.cat(org_outs, dim=0)
                 else:
@@ -428,10 +427,11 @@ class InternalAWQuantizer(nn.Module):
                     fc.weight.mul_(scales.view(1, -1).to(fc.weight.device))
                     fc.weight.data = w_quantize_func(
                         fc.weight.data) / (scales.view(1, -1))
-                if USE_ACCUMULATE_BATCH:
+                if USE_ACCUMULATE_BATCH != -1:
                     outs = []
-                    for single_x in x:
-                        single_x = single_x.unsqueeze(0)
+                    for start in range(0, len(x), USE_ACCUMULATE_BATCH):
+                        end = min(start + USE_ACCUMULATE_BATCH, len(x))
+                        single_x = x[start:end]
                         outs.append(block(single_x, **kwargs)[0])
                     out = torch.concat(outs, dim=0)
                 else:

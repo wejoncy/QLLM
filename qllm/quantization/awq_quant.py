@@ -66,15 +66,15 @@ class AWQQuant(QuantFrameBase):
                 functools.partial(cache_input_hook, name=name, feat_dict=input_feat)))
         # in case multi-gpu
         # get output as next layer's input
-        if not USE_ACCUMULATE_BATCH:
+        if USE_ACCUMULATE_BATCH == -1:
             inps = inps.to(dev)
             outs = layer_block(inps, **layer_kwargs)[0]
         else:
             outs = []
-            for input_tensor in inps:
-                input_tensor = input_tensor.unsqueeze(0)
-                input_tensor = input_tensor.to(dev)
-                outs.append(layer_block(input_tensor, **layer_kwargs)[0])
+            for start in range(0, len(inps), USE_ACCUMULATE_BATCH):
+                end = min(start + USE_ACCUMULATE_BATCH, len(inps))
+                single_x = inps[start:end].to(dev)
+                outs.append(layer_block(single_x, **layer_kwargs)[0])
             for key in input_feat:
                 input_feat[key] = [torch.cat(input_feat[key], dim=0)]
             outs = torch.concat(outs, dim=0)
@@ -111,8 +111,11 @@ class AWQQuant(QuantFrameBase):
         model = self.prepare(model)
         state_dict_prefix = self.extract_prefix(model)
         inps, outs, attention_layers, layer_kwargs = self.hijack_block_inputs(model, dataloader, args, dev)
-        if not USE_ACCUMULATE_BATCH:
-            layer_kwargs['attention_mask'] = layer_kwargs['attention_mask'].expand(len(dataloader), -1, -1, -1)
+        if USE_ACCUMULATE_BATCH == -1:
+            run_batch = len(dataloader)
+        else:
+            run_batch = USE_ACCUMULATE_BATCH
+        layer_kwargs['attention_mask'] = layer_kwargs['attention_mask'].expand(run_batch, -1, -1, -1)
         print('Ready.')
 
         quantizers = {}
