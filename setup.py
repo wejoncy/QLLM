@@ -130,8 +130,8 @@ if torch.cuda.get_device_properties(0).major >= 8:
             [
                 "src/awq_cuda/pybind_awq.cpp",
                 "src/awq_cuda/quantization/gemm_cuda_gen.cu",
-                #"src/awq_cuda/layernorm/layernorm.cu",
-                #"src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                "src/awq_cuda/layernorm/layernorm.cu",
+                "src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
                 "src/awq_cuda/quantization/gemv_cuda.cu"
             ], extra_compile_args=extra_compile_args
         )

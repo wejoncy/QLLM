@@ -8,6 +8,8 @@ def has_awq_inference_engine():
     return importlib.util.find_spec("awq_inference_engine") is not None
 if not has_awq_inference_engine():
     print("awq_inference_engine not found, please compile it first.")
+else:
+    import awq_inference_engine
 
 
 def make_divisible(c, divisor):
