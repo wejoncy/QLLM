@@ -1,6 +1,6 @@
 from ..quant import make_mixbits_quant_linear, QuantLinear
 from ..utils import find_layers, DEV, export_quant_table, gen_conditions
-from ..gptq import GPTQ, Observer
+from ..quantization.gptq import GPTQ, Observer
 from texttable import Texttable
 import os
 if "CUDA_VISIBLE_DEVICES" not in os.environ:  # NOQA
