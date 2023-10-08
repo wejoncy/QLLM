@@ -17,7 +17,7 @@ import contextlib
 from .utils import get_loaders, disable_huggingface_init
 from .utils import find_layers, DEV, export_quant_table
 from .quant import QuantLinear
-from .quant.awq_quant_linear import WQLinear_GEMM, has_awq_inference_engine
+from .quant.awq_quant_linear import WQLinear_GEMM, is_the_machine_support_awq_engine
 from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear
 
 NEED_CHECK_PACK = False
@@ -86,7 +86,7 @@ class ModelQuantizationBase(object):
 
         if qunat_info["method"] == "gptq":
             target_layer = QuantLinear
-        elif qunat_info["method"] == "awq" and has_awq_inference_engine():
+        elif qunat_info["method"] == "awq" and is_the_machine_support_awq_engine(args.wbits):
             target_layer = WQLinear_GEMM
         else:
             raise ValueError(f"unknown quantization method {qunat_info['method']}")
@@ -121,7 +121,7 @@ class ModelQuantizationBase(object):
         quant_info["method"] = args.method
         if args.method == "gptq":
             target_layer = QuantLinear
-        elif args.method == "awq" and has_awq_inference_engine():
+        elif args.method == "awq" and is_the_machine_support_awq_engine(args.wbits):
             target_layer = WQLinear_GEMM
         else:
             target_layer = QuantLinear
@@ -290,6 +290,7 @@ class ModelQuantizationBase(object):
         parser.add_argument('--quant-directory', type=str, default=None,
                             help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
         parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
+        parser.add_argument('--use_plugin', action='store_true', help='test with plugin, such as fastchat conversation')
 
         return parser
 
@@ -339,6 +340,10 @@ class ModelQuantizationBase(object):
 
         if args.export_onnx:
             self.export_onnx(model, args.export_onnx, dataloader[0])
+        
+        if args.use_plugin:
+            from .plugin.conversation import loop_in_chat_completion
+            loop_in_chat_completion(args.model, args.tokenizer, model)
 
         if not args.observe and args.save_safetensors:
             from safetensors.torch import save_file as safe_save

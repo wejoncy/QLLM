@@ -6,6 +6,10 @@ import importlib
 
 def has_awq_inference_engine():
     return importlib.util.find_spec("awq_inference_engine") is not None
+
+def is_the_machine_support_awq_engine(nbits):
+    return has_awq_inference_engine() and nbits == 4
+
 if not has_awq_inference_engine():
     print("awq_inference_engine not found, please compile it first.")
 else:
