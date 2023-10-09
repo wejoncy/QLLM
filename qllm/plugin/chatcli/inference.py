@@ -25,7 +25,7 @@ def chat_loop(
     generate_stream_func = generate_stream,
     generate_func = None,
     chatio: ChatIO = None,
-    debug: bool = False,
+    debug: bool = True,
     echo: bool = False,
 ):
     if _fastchat_available:
@@ -98,9 +98,9 @@ def chat_loop(
         if debug:
             num_tokens = len(tokenizer.encode(outputs))
             msg = {
-                "conv_template": conv.name,
-                "prompt": prompt,
-                "outputs": outputs,
+                #"conv_template": conv.name,
+                #"prompt": prompt,
+                #"outputs": outputs,
                 "speed (token/s)": round(num_tokens / duration, 2),
             }
             print(f"\n{msg}\n")
@@ -136,7 +136,7 @@ class SimpleChatIO_v2(ChatIO):
             if now > pre:
                 print(" ".join(output_text[pre:now]), end=" ", flush=True)
                 pre = now
-            elif len(output_text[-1]) > 10:
+            elif len(output_text[-1]) > 20:
                 break
         print(" ".join(output_text[pre:]), flush=True)
         return " ".join(output_text)
