@@ -99,6 +99,9 @@ class ModelQuantizationBase(object):
         else:
             raise ValueError(f"unknown quantization method {qunat_info['method']}")
         make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
+        if qunat_info["method"] == "awq":
+            from .quantization.awq_quant import scale_activations
+            scale_activations(model)
         del layers
         import tqdm
         model.tie_weights()
