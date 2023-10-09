@@ -101,11 +101,15 @@ class ModelQuantizationBase(object):
         make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
         del layers
         import glob
+        import tqdm
+        model.tie_weights()
         weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
-        weight_dict = torch.load(weight_bins[0])
-        for i in range(1, len(weight_bins)):
-            weight_dict.update(torch.load(weight_bins[i]))
-        model.load_state_dict(weight_dict)
+        for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
+            model.load_state_dict(torch.load(weight_bins[i]), strict=False)
+        #weight_dict = torch.load(weight_bins[0])
+        #for i in range(1, len(weight_bins)):
+        #    weight_dict.update(torch.load(weight_bins[i]))
+        #model.load_state_dict(weight_dict)
         # quant.autotune_warmup_linear(model, transpose=False)
         return model, dataloader
 
