@@ -100,17 +100,27 @@ class ModelQuantizationBase(object):
             raise ValueError(f"unknown quantization method {qunat_info['method']}")
         make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
         del layers
-        import glob
         import tqdm
         model.tie_weights()
-        weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
-        for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
-            model.load_state_dict(torch.load(weight_bins[i]), strict=False)
-        #weight_dict = torch.load(weight_bins[0])
-        #for i in range(1, len(weight_bins)):
-        #    weight_dict.update(torch.load(weight_bins[i]))
-        #model.load_state_dict(weight_dict)
-        # quant.autotune_warmup_linear(model, transpose=False)
+        try:
+            import accelerate
+            accelerate.load_checkpoint_in_model(
+                model,
+                checkpoint=qmodel,
+                device_map=None,
+                offload_folder=None,
+                dtype=None
+            )
+        except:
+            import glob
+            weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
+            for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
+                model.load_state_dict(torch.load(weight_bins[i]), strict=False)
+            #weight_dict = torch.load(weight_bins[0])
+            #for i in range(1, len(weight_bins)):
+            #    weight_dict.update(torch.load(weight_bins[i]))
+            #model.load_state_dict(weight_dict)
+            # quant.autotune_warmup_linear(model, transpose=False)
         return model, dataloader
 
     # you shouldn't rewrite this function
