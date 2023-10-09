@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import tqdm
 
 DEV = torch.device('cuda:0')
 
@@ -133,18 +134,26 @@ def append_str_prefix(x, prefix):
         return x
 
 
-def make_mixbits_quant_linear(module, names, quant_info: dict, name='', target_layer=None):
+def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='', target_layer=None):
+    for module_name, sub_module in tqdm.tqdm(module.named_modules(), total=len(list(module.named_modules())),
+                    desc="Replacing linear layers..."):
+        if module_name in replaced_names:
+            tmp = sub_module
+            bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
+            new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None)
+            set_op_by_name(module, module_name, new_module)
+    return        
     if isinstance(module, target_layer):
         return
     for attr in dir(module):
         tmp = getattr(module, attr)
         name1 = name + '.' + attr if name != '' else attr
-        if name1 in names:
+        if name1 in replaced_names:
             delattr(module, attr)
             bits, groupsize = quant_info[name1]['wbits'], quant_info[name1]['groupsize']
             setattr(module, attr, target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
     for name1, child in module.named_children():
-        make_mixbits_quant_linear(child, names, quant_info, name + '.' + name1 if name != '' else name1, target_layer)
+        make_mixbits_quant_linear(child, replaced_names, quant_info, name + '.' + name1 if name != '' else name1, target_layer)
 
 
 def make_quant_linear(module, names, bits, groupsize, name=''):
