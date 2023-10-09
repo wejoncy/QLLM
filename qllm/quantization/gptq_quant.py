@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import tqdm
 from texttable import Texttable
 
 from .quant_frame_base import QuantFrameBase
@@ -87,7 +87,7 @@ class GPTQQuant(QuantFrameBase):
 
         quantizers = {}
         observer_helper = ObserverHelper(args)
-        for i in range(len(attention_layers)):
+        for i in tqdm.tqdm(range(len(attention_layers)), desc="running GPTQ"):
             self.hook_before_qlayer(i, args)
 
             print(f'Quantizing layer {i+1}/{len(attention_layers)}..')

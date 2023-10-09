@@ -89,15 +89,10 @@ class ModelQuantizationBase(object):
             if layer_name not in qunat_info:
                 del layers[layer_name]
 
-        if qunat_info["method"] == "gptq":
-            target_layer = QuantLinear
-        elif qunat_info["method"] == "awq":
-            if is_the_machine_support_awq_engine(args.wbits):
-                target_layer = WQLinear_GEMM
-            else:
-                target_layer = QuantLinear
+        if is_the_machine_support_awq_engine(args.wbits):
+            target_layer = WQLinear_GEMM
         else:
-            raise ValueError(f"unknown quantization method {qunat_info['method']}")
+            target_layer = QuantLinear
         make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
         if qunat_info["method"] == "awq":
             from .quantization.awq_quant import scale_activations
@@ -144,9 +139,7 @@ class ModelQuantizationBase(object):
         attention_layers = {n: attention_layers[n] for n in quantizers}
         quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_info["method"] = args.method
-        if args.method == "gptq":
-            target_layer = QuantLinear
-        elif args.method == "awq" and is_the_machine_support_awq_engine(args.wbits):
+        if is_the_machine_support_awq_engine(args.wbits):
             target_layer = WQLinear_GEMM
         else:
             target_layer = QuantLinear
