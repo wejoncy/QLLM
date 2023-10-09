@@ -9,15 +9,17 @@ from .compress_weight import CompressWeight, general_unpack_on_row
 
 
 try:
-    has_module_dequantize_nbit_ops = importlib.util.find_spec("dequantize_nbit_ops")
+    has_module_XbitOps = importlib.util.find_spec("XbitOps")
 
-    if has_module_dequantize_nbit_ops == False:
+    if not has_module_XbitOps:
         import subprocess
         import sys
         subprocess.check_call([sys.executable, '-m', 'pip', 'install',
-                              'git+https://github.com/wejoncy/DQOps.git@0.1#egg=dequantize_nbit_ops'])
-        import dequantize_nbit_ops  # cuda dequant
-        has_module_dequantize_nbit_ops = True
+                              'git+https://github.com/wejoncy/XbitOps.git@c224bdfbd9a1826ddc518f1b9cd57516045186ff'])
+        import XbitOps  # cuda dequant
+        has_module_XbitOps = True
+    else:
+        import XbitOps  # cuda dequant
 except:
     print("torch implementation of dequantization would be used")
     pass
@@ -375,8 +377,8 @@ class DequantAndUnpack(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features):
-        if has_module_dequantize_nbit_ops and qweight.is_cuda:
-            return dequantize_nbit_ops.dequant(qweight, scales, qzeros, groupsize, bits, in_features)
+        if has_module_XbitOps and qweight.is_cuda:
+            return XbitOps.dequant(qweight, scales, qzeros, groupsize, bits, in_features)
         scales = scales.reshape(-1, 1, scales.shape[-1])
         if bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
@@ -409,6 +411,8 @@ class DequantAndUnpack(torch.autograd.Function):
 
 
 def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features):
+    if input.reshape(-1, input.shape[-1]).shape[0] <= 4:
+        return XbitOps.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features)
     weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features)
     out = torch.matmul(input, weight.contiguous())
     return out

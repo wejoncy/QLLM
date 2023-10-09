@@ -31,9 +31,14 @@ class ModelQuantizationBase(object):
     def get_torch_model(self, args, dev='cpu'):
         print(f"loading model from {args.model}")
         disable_huggingface_init()
-        from transformers import AutoModelForCausalLM
-        llm = AutoModelForCausalLM.from_pretrained(
-            args.model, torch_dtype=torch.float16, trust_remote_code=True).to(dev)
+        if args.load:
+            import transformers
+            llm = transformers.AutoModelForCausalLM.from_config(transformers.AutoConfig.from_pretrained(args.model))
+        else:
+            from transformers import AutoModelForCausalLM
+            llm = AutoModelForCausalLM.from_pretrained(
+                args.model, torch_dtype=torch.float16, trust_remote_code=True).to(dev)
+
         from pathlib import Path
         cache_dir = Path(f"/tmp/qllm_v1/{args.model.replace(' ','_')}_{args.dataset}_dataloader.pt")
         cache_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -68,7 +73,7 @@ class ModelQuantizationBase(object):
 
         with stack_attr(['normal_', 'uniform_', 'kaiming_uniform_', 'kaiming_normal_']):
             model, dataloader = self.get_torch_model(args, dev='cpu')
-        import transformers
+
         layers = find_layers(model, layers=self.quant_layers)
         # backward compatability
         if not (Path(qmodel)/"quant.op.json").exists():
@@ -86,8 +91,11 @@ class ModelQuantizationBase(object):
 
         if qunat_info["method"] == "gptq":
             target_layer = QuantLinear
-        elif qunat_info["method"] == "awq" and is_the_machine_support_awq_engine(args.wbits):
-            target_layer = WQLinear_GEMM
+        elif qunat_info["method"] == "awq":
+            if is_the_machine_support_awq_engine(args.wbits):
+                target_layer = WQLinear_GEMM
+            else:
+                target_layer = QuantLinear
         else:
             raise ValueError(f"unknown quantization method {qunat_info['method']}")
         make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
@@ -344,7 +352,7 @@ class ModelQuantizationBase(object):
         
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
-            loop_in_chat_completion(args.model, args.tokenizer, model)
+            loop_in_chat_completion(args.tokenizer, model)
 
         if not args.observe and args.save_safetensors:
             from safetensors.torch import save_file as safe_save
