@@ -295,8 +295,6 @@ class ModelQuantizationBase(object):
         return parser
 
     def run(self, args):
-        if args.tokenizer == "":
-            args.tokenizer = args.model
         if args.layers_dist:
             gpu_dist = [int(x) for x in args.layers_dist.split(':')]
         else:
@@ -304,6 +302,9 @@ class ModelQuantizationBase(object):
 
         if type(args.load) is not str:
             args.load = args.load.as_posix()
+
+        if args.tokenizer == "":
+            args.tokenizer = args.model if args.model else args.load
 
         if args.load:
             model, dataloader = self.__load_quant(args.load, args)
