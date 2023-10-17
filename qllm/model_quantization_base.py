@@ -14,7 +14,7 @@ import json
 import sys
 import contextlib
 
-from .utils import get_loaders, disable_huggingface_init
+from . import utils
 from .utils import find_layers, DEV, export_quant_table
 from .quant import QuantLinear
 from .quant.awq_quant_linear import WQLinear_GEMM, is_the_machine_support_awq_engine
@@ -30,7 +30,7 @@ class ModelQuantizationBase(object):
 
     def get_torch_model(self, args, dev='cpu'):
         print(f"loading model from {args.model}")
-        disable_huggingface_init()
+        utils.comm_utils.disable_huggingface_init()
         if args.load:
             import transformers
             llm = transformers.AutoModelForCausalLM.from_config(transformers.AutoConfig.from_pretrained(args.model))
@@ -47,7 +47,7 @@ class ModelQuantizationBase(object):
             print(f"found cached dataloader in {cache_dir}")
             dataloader = torch.load(cache_dir)
         else:
-            dataloader, _ = get_loaders(args.dataset, nsamples=args.nsamples,
+            dataloader, _ = utils.get_loaders(args.dataset, nsamples=args.nsamples,
                                         seed=args.seed, model=args.tokenizer, seqlen=2048)
             torch.save(dataloader, str(cache_dir))
         return llm, dataloader  # model, dataloader
@@ -114,10 +114,10 @@ class ModelQuantizationBase(object):
             weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
             for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
                 model.load_state_dict(torch.load(weight_bins[i]), strict=False)
-            #weight_dict = torch.load(weight_bins[0])
-            #for i in range(1, len(weight_bins)):
+            # weight_dict = torch.load(weight_bins[0])
+            # for i in range(1, len(weight_bins)):
             #    weight_dict.update(torch.load(weight_bins[i]))
-            #model.load_state_dict(weight_dict)
+            # model.load_state_dict(weight_dict)
             # quant.autotune_warmup_linear(model, transpose=False)
         return model, dataloader
 
@@ -166,7 +166,7 @@ class ModelQuantizationBase(object):
         return model, quant_info
 
     def pipeline_to_multiple_gpu(self, model, gpulist: list, sample_inputs):
-        def input_gpu_device_hook(mod, inputs):
+        def input_gpu_device_hook(mod, inputs, kwargs):
             modifyed_inputs = []
             first_dev = None
             for layer_input in inputs:
@@ -174,6 +174,9 @@ class ModelQuantizationBase(object):
                     modifyed_inputs.append(layer_input)
                 elif hasattr(mod, 'weight'):
                     modifyed_inputs.append(layer_input.to(mod.weight.device))
+                elif hasattr(mod, 'parameters'):
+                    device = next(mod.parameters(), layer_input).device
+                    modifyed_inputs.append(layer_input.to(device))
                 elif hasattr(next(mod.children(), None), 'weight'):
                     modifyed_inputs.append(layer_input.to(next(mod.children()).weight.device))
                 elif first_dev is not None and layer_input.device != first_dev:
@@ -182,52 +185,73 @@ class ModelQuantizationBase(object):
                     modifyed_inputs.append(layer_input)
                 if first_dev is None:
                     first_dev = modifyed_inputs[0].device
-            return tuple(modifyed_inputs)
+            return (tuple(modifyed_inputs), kwargs)
 
         def move_layer_to_device_rurc(mod, dev):
             mod.to(dev)
             for layer in mod.named_children():
                 move_layer_to_device_rurc(layer[1], dev)
 
+        model = model.half()
+        all_hooks = []
         # model.register_module_forward_pre_hook(input_gpu_device_hook)
-        model.register_forward_pre_hook(input_gpu_device_hook)
+        all_hooks.append(model.register_forward_pre_hook(input_gpu_device_hook, with_kwargs=True))
         pre_fix = list(model.named_children())[0][0]
-        for name, module in model.get_decoder().named_children():
-            module.register_forward_pre_hook(input_gpu_device_hook)
-            if type(module) in [torch.nn.ModuleList]:
-                import math
-                num_layers_on_each_gpu = math.floor(len(module)/len(gpulist))
-                for idx, attn_layer in enumerate(module):
-                    attn_layer.register_forward_pre_hook(input_gpu_device_hook)
+        for top_name, top_module in model.named_children():
+            for name, module in top_module.named_children():
+                all_hooks.append(module.register_forward_pre_hook(input_gpu_device_hook, with_kwargs=True))
+                if type(module) in [torch.nn.ModuleList]:
+                    import math
+                    num_layers_on_each_gpu = math.floor(len(module)/len(gpulist))
+                    for idx, attn_layer in enumerate(module):
+                        all_hooks.append(attn_layer.register_forward_pre_hook(input_gpu_device_hook, with_kwargs=True))
 
-                    to_dev = gpulist[min(idx//num_layers_on_each_gpu, 2)]
-                    attn_layer.to(to_dev)
-                    move_layer_to_device_rurc(attn_layer, to_dev)
-                    print(f"move {pre_fix}.{name}.{idx} to {to_dev}")
-            else:
-                module.to(gpulist[0])
-                print(f"move {pre_fix}.{name} to {gpulist[0]}")
+                        to_dev = gpulist[min(idx//num_layers_on_each_gpu, len(gpulist))]
+                        attn_layer.to(to_dev)
+                        move_layer_to_device_rurc(attn_layer, to_dev)
+                        print(f"move {pre_fix}.{name}.{idx} to {to_dev}")
+                else:
+                    module.to(gpulist[0])
+                    print(f"move {pre_fix}.{name} to {gpulist[0]}")
+            if len(list(top_module.named_children())) == 0:
+                top_module.to(gpulist[0])
+                print(f"move {top_name} to {gpulist[0]}")
+
+        # for hook in all_hooks:
+        #    hook.remove()
         with torch.no_grad():
-            out = model(sample_inputs[0], attention_mask=sample_inputs[1].cuda(0))
+            out = model(sample_inputs[0], attention_mask=sample_inputs[1])
         print(out)
         return model
 
+    @torch.no_grad()
     def export_onnx(self, model, onnx_path, sample_inputs: tuple):
-        # model = model.cpu().float()
-        model = model.cuda()
-        from pathlib import Path
+        if utils.comm_utils.get_Model_Size(model) > torch.cuda.get_device_properties(0).total_memory*0.45:
+            if torch.cuda.device_count() > 1:
+                device_collection = [torch.device(i) for i in range(torch.cuda.device_count())]
+                model = self.pipeline_to_multiple_gpu(model, device_collection, sample_inputs)
+            else:
+                model = model.cpu().float()
+        else:
+            model = model.cuda().half()
+
+        sample_inputs_ = []
+        for ints in sample_inputs:
+            if type(ints) is torch.Tensor:
+                sample_inputs_.append(ints.to(model.device))
+            else:
+                sample_inputs_.append(ints)
+        sample_inputs = sample_inputs_
+
+        # input_keys, onnx_inputs = utils.comm_utils.retrieve_onnx_inputs(model, sample_inputs)
+        onnx_inputs = (sample_inputs[0],)
         import shutil
         onnx_path = Path(onnx_path).absolute()
         assert onnx_path.suffix == '.onnx'
-        inputs = {'input_ids': sample_inputs[0].to(model.device), "attention_mask": sample_inputs[1].to(model.device)}
         onnx_filepath_export_multi_files_tmp = onnx_path.parent/'tmp/tmp.onnx'
         onnx_filepath_export_multi_files_tmp.parent.exists() and shutil.rmtree(onnx_filepath_export_multi_files_tmp.parent)
         os.makedirs(onnx_filepath_export_multi_files_tmp.parent)
 
-        input_ids = inputs['input_ids']
-        attention_mask = inputs['attention_mask']
-        past_key_values = None
-        onnx_inputs = (input_ids, past_key_values, attention_mask, None, None, None, True, False, False, False)
         onnx_inp_names = ("input_ids", "attention_mask")
         onnx_out_names = ("logits",)
         onnx_dynamic_axes = {"input_ids": {0: 'batch_size', 1: "seq_len"},
@@ -359,7 +383,7 @@ class ModelQuantizationBase(object):
 
         if args.export_onnx:
             self.export_onnx(model, args.export_onnx, dataloader[0])
-        
+
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
             loop_in_chat_completion(args.tokenizer, model)

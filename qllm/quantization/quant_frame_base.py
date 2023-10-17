@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from ..utils import clear_memory
+from ..utils import comm_utils
 
 
 class QuantFrameBase:
@@ -79,7 +79,7 @@ class QuantFrameBase:
         attention_layers[0] = attention_layers[0].cpu()
         for layer in pre_layers_of_attention:
             layer = layer.cpu()
-        clear_memory()
+        comm_utils.clear_memory()
 
         inps = torch.cat(inps, dim=0)
         outs = torch.zeros_like(inps)
