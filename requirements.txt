@@ -1,5 +1,5 @@
 #safetensors==0.3.0
-#datasets==2.10.1
+datasets==2.10.1
 #sentencepiece
 #git+https://github.com/huggingface/transformers
 #accelerate==0.17.1
@@ -9,4 +9,6 @@ toml
 tqdm
 #numpy
 #protobuf==3.20.2
-XbitOps @git+https://github.com/wejoncy/XbitOps.git
+#XbitOps @git+https://github.com/wejoncy/XbitOps.git
+--extra-index-url https://test.pypi.org/simple/ 
+XbitOps

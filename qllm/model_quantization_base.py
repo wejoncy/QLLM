@@ -48,7 +48,7 @@ class ModelQuantizationBase(object):
             dataloader = torch.load(cache_dir)
         else:
             dataloader, _ = utils.get_loaders(args.dataset, nsamples=args.nsamples,
-                                        seed=args.seed, model=args.tokenizer, seqlen=2048)
+                                              seed=args.seed, model=args.tokenizer, seqlen=2048)
             torch.save(dataloader, str(cache_dir))
         return llm, dataloader  # model, dataloader
 
@@ -137,6 +137,8 @@ class ModelQuantizationBase(object):
     def pack_model(self, model, quantizers, args):
         attention_layers = find_layers(model, self.quant_layers+[ScaledLinear])
         attention_layers = {n: attention_layers[n] for n in quantizers}
+        quant_config = {"zero_point": True, "q_group_size": args.groupsize,
+                        "w_bit": args.wbits, "version": "GEMM"}
         quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_info["method"] = args.method
         if is_the_machine_support_awq_engine(args.wbits):
@@ -163,7 +165,7 @@ class ModelQuantizationBase(object):
         # quant.autotune_warmup_linear(model, transpose=False)
 
         print('Done.')
-        return model, quant_info
+        return model, quant_info, quant_config
 
     def pipeline_to_multiple_gpu(self, model, gpulist: list, sample_inputs):
         def input_gpu_device_hook(mod, inputs, kwargs):
@@ -294,7 +296,16 @@ class ModelQuantizationBase(object):
     def define_basic_args(self):
         # ,'--observe','--act-order'
         self.append_default_args()
-        parser = argparse.ArgumentParser()
+        parser = argparse.ArgumentParser(description="""
+        A general tool to quantize LLMs with the GPTQ/AWQ method.
+        you can easily quantize your model and save to checkpoint, which is compatiable with vLLM.
+        You can also test the quantized model with a conversation plugin.
+        A typical usage is:
+            python -m qllm.model_quantization_base --model  meta-llama/Llama-2-7b-chat-hf/  --method=awq  \
+                --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
+                --export_onnx ./onnx_models/
+            method can be 'awq' or 'gptq'
+        """)
 
         parser.add_argument('--method', type=str, default="gptq",
                             choices=["gptq", "awq"], help='the quantization method')
@@ -328,7 +339,8 @@ class ModelQuantizationBase(object):
         parser.add_argument('--true-sequential', action='store_true', help='Whether to run in true sequential model.')
         parser.add_argument('--new-eval', action='store_true', help='Whether to use the new PTB and C4 eval')
         parser.add_argument('--layers-dist', type=str, default='',
-                            help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
+                            help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, \
+                                and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
         parser.add_argument('--observe',
                             action='store_true',
                             help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
@@ -359,7 +371,8 @@ class ModelQuantizationBase(object):
             model, dataloader = self.get_torch_model(args, dev='cpu')
             model.eval()
         else:
-            raise ValueError("either --model or --load must be specified")
+            raise ValueError("either --model or --load must be specified. \
+                Please refer to the usage and run again with correct args.")
 
         if not args.load and args.wbits < 16 and not args.nearest:
             if args.mix_qlayer_conf:
@@ -368,7 +381,7 @@ class ModelQuantizationBase(object):
                 args.mix_qlayer_conf = {}
             tick = time.time()
             quantizers = self.__quant_by_sequential(model, dataloader, args, DEV)
-            model, quant_info = self.pack_model(model, quantizers, args)
+            model, quant_info, quant_config = self.pack_model(model, quantizers, args)
             print("Finished quantization and packing weight, time cost:", time.time() - tick)
 
         if args.quant_directory is not None:
@@ -381,6 +394,7 @@ class ModelQuantizationBase(object):
             tokenizer.save_pretrained(args.save)
 
             open(args.save+"/quant.op.json", 'w').write(json.dumps(quant_info))
+            open(args.save+"/quant_config.json", 'w').write(json.dumps(quant_config))
 
         if args.eval:
             self.eval_model(model, DEV)
