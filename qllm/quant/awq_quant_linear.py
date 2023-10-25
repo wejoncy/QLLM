@@ -82,12 +82,12 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
 
 
 class WQLinear_GEMV(nn.Module):
-    def __init__(self, w_bit, group_size, in_features, out_features, bias, dev):
+    def __init__(self, w_bit, group_size, in_features, out_features, bias):
         super().__init__()
 
         if w_bit not in [4]:
             raise NotImplementedError("Only 4-bit are supported for now.")
-
+        dev = torch.device('cpu')
         self.in_features = in_features
         self.out_features = out_features
         self.w_bit = w_bit
@@ -110,8 +110,7 @@ class WQLinear_GEMV(nn.Module):
         else:
             self.bias = None
 
-    @classmethod
-    def from_linear(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
+    def pack_gpu(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
         awq_linear = cls(w_bit, group_size, linear.in_features, linear.out_features,
                          linear.bias is not None, linear.weight.device)
         if init_only:  # just prepare for loading sd

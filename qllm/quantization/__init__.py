@@ -1,5 +1,5 @@
-from .awq_quant import AWQQuant
-from .gptq_quant import GPTQQuant
+from .quant_awq import AWQQuant
+from .quant_gptq import GPTQQuant
 
 
 def get_quantizer(args):

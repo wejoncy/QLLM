@@ -95,7 +95,7 @@ class ModelQuantizationBase(object):
             target_layer = QuantLinear
         make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
         if qunat_info["method"] == "awq":
-            from .quantization.awq_quant import scale_activations
+            from .quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
         import tqdm

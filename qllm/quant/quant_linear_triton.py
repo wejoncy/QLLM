@@ -307,6 +307,27 @@ class QuantLinear(nn.Module, CompressWeight):
     def forward(self, x):
         pass
 
+class QuantLinearFunction(torch.autograd.Function):
+
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float16)
+    def forward(ctx, input, qweight, scales, qzeros, g_idx, bits, maxq):
+        output = matmul248(input, qweight.contiguous(), scales, qzeros, g_idx, bits, maxq)
+        # ctx.save_for_backward(qweight, scales, qzeros, g_idx)
+        # ctx.bits, ctx.maxq = bits, maxq
+        return output
+
+    @staticmethod
+    @custom_bwd
+    def backward(ctx, grad_output):
+        qweight, scales, qzeros, g_idx = ctx.saved_tensors
+        bits, maxq = ctx.bits, ctx.maxq
+        grad_input = None
+
+        if ctx.needs_input_grad[0]:
+            grad_input = transpose_matmul248(grad_output, qweight, scales, qzeros, g_idx, bits, maxq)
+        return grad_input, None, None, None, None, None, None
+        
 def autotune_warmup_linear(model, transpose=False):
     """
     Pre-tunes the quantized kernel
