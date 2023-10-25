@@ -2,8 +2,8 @@
 <img src="https://github.com/wejoncy/QLLM/blob/main/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg?raw=true" width="420">
 
 We alread supported 
-[x] GPTQ quantization 
-[x] AWQ quantization. refered to [llm-awq](https://github.com/mit-han-lab/llm-awq) and [AutoAWQ](https://github.com/casper-hansen/AutoAWQ)
+- [x] GPTQ quantization 
+- [x] AWQ quantization. refered to [llm-awq](https://github.com/mit-han-lab/llm-awq) and [AutoAWQ](https://github.com/casper-hansen/AutoAWQ)
 
 We support 2-8 bits quantization and conresspoing kernels on **Nvidia-GPU**, we will consider support **AMD-GPU** too.
 
