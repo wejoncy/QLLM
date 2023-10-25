@@ -48,7 +48,7 @@ class ModelQuantizationBase(object):
             dataloader = torch.load(cache_dir)
         else:
             dataloader, _ = utils.get_loaders(args.dataset, nsamples=args.nsamples,
-                                        seed=args.seed, model=args.tokenizer, seqlen=2048)
+                                              seed=args.seed, model=args.tokenizer, seqlen=2048)
             torch.save(dataloader, str(cache_dir))
         return llm, dataloader  # model, dataloader
 
@@ -137,6 +137,8 @@ class ModelQuantizationBase(object):
     def pack_model(self, model, quantizers, args):
         attention_layers = find_layers(model, self.quant_layers+[ScaledLinear])
         attention_layers = {n: attention_layers[n] for n in quantizers}
+        quant_config = {"zero_point": True, "q_group_size": args.groupsize,
+                        "w_bit": args.wbits, "version": "GEMM"}
         quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_info["method"] = args.method
         if is_the_machine_support_awq_engine(args.wbits):
@@ -163,7 +165,7 @@ class ModelQuantizationBase(object):
         # quant.autotune_warmup_linear(model, transpose=False)
 
         print('Done.')
-        return model, quant_info
+        return model, quant_info, quant_config
 
     def pipeline_to_multiple_gpu(self, model, gpulist: list, sample_inputs):
         def input_gpu_device_hook(mod, inputs, kwargs):
@@ -368,7 +370,7 @@ class ModelQuantizationBase(object):
                 args.mix_qlayer_conf = {}
             tick = time.time()
             quantizers = self.__quant_by_sequential(model, dataloader, args, DEV)
-            model, quant_info = self.pack_model(model, quantizers, args)
+            model, quant_info, quant_config = self.pack_model(model, quantizers, args)
             print("Finished quantization and packing weight, time cost:", time.time() - tick)
 
         if args.quant_directory is not None:
@@ -381,6 +383,7 @@ class ModelQuantizationBase(object):
             tokenizer.save_pretrained(args.save)
 
             open(args.save+"/quant.op.json", 'w').write(json.dumps(quant_info))
+            open(args.save+"/quant_config.json", 'w').write(json.dumps(quant_config))
 
         if args.eval:
             self.eval_model(model, DEV)
