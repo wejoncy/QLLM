@@ -4,10 +4,10 @@ import torch.nn as nn
 import math
 
 
-class Quantizer(nn.Module):
+class InternalGPTQQuantizer(nn.Module):
 
     def __init__(self, shape=1):
-        super(Quantizer, self).__init__()
+        super(InternalGPTQQuantizer, self).__init__()
         self.register_buffer('maxq', torch.tensor(0))
         self.register_buffer('scale', torch.zeros(shape))
         self.register_buffer('zero', torch.zeros(shape))
