@@ -185,6 +185,9 @@ class ModelQuantizationBase(object):
                     modifyed_inputs.append(layer_input)
                 if first_dev is None:
                     first_dev = modifyed_inputs[0].device
+            for key, value in kwargs.items():
+                if type(value) is torch.Tensor:
+                    kwargs[key] = value.to(first_dev)
             return (tuple(modifyed_inputs), kwargs)
 
         def move_layer_to_device_rurc(mod, dev):
@@ -226,7 +229,8 @@ class ModelQuantizationBase(object):
 
     @torch.no_grad()
     def export_onnx(self, model, onnx_path, sample_inputs: tuple):
-        if utils.comm_utils.get_Model_Size(model) > torch.cuda.get_device_properties(0).total_memory*0.45:
+        total_mem_per_cpu = torch.cuda.get_device_properties(0).total_memory/1024/1024
+        if utils.comm_utils.get_Model_Size(model) > total_mem_per_cpu*0.45:
             if torch.cuda.device_count() > 1:
                 device_collection = [torch.device(i) for i in range(torch.cuda.device_count())]
                 model = self.pipeline_to_multiple_gpu(model, device_collection, sample_inputs)
