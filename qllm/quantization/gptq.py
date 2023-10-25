@@ -4,9 +4,9 @@ import time
 import torch
 import torch.nn as nn
 import transformers
-from . import quant
+from ._gptq_quantizer import InternalGPTQQuantizer
 from texttable import Texttable
-from .utils import torch_snr_error
+from ..utils import torch_snr_error
 
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
@@ -67,7 +67,7 @@ class GPTQ:
         self.columns = W.shape[1]
         self.H = torch.zeros((self.columns, self.columns), device=self.dev)
         self.nsamples = 0
-        self.quantizer = quant.Quantizer()
+        self.quantizer = InternalGPTQQuantizer()
         self.observe = observe
 
     def add_batch(self, inp, out):
@@ -107,7 +107,7 @@ class GPTQ:
 
         if self.inp1 is not None:
             # quantize input to int8
-            quantizer = quant.Quantizer()
+            quantizer = InternalGPTQQuantizer()
             quantizer.configure(8, perchannel=False, sym=True, mse=False)
             quantizer.find_params(self.inp1)
             q_in = quantizer.quantize(self.inp1).type(torch.float16)

@@ -9,7 +9,7 @@ import primefac
 import scipy
 import math
 
-from quant import Quantizer
+from ._gptq_quantizer import InternalGPTQQuantizer
 
 DEBUG = False
 
