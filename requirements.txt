@@ -1,4 +1,5 @@
 #safetensors==0.3.0
+torch
 datasets==2.10.1
 #sentencepiece
 #git+https://github.com/huggingface/transformers
@@ -7,8 +8,8 @@ datasets==2.10.1
 texttable
 toml
 tqdm
-#numpy
+numpy
 #protobuf==3.20.2
-XbitOps @git+https://github.com/wejoncy/XbitOps.git
-#--extra-index-url https://test.pypi.org/simple/ 
-#XbitOps
+#XbitOps @git+https://github.com/wejoncy/XbitOps.git
+--extra-index-url https://test.pypi.org/simple/ 
+XbitOps
