@@ -11,7 +11,8 @@ from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name
 
 from .quant_frame_base import QuantFrameBase
 from ..utils import find_layers
-from ._awq_quantizer import InternalAWQuantizer, pseudo_quantize_tensor, USE_ACCUMULATE_BATCH
+from ._awq_quantizer import (InternalAWQuantizer, pseudo_quantize_tensor,
+                             USE_ACCUMULATE_BATCH, ScaledActivation)
 
 
 def scale_activations(module):
@@ -36,7 +37,6 @@ def scale_activations(module):
             torch.ones(c, dtype=dtype, device=device)
         )
         set_op_by_name(module, "mlp.act", act)
-
 
 
 class AWQQuant(QuantFrameBase):
@@ -98,7 +98,7 @@ class AWQQuant(QuantFrameBase):
                 q_config=self.q_config,
                 get_scale_zp=True,
             )
-            #get_op_name(model, linear_layer)
+            # get_op_name(model, linear_layer)
             layer_key = f"{state_dict_prefix}.{name}"
             quantizers[layer_key] = (
                 None, scales.cpu(), zeros.cpu(), None, self.args.wbits, self.args.groupsize)

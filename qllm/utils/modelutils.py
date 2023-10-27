@@ -156,28 +156,29 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
         make_mixbits_quant_linear(child, replaced_names, quant_info, name + '.' + name1 if name != '' else name1, target_layer)
 
 
-def make_quant_linear(module, names, bits, groupsize, name=''):
-    if isinstance(module, QuantLinear):
-        return
-    for attr in dir(module):
-        tmp = getattr(module, attr)
-        name1 = name + '.' + attr if name != '' else attr
-        if name1 in names:
-            delattr(module, attr)
-            setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
-    for name1, child in module.named_children():
-        make_quant_linear(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
-
-
-
-def make_linear_qdq_back(module, names, name=''):
-    if isinstance(module, QuantLinear):
-        return
-    for attr in dir(module):
-        tmp = getattr(module, attr)
-        name1 = name + '.' + attr if name != '' else attr
-        if name1 in names:
-            delattr(module, attr)
-            setattr(module, attr, names[name1])
-    for name1, child in module.named_children():
-        make_linear_qdq_back(child, names, name + '.' + name1 if name != '' else name1)
+# deprecated
+#def make_quant_linear(module, names, bits, groupsize, name=''):
+#    if isinstance(module, QuantLinear):
+#        return
+#    for attr in dir(module):
+#        tmp = getattr(module, attr)
+#        name1 = name + '.' + attr if name != '' else attr
+#        if name1 in names:
+#            delattr(module, attr)
+#            setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
+#    for name1, child in module.named_children():
+#        make_quant_linear(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
+#
+#
+#
+#def make_linear_qdq_back(module, names, name=''):
+#    if isinstance(module, QuantLinear):
+#        return
+#    for attr in dir(module):
+#        tmp = getattr(module, attr)
+#        name1 = name + '.' + attr if name != '' else attr
+#        if name1 in names:
+#            delattr(module, attr)
+#            setattr(module, attr, names[name1])
+#    for name1, child in module.named_children():
+#        make_linear_qdq_back(child, names, name + '.' + name1 if name != '' else name1)

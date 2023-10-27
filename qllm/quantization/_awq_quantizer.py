@@ -106,6 +106,7 @@ def get_model_specific_quant_layer(module, input_feat, module_kwargs):
 
     return scales_list
 
+
 @torch.no_grad()
 def get_weight_scale(weight, q_group_size=-1):
     org_shape = weight.shape
@@ -115,6 +116,7 @@ def get_weight_scale(weight, q_group_size=-1):
     scale = scale.view(org_shape)
     scale = scale.mean(0)
     return scale
+
 
 @torch.no_grad()
 def get_act_scale(x):
@@ -172,6 +174,7 @@ def scale_fc_fc(fc1, fc2, scales):
 
 @torch.no_grad()
 def scale_gelu_fc(gelu, fc, scales):
+    from transformers.models.bloom.modeling_bloom import BloomGelu
     assert isinstance(gelu, nn.GELU) or isinstance(gelu, BloomGelu)
     assert isinstance(fc, nn.Linear)
 
@@ -194,9 +197,9 @@ class ScaledActivation(nn.Module):
 def apply_scale(module, scales_list, input_feat_dict=None):
     for prev_op_name, layer_names, scales in scales_list:
         # replace linear with scaled linear, so we don't have to modify the prev op
-        #for name in layer_names:
+        # for name in layer_names:
         #    set_op_by_name(module, name, ScaledLinear(get_op_by_name(module, name), scales))
-        #continue
+        # continue
 
         prev_op = get_op_by_name(module, prev_op_name)
         layers = [get_op_by_name(module, name) for name in layer_names]
@@ -232,8 +235,10 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         scales.cpu()
 
 # core quantization method (simulated quantization)
+
+
 def pseudo_quantize_tensor(w, n_bit, q_config, inplace=False, get_scale_zp=False):
-    zero_point, q_group_size= q_config.get("zero_point", True), q_config.get("q_group_size", -1)
+    zero_point, q_group_size = q_config.get("zero_point", True), q_config.get("q_group_size", -1)
     org_w_shape = w.shape
     if q_group_size > 0:
         assert org_w_shape[-1] % q_group_size == 0
@@ -263,7 +268,7 @@ def pseudo_quantize_tensor(w, n_bit, q_config, inplace=False, get_scale_zp=False
             min_int, max_int).sub_(zeros)).mul_(scales)
     else:
         w = (torch.clamp(torch.round(w / scales) +
-                        zeros, min_int, max_int) - zeros) * scales
+                         zeros, min_int, max_int) - zeros) * scales
     assert torch.isnan(w).sum() == 0
 
     w = w.reshape(org_w_shape)
@@ -274,6 +279,8 @@ def pseudo_quantize_tensor(w, n_bit, q_config, inplace=False, get_scale_zp=False
         return w
 
 # weight quantization
+
+
 @torch.no_grad()
 def auto_clip_layer(w, input_feat, n_bit, q_config,
                     n_grid=20,
@@ -361,6 +368,7 @@ def apply_clip(module, clip_list):
         layer.weight.data = layer.weight.data.reshape(org_shape)
         layer.cpu()
 
+
 class InternalAWQuantizer(nn.Module):
     def __init__(self):
         super(InternalAWQuantizer, self).__init__()
@@ -368,17 +376,16 @@ class InternalAWQuantizer(nn.Module):
         self.q_config = None
         self.auto_scale = None
         self.auto_clip = None
-    
+
     def configure(self, w_bit, q_config, auto_scale=True, auto_clip=True):
         self.w_bit = w_bit
         self.q_config = q_config
         self.auto_scale = auto_scale
         self.auto_clip = auto_clip
 
-
     @torch.no_grad()
     def auto_scale_block(self, module, module_kwargs, input_feat):
-        def w_quantize_func(p): 
+        def w_quantize_func(p):
             return pseudo_quantize_tensor(p, self.w_bit, self.q_config).detach()
 
         if "use_cache" in module_kwargs:
@@ -421,7 +428,7 @@ class InternalAWQuantizer(nn.Module):
             for ratio in range(n_grid):
                 ratio = ratio * 1 / n_grid
                 scales = (x_max.pow(ratio) / w_max.pow(1-ratio)
-                        ).clamp(min=1e-4).view(-1)
+                          ).clamp(min=1e-4).view(-1)
                 scales = scales / (scales.max() * scales.min()).sqrt()
                 for fc in linears2scale:
                     fc.weight.mul_(scales.view(1, -1).to(fc.weight.device))
@@ -474,14 +481,14 @@ class InternalAWQuantizer(nn.Module):
         scales_list = [_auto_get_scale(**sub_module) for sub_module in sub_modules]
 
         return scales_list
-    
+
     def fast_quant_layer(self, layer_kwargs, input_feat, layer, attention_layers, i):
         if self.auto_scale:  # if it applies, we should also modify the input_feat with scales
             scales_list = self.auto_scale_block(layer, layer_kwargs, input_feat=input_feat,)
             # apply_scale(layer, scales_list, input_feat_dict=input_feat)
             apply_scale(attention_layers[i], scales_list, input_feat_dict=input_feat)
             # append prefix to make names global
-            #awq_results["scale"] += append_str_prefix(scales_list, get_op_name(model, layer) + ".")
+            # awq_results["scale"] += append_str_prefix(scales_list, get_op_name(model, layer) + ".")
 
             # Clear GPU memory
             clear_memory()
@@ -490,7 +497,7 @@ class InternalAWQuantizer(nn.Module):
             clip_list = auto_clip_block(layer, w_bit=self.w_bit, q_config=self.q_config, input_feat=input_feat)
             apply_clip(layer, clip_list)
             # append prefix to make names global
-            #awq_results["clip"] += append_str_prefix(clip_list, get_op_name(model, layer) + ".")
+            # awq_results["clip"] += append_str_prefix(clip_list, get_op_name(model, layer) + ".")
 
             # Clear GPU memory
             clear_memory()
