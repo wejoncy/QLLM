@@ -1,4 +1,8 @@
 import torch
+import math
+
+import numpy as np
+
 
 def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits):
     row = 0
@@ -202,8 +206,8 @@ class CompressWeight(object):
             raise NotImplementedError("Only 4-bit are supported for now.")
         order_tensor = torch.tensor(order_map, dtype=torch.int32, device=int_tensor.device).reshape(1, -1)
         order_tensor = order_tensor.repeat(int_tensor.shape[1]//compress_ratio, 1)
-        order_tensor = order_tensor + torch.arange(0, int_tensor.shape[1], 
-                        compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
+        order_tensor = order_tensor + torch.arange(0, int_tensor.shape[1],
+                                                   compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
         order_tensor = order_tensor.reshape(-1)
         int_tensor = int_tensor[:, order_tensor]
         int_tensor = int_tensor.T.contiguous()
@@ -214,7 +218,7 @@ class CompressWeight(object):
         if "WQ" in self._get_name():
             intweight_gpu = self.reorder_int_tensor(intweight_gpu)
             intzeros = self.reorder_int_tensor(intzeros)
-            intzeros=intzeros.T.contiguous()
+            intzeros = intzeros.T.contiguous()
         assert intweight_gpu.shape[0] // 32 * self.bits == int(round(intweight_gpu.shape[0] * self.bits / 32 + 0.5))
         import time
         s = time.time()
