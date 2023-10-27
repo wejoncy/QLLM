@@ -49,7 +49,7 @@ class QuantFrameBase:
         return attention_layers, pre_layers_of_attention
 
     def hijack_block_inputs(self, model, dataloader, args, dev):
-        dtype = next(iter(model.parameters())).dtype
+        #dtype = next(iter(model.parameters())).dtype
         # torch.zeros((args.nsamples, dataloader[0][0].shape[-1], model.config.d_model), dtype=dtype)
         inps = []
         layer_input_args = {}
