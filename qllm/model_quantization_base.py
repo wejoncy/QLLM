@@ -296,7 +296,16 @@ class ModelQuantizationBase(object):
     def define_basic_args(self):
         # ,'--observe','--act-order'
         self.append_default_args()
-        parser = argparse.ArgumentParser()
+        parser = argparse.ArgumentParser(description="""
+        A general tool to quantize LLMs with the GPTQ/AWQ method.
+        you can easily quantize your model and save to checkpoint, which is compatiable with vLLM.
+        You can also test the quantized model with a conversation plugin.
+        A typical usage is:
+            python -m qllm.model_quantization_base --model  meta-llama/Llama-2-7b-chat-hf/  --method=awq  \
+                --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
+                --export_onnx ./onnx_models/
+            method can be 'awq' or 'gptq'
+        """)
 
         parser.add_argument('--method', type=str, default="gptq",
                             choices=["gptq", "awq"], help='the quantization method')
@@ -330,7 +339,8 @@ class ModelQuantizationBase(object):
         parser.add_argument('--true-sequential', action='store_true', help='Whether to run in true sequential model.')
         parser.add_argument('--new-eval', action='store_true', help='Whether to use the new PTB and C4 eval')
         parser.add_argument('--layers-dist', type=str, default='',
-                            help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
+                            help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, \
+                                and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
         parser.add_argument('--observe',
                             action='store_true',
                             help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
@@ -361,7 +371,8 @@ class ModelQuantizationBase(object):
             model, dataloader = self.get_torch_model(args, dev='cpu')
             model.eval()
         else:
-            raise ValueError("either --model or --load must be specified")
+            raise ValueError("either --model or --load must be specified. \
+                Please refer to the usage and run again with correct args.")
 
         if not args.load and args.wbits < 16 and not args.nearest:
             if args.mix_qlayer_conf:
