@@ -38,6 +38,7 @@ def get_requirements() -> List[str]:
     """Get Python package dependencies from requirements.txt."""
     with open(get_path("requirements.txt")) as f:
         requirements = f.read().strip().split("\n")
+    requirements = [req for req in requirements if 'https' not in req]
     return requirements
 
 def get_nvcc_cuda_version(cuda_dir: str) -> Version:
@@ -52,14 +53,14 @@ def get_nvcc_cuda_version(cuda_dir: str) -> Version:
     nvcc_cuda_version = parse(output[release_idx].split(",")[0])
     return nvcc_cuda_version
 
-def get_compute_capabilities():
+def get_compute_capabilities(compute_capabilities: Set[int]):
     # Collect the compute capabilities of all available GPUs.
-    compute_capabilities = set()
-    for i in range(torch.cuda.device_count()):
-        major, minor = torch.cuda.get_device_capability(i)
-        if major < 8:
-            raise RuntimeError("GPUs with compute capability less than 8.0 are not supported.")
-        compute_capabilities.add(major * 10 + minor)
+    if len(compute_capabilities) == 0:
+        for i in range(torch.cuda.device_count()):
+            major, minor = torch.cuda.get_device_capability(i)
+            if major < 8:
+                raise RuntimeError("GPUs with compute capability less than 8.0 are not supported.")
+            compute_capabilities.add(major * 10 + minor)
 
     nvcc_cuda_version = get_nvcc_cuda_version(CUDA_HOME)
     if nvcc_cuda_version < Version("11.1"):
@@ -93,10 +94,11 @@ def get_generator_flag():
         generator_flag = ["-DOLD_GENERATOR_PATH"]
     
     return generator_flag
-if torch.cuda.get_device_properties(0).major >= 8:
+
+if os.getenv("CUDA_ARCH", "") == "ALL" or torch.cuda.get_device_properties(0).major >= 8:
     include_dirs = get_include_dirs()
     generator_flags = get_generator_flag()
-    arch_flags = get_compute_capabilities()
+    arch_flags = get_compute_capabilities(set([80, 86, 89, 90]))
     if os.name == "nt":
         include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
 
@@ -163,6 +165,7 @@ setuptools.setup(
     packages=setuptools.find_packages(exclude=("")),
     python_requires=">=3.8",
     install_requires=get_requirements(),
+    dependency_links=['https://test.pypi.org/simple/XbitOps'],
     ext_modules=extensions,
     cmdclass={'build_ext': BuildExtension},
 )

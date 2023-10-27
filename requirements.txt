@@ -9,4 +9,6 @@ toml
 tqdm
 #numpy
 #protobuf==3.20.2
-XbitOps @git+https://github.com/wejoncy/XbitOps.git
+#XbitOps @git+https://github.com/wejoncy/XbitOps.git
+--extra-index-url https://test.pypi.org/simple/ 
+XbitOps
