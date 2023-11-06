@@ -19,7 +19,9 @@ from .utils import find_layers, DEV, export_quant_table
 from .quant import QuantLinear
 from .quant.awq_quant_linear import WQLinear_GEMM, is_the_machine_support_awq_engine
 from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear
+from .utils.logger import get_logger
 
+logger = get_logger()
 NEED_CHECK_PACK = False
 
 
@@ -29,7 +31,7 @@ class ModelQuantizationBase(object):
         self.quant_layers = [torch.nn.Linear]
 
     def get_torch_model(self, args, dev='cpu'):
-        print(f"loading model from {args.model}")
+        logger.info(f"loading model from {args.model}")
         utils.comm_utils.disable_huggingface_init()
         if args.load:
             import transformers
@@ -42,9 +44,9 @@ class ModelQuantizationBase(object):
         from pathlib import Path
         cache_dir = Path(f"/tmp/qllm_v1/{args.model.replace(' ','_')}_{args.dataset}_dataloader.pt")
         cache_dir.parent.mkdir(parents=True, exist_ok=True)
-        print(f"loading dataset from {args.dataset}")
+        logger.info(f"loading dataset from {args.dataset}")
         if cache_dir.exists():
-            print(f"found cached dataloader in {cache_dir}")
+            logger.info(f"found cached dataloader in {cache_dir}")
             dataloader = torch.load(cache_dir)
         else:
             dataloader, _ = utils.get_loaders(args.dataset, nsamples=args.nsamples,
@@ -53,7 +55,7 @@ class ModelQuantizationBase(object):
         return llm, dataloader  # model, dataloader
 
     def __load_quant(self, qmodel, args):
-        print(f"loading quantized model from {qmodel}")
+        logger.info(f"loading quantized model from {qmodel}")
         args.model = args.load
 
         @contextlib.contextmanager
@@ -130,8 +132,8 @@ class ModelQuantizationBase(object):
 
     @torch.no_grad()
     def eval_model(self, model, dev):
-        print('Evaluating ...')
-        print("you should rewrite this function for your model")
+        logger.info('Evaluating ...')
+        logger.warn("you should rewrite this function for your model")
 
     # TODO: perform packing on GPU
     def pack_model(self, model, quantizers, args):
@@ -141,15 +143,17 @@ class ModelQuantizationBase(object):
                         "w_bit": args.wbits, "version": "GEMM"}
         quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_info["method"] = args.method
-        if is_the_machine_support_awq_engine(args.wbits):
+        if args.pack_mode == "awq" or (args.pack_mode == "auto" and is_the_machine_support_awq_engine(args.wbits)):
             target_layer = WQLinear_GEMM
         else:
             target_layer = QuantLinear
+            quant_config["version"] = "DQ"
+
         make_mixbits_quant_linear(model, quantizers, quant_info, target_layer=target_layer)
         qlayers = find_layers(model, [target_layer])
-        print('Packing ...')
+        logger.info('Packing ...')
         for name in qlayers:
-            print(name)
+            logger.info(name)
             quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
             # rewrite weight as quantized
             if NEED_CHECK_PACK:
@@ -164,7 +168,7 @@ class ModelQuantizationBase(object):
         # quant.make_linear_qdq_back(model,attention_layers)
         # quant.autotune_warmup_linear(model, transpose=False)
 
-        print('Done.')
+        logger.info('Done.')
         return model, quant_info, quant_config
 
     def pipeline_to_multiple_gpu(self, model, gpulist: list, sample_inputs):
@@ -214,23 +218,24 @@ class ModelQuantizationBase(object):
                         to_dev = gpulist[min(idx//num_layers_on_each_gpu, len(gpulist))]
                         attn_layer.to(to_dev)
                         move_layer_to_device_rurc(attn_layer, to_dev)
-                        print(f"move {pre_fix}.{name}.{idx} to {to_dev}")
+                        logger.info(f"move {pre_fix}.{name}.{idx} to {to_dev}")
                 else:
                     module.to(gpulist[0])
-                    print(f"move {pre_fix}.{name} to {gpulist[0]}")
+                    logger.info(f"move {pre_fix}.{name} to {gpulist[0]}")
             if len(list(top_module.named_children())) == 0:
                 top_module.to(gpulist[0])
-                print(f"move {top_name} to {gpulist[0]}")
+                logger.info(f"move {top_name} to {gpulist[0]}")
 
         # for hook in all_hooks:
         #    hook.remove()
         with torch.no_grad():
             out = model(sample_inputs[0], attention_mask=sample_inputs[1])
-        print(out)
+        logger.info(out)
         return model
 
     @torch.no_grad()
     def export_onnx(self, model, onnx_path, sample_inputs: tuple):
+        logger.info("Exporting onnx model ...")
         total_mem_per_cpu = torch.cuda.get_device_properties(0).total_memory/1024/1024
         if utils.comm_utils.get_Model_Size(model) > total_mem_per_cpu*0.45:
             if torch.cuda.device_count() > 1:
@@ -303,7 +308,7 @@ class ModelQuantizationBase(object):
             tick = time.time()
             quantizers = self.__quant_by_sequential(model, dataloader, args, DEV)
             model, quant_info, quant_config = self.pack_model(model, quantizers, args)
-            print("Finished quantization and packing weight, time cost:", time.time() - tick)
+            logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
         if args.quant_directory is not None:
             export_quant_table(quantizers, args.quant_directory)
@@ -321,7 +326,10 @@ class ModelQuantizationBase(object):
             self.eval_model(model, DEV)
 
         if args.export_onnx:
-            self.export_onnx(model, args.export_onnx, dataloader[0])
+            import re
+            if not args.export_onnx.endswith(".onnx"):
+                onnx_path = args.export_onnx + "/" + re.sub(r"[^a-zA-Z0-9]", "_", args.model) + ".onnx"
+            self.export_onnx(model, onnx_path, dataloader[0])
 
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion

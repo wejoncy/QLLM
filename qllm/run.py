@@ -3,6 +3,7 @@ import sys
 
 from .model_quantization_base import ModelQuantizationBase
 
+
 def append_default_args():
     if '--wbits' not in ' '.join(sys.argv):
         sys.argv += ['--wbits', '4']
@@ -24,19 +25,22 @@ def append_default_args():
     # if '--load' not in sys.argv:
     #    sys.argv += ['--load', './mpt_q4']
 
+
 def define_basic_args():
     # ,'--observe','--act-order'
     append_default_args()
     parser = argparse.ArgumentParser(description="""
-    A general tool to quantize LLMs with the GPTQ/AWQ method.
-    you can easily quantize your model and save to checkpoint, which is compatiable with vLLM.
-    You can also test the quantized model with a conversation plugin.
-    A typical usage is:
-        python -m qllm.model_quantization_base --model  meta-llama/Llama-2-7b-chat-hf/  --method=awq  \
-            --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
-            --export_onnx ./onnx_models/
-        method can be 'awq' or 'gptq'
-    """)
+A general tool to quantize LLMs with the GPTQ/AWQ method.
+you can easily quantize your model and save to checkpoint, which is compatiable with vLLM.
+You can also test the quantized model with a conversation plugin.
+
+A typical usage is:
+    python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  \
+--dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
+--export_onnx ./onnx_models/
+
+    method can be 'awq' or 'gptq'""",
+                                     formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('--method', type=str, default="gptq",
                         choices=["gptq", "awq"], help='the quantization method')
@@ -71,24 +75,32 @@ def define_basic_args():
     parser.add_argument('--new-eval', action='store_true', help='Whether to use the new PTB and C4 eval')
     parser.add_argument('--layers-dist', type=str, default='',
                         help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, \
-                            and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
+and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
     parser.add_argument('--observe',
                         action='store_true',
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
-            When this feature enabled, `--save` or `--save_safetensors` would be disable.')
+When this feature enabled, `--save` or `--save_safetensors` would be disable.')
     parser.add_argument('--quant-directory', type=str, default=None,
                         help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--use_plugin', action='store_true', help='test with plugin, such as fastchat conversation')
+    parser.add_argument('--pack_mode', type=str, default='auto',
+                        choices=["auto", "gemm", "dq"], help="""the quantization pack mode, 
+`gemm` represents to use AWQ GEMM engine, same as what AutoAWQ used, 
+`auto` represents that it is selected by the GPU arch, as awq GEMM needs SM75+ 
+`dq` represent using old GPTQ style DQ+GEMM, it is not fused but more general than AWQ-GEMM, 
+and can be used on all GPU archs.""")
 
     return parser
 
+
 def main():
     print("quantize LLM with base engine")
-    model_quanter = ModelQuantizationBase()
     parser = define_basic_args()
     args = parser.parse_args()
     print(args)
+
+    model_quanter = ModelQuantizationBase()
     model_quanter.run(args)
 
 

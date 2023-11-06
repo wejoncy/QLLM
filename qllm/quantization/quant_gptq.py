@@ -6,7 +6,9 @@ from texttable import Texttable
 from .quant_frame_base import QuantFrameBase
 from .gptq import GPTQ, Observer
 from ..utils import find_layers, gen_conditions
+from ..utils.logger import get_logger
 
+logger = get_logger('qllm')
 
 class ObserverHelper:
     def __init__(self, args) -> None:
@@ -90,10 +92,10 @@ class GPTQQuant(QuantFrameBase):
         for i in tqdm.tqdm(range(len(attention_layers)), desc="running GPTQ"):
             self.hook_before_qlayer(i, args)
 
-            print(f'Quantizing layer {i+1}/{len(attention_layers)}..')
-            print('+------------------+--------------+------------+-----------+-------+')
-            print('|       name       | weight_error | fp_inp_SNR | q_inp_SNR | time  |')
-            print('+==================+==============+============+===========+=======+')
+            logger.debug(f'Quantizing layer {i+1}/{len(attention_layers)}..')
+            logger.debug('+------------------+--------------+------------+-----------+-------+')
+            logger.debug('|       name       | weight_error | fp_inp_SNR | q_inp_SNR | time  |')
+            logger.debug('+==================+==============+============+===========+=======+')
 
             block_layer = attention_layers[i].to(dev)
             named_linear_layers = find_layers(block_layer, self.quant_layers)
@@ -130,8 +132,8 @@ class GPTQQuant(QuantFrameBase):
             torch.cuda.empty_cache()
 
             inps, outs = outs, inps
-            print('+------------------+--------------+------------+-----------+-------+')
-            print('\n')
+            logger.debug('+------------------+--------------+------------+-----------+-------+')
+            logger.debug('\n')
 
         observer_helper.post_quant(quantizers, state_dict_prefix)
 
