@@ -8,7 +8,7 @@ try:
     from fastchat.model.model_adapter import get_generate_stream_function
     from fastchat.utils import is_partial_stop, is_sentence_complete, get_context_length
 
-    _fastchat_available = False
+    _fastchat_available = True
 except ImportError:
     _fastchat_available = False
 from .conversation import get_conv

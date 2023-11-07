@@ -3,9 +3,13 @@
 
 We alread supported 
 - [x] GPTQ quantization 
-- [x] AWQ quantization. refered to [llm-awq](https://github.com/mit-han-lab/llm-awq) and [AutoAWQ](https://github.com/casper-hansen/AutoAWQ)
+- [x] AWQ quantization
 
 We support 2-8 bits quantization and conresspoing kernels on **Nvidia-GPU**, we will consider support **AMD-GPU** too.
+
+Features:
+- [x] for GPTQ, we support quantization for all GPT-Like models, it's a general quantization method.
+- [x] for AWQ, we support only those models in llm-awq/auto-awq for now.
 
 ## Installation
 ```
@@ -24,13 +28,13 @@ pip install git+https://github.com/wejoncy/QLLM.git
 
 ```
 # Save compressed model
-CUDA_VISIBLE_DEVICES=0 python -m qllm.model_quantization_base --model=meta-llama/Llama-2-7b-hf --save ./Llama-2-7b-4bit
+CUDA_VISIBLE_DEVICES=0 python -m qllm.run --model=meta-llama/Llama-2-7b-hf --save ./Llama-2-7b-4bit
 
 # convert to onnx model and save torch model
-python -m qllm.model_quantization_base --model=meta-llama/Llama-2-7b-hf --save ./Llama-2-7b-4bit --onnx ././Llama-2-7b-4bit-onnx
+python -m qllm.run --model=meta-llama/Llama-2-7b-hf --save ./Llama-2-7b-4bit --onnx ././Llama-2-7b-4bit-onnx
 
 # model inference with the saved model
-CUDA_VISIBLE_DEVICES=0 python -m qllm.model_quantization_base --load ./Llama-2-7b-4bit --eval
+CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load ./Llama-2-7b-4bit --eval
 
 # model inference with ORT
 TO be DONE
@@ -40,16 +44,16 @@ TO be DONE
 use `--use_plugin` to enable a chatbot plugin
 
 ```
-python -m qllm.model_quantization_base --model  meta-llama/Llama-2-7b-chat-hf/  --method=awq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/
+python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/
 
 or 
-python -m qllm.model_quantization_base --model  meta-llama/Llama-2-7b-chat-hf/  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
+python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
 ```
 
 # Convert to onnx model
 use `--export_onnx ./onnx_model` to export and save onnx model
 ```
-python -m qllm.model_quantization_base --model  meta-llama/Llama-2-7b-chat-hf/  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
+python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
 ```
 
 # Acknowledgements
@@ -60,3 +64,5 @@ Thanks to Meta AI for releasing [LLaMA](https://arxiv.org/abs/2302.13971), a pow
 Triton GPTQ kernel code is based on [GPTQ-triton](https://github.com/fpgaminer/GPTQ-triton)
 
 Thanks to [GPTQ-for-LLaMa](https://github.com/qwopqwop200/GPTQ-for-LLaMa)
+
+Thanks to [llm-awq](https://github.com/mit-han-lab/llm-awq) and [AutoAWQ](https://github.com/casper-hansen/AutoAWQ) for releasing AWQ quantization method.
