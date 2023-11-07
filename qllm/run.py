@@ -31,7 +31,8 @@ def define_basic_args():
     append_default_args()
     parser = argparse.ArgumentParser(description="""
 A general tool to quantize LLMs with the GPTQ/AWQ method.
-you can easily quantize your model and save to checkpoint, which is compatiable with vLLM.
+you can easily quantize your model and save to checkpoint, which is compatiable with \
+[vLLM](https://github.com/vllm-project/vllm).
 You can also test the quantized model with a conversation plugin.
 
 A typical usage is:
