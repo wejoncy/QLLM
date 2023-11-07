@@ -7,6 +7,9 @@ import transformers
 from ._gptq_quantizer import InternalGPTQQuantizer
 from texttable import Texttable
 from ..utils import torch_snr_error
+from ..utils.logger import get_logger
+
+logger = get_logger('qllm')
 
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
@@ -121,7 +124,7 @@ class GPTQ:
             fp_SNR = '-'
 
         table.add_row([name[-16:], weight_error, fp_SNR, q_SNR, timecost])
-        print(table.draw().split('\n')[-2])
+        logger.debug(table.draw().split('\n')[-2])
 
     def fasterquant(self, blocksize=128, percdamp=.01, groupsize=-1, actorder=False, name=''):
         self.layer.to(self.dev)
