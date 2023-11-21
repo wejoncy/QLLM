@@ -234,48 +234,9 @@ class ModelQuantizationBase(object):
         return model
 
     @torch.no_grad()
-    def export_onnx(self, model, onnx_path, sample_inputs: tuple):
-        logger.info("Exporting onnx model ...")
-        total_mem_per_cpu = torch.cuda.get_device_properties(0).total_memory/1024/1024
-        if utils.comm_utils.get_Model_Size(model) > total_mem_per_cpu*0.45:
-            if torch.cuda.device_count() > 1:
-                device_collection = [torch.device(i) for i in range(torch.cuda.device_count())]
-                model = self.pipeline_to_multiple_gpu(model, device_collection, sample_inputs)
-            else:
-                model = model.cpu().float()
-        else:
-            model = model.cuda().half()
-
-        sample_inputs_ = []
-        for ints in sample_inputs:
-            if type(ints) is torch.Tensor:
-                sample_inputs_.append(ints.to(model.device))
-            else:
-                sample_inputs_.append(ints)
-        sample_inputs = sample_inputs_
-
-        # input_keys, onnx_inputs = utils.comm_utils.retrieve_onnx_inputs(model, sample_inputs)
-        onnx_inputs = (sample_inputs[0],)
-        import shutil
-        onnx_path = Path(onnx_path).absolute()
-        assert onnx_path.suffix == '.onnx'
-        onnx_filepath_export_multi_files_tmp = onnx_path.parent/'tmp/tmp.onnx'
-        onnx_filepath_export_multi_files_tmp.parent.exists() and shutil.rmtree(onnx_filepath_export_multi_files_tmp.parent)
-        os.makedirs(onnx_filepath_export_multi_files_tmp.parent)
-
-        onnx_inp_names = ("input_ids", "attention_mask")
-        onnx_out_names = ("logits",)
-        onnx_dynamic_axes = {"input_ids": {0: 'batch_size', 1: "seq_len"},
-                             "attention_mask": {0: 'batch_size', 1: "seq_len"}}
-        torch.onnx.export(model=model, args=onnx_inputs, f=str(onnx_filepath_export_multi_files_tmp), verbose=False, opset_version=16,
-                          input_names=onnx_inp_names, output_names=onnx_out_names, dynamic_axes=onnx_dynamic_axes)
-        import onnx
-        onnx_model = onnx.load(str(onnx_filepath_export_multi_files_tmp))
-
-        onnx_path.exists() and onnx_path.unlink()
-        (onnx_path.parent/'mpt_ext.data').exists() and (onnx_path.parent/'mpt_ext.data').unlink()
-        onnx.save_model(onnx_model, str(onnx_path), save_as_external_data=True, all_tensors_to_one_file=True,
-                        location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
+    def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, opset=16):
+        from .utils.onnx import exporter
+        return exporter.export_onnx(model, onnx_path_str, sample_inputs, with_past, opset)
 
 
     def run(self, args):
@@ -326,10 +287,7 @@ class ModelQuantizationBase(object):
             self.eval_model(model, DEV)
 
         if args.export_onnx:
-            import re
-            if not args.export_onnx.endswith(".onnx"):
-                onnx_path = args.export_onnx + "/" + re.sub(r"[^a-zA-Z0-9]", "_", args.model) + ".onnx"
-            self.export_onnx(model, onnx_path, dataloader[0])
+            self.export_onnx(model, args.export_onnx, dataloader[0], True)
 
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
