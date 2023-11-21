@@ -58,7 +58,7 @@ def get_compute_capabilities(compute_capabilities: Set[int]):
     if len(compute_capabilities) == 0:
         for i in range(torch.cuda.device_count()):
             major, minor = torch.cuda.get_device_capability(i)
-            if major < 8:
+            if major < 7:
                 raise RuntimeError("GPUs with compute capability less than 8.0 are not supported.")
             compute_capabilities.add(major * 10 + minor)
 
@@ -95,10 +95,12 @@ def get_generator_flag():
     
     return generator_flag
 
-if os.getenv("CUDA_ARCH", "") == "ALL" or torch.cuda.get_device_properties(0).major >= 8:
+extensions = []
+
+def build_cuda_extensions():
     include_dirs = get_include_dirs()
     generator_flags = get_generator_flag()
-    arch_flags = get_compute_capabilities(set([80, 86, 89, 90]))
+    arch_flags = get_compute_capabilities(set([]))
     if os.name == "nt":
         include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
 
@@ -125,26 +127,30 @@ if os.getenv("CUDA_ARCH", "") == "ALL" or torch.cuda.get_device_properties(0).ma
                 "--use_fast_math",
             ] + arch_flags + generator_flags
         }
-
-    extensions = [
-        CUDAExtension(
-            "awq_inference_engine",
-            [
-                "src/awq_cuda/pybind_awq.cpp",
-                "src/awq_cuda/quantization/gemm_cuda_gen.cu",
-                "src/awq_cuda/layernorm/layernorm.cu",
-                "src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
-                "src/awq_cuda/quantization/gemv_cuda.cu"
-            ], extra_compile_args=extra_compile_args
+    if os.getenv("CUDA_ARCH", "") == "ALL" or torch.cuda.get_device_properties(0).major >= 8:
+        extensions.append(
+            CUDAExtension(
+                "awq_inference_engine",
+                [
+                    "src/awq_cuda/pybind_awq.cpp",
+                    "src/awq_cuda/quantization/gemm_cuda_gen.cu",
+                    "src/awq_cuda/layernorm/layernorm.cu",
+                    "src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                    "src/awq_cuda/quantization/gemv_cuda.cu"
+                ], extra_compile_args=extra_compile_args
+            )
         )
-    ]
-else:
-    extensions = []
+
+    extensions.append(CUDAExtension("ort_ops", [
+        "src/ort_cuda/ort_ops.cc",
+        "src/ort_cuda/dq.cu",
+    ], extra_compile_args=extra_compile_args))
+    return extensions
 
 
 setuptools.setup(
     name="qllm",
-    version=find_version(get_path("qllm", "__init__.py")),
+    version=find_version(get_path(".", "versions.txt")),
     author="qllm Team",
     license="Apache 2.0",
     description="A GPTQ based quantization engine for LLMs",
@@ -166,6 +172,6 @@ setuptools.setup(
     python_requires=">=3.8",
     install_requires=get_requirements(),
     dependency_links=['https://test.pypi.org/simple/XbitOps'],
-    ext_modules=extensions,
+    ext_modules=build_cuda_extensions(),
     cmdclass={'build_ext': BuildExtension},
 )

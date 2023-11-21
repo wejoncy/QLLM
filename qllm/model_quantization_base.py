@@ -6,19 +6,18 @@ import os
 import torch.nn as nn
 import torch
 import numpy as np
-
+import glob
 import argparse
 import time
 from pathlib import Path
 import json
 import sys
 import contextlib
+import tqdm
 
 from . import utils
 from .utils import find_layers, DEV, export_quant_table
-from .quant import QuantLinear
-from .quant.awq_quant_linear import WQLinear_GEMM, is_the_machine_support_awq_engine
-from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear
+from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear, select_quant_linear, set_op_by_name
 from .utils.logger import get_logger
 
 logger = get_logger()
@@ -35,7 +34,7 @@ class ModelQuantizationBase(object):
         utils.comm_utils.disable_huggingface_init()
         if args.load:
             import transformers
-            llm = transformers.AutoModelForCausalLM.from_config(transformers.AutoConfig.from_pretrained(args.model))
+            llm = transformers.AutoModelForCausalLM.from_config(transformers.AutoConfig.from_pretrained(args.model)).half()
         else:
             from transformers import AutoModelForCausalLM
             llm = AutoModelForCausalLM.from_pretrained(
@@ -82,7 +81,7 @@ class ModelQuantizationBase(object):
             quant_layers_json = {layer_name: {"groupsize": args.groupsize, "wbits": args.wbits}
                                  for layer_name in layers.keys() if len(layer_name.split('.')) > 3}
             quant_layers_json["method"] = args.method
-            open(Path(qmodel)/"quant.op.json").write(json.dumps(quant_layers_json))
+            open(Path(qmodel)/"quant.op.json", "w").write(json.dumps(quant_layers_json))
 
         # load quant info
         with open(Path(qmodel)/"quant.op.json") as fp:
@@ -90,17 +89,27 @@ class ModelQuantizationBase(object):
         for layer_name in list(layers.keys()):
             if layer_name not in qunat_info:
                 del layers[layer_name]
-
-        if is_the_machine_support_awq_engine(args.wbits):
-            target_layer = WQLinear_GEMM
+        
+        if (Path(qmodel)/"quant_config.json").exists():
+            quant_config = json.load(open(Path(qmodel)/"quant_config.json"))
+        elif (Path(qmodel)/"quantize_config.json").exists():
+            quant_config = json.load(open(Path(qmodel)/"quantize_config.json"))
         else:
-            target_layer = QuantLinear
-        make_mixbits_quant_linear(model, layers, qunat_info, target_layer=target_layer)
+            raise ValueError("quant_config.json not found in checkpoint directory")
+        pack_mode = quant_config["version"]
+
+        if args.pack_mode != quant_config["version"]:
+            logger.warn(f"pack_mode {args.pack_mode} is not compatiable with checkpoint version" +
+                        f"{pack_mode}, will force to use the checkpoint version {pack_mode}")
+            args.pack_mode = pack_mode
+        target_layer, _ = select_quant_linear(pack_mode, args.wbits)
+        make_mixbits_quant_linear(
+            model, layers, qunat_info, target_layer=target_layer)
         if qunat_info["method"] == "awq":
             from .quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
-        import tqdm
+        
         model.tie_weights()
         try:
             import accelerate
@@ -112,10 +121,20 @@ class ModelQuantizationBase(object):
                 dtype=None
             )
         except:
-            import glob
-            weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
-            for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
-                model.load_state_dict(torch.load(weight_bins[i]), strict=False)
+            while True:
+                weight_bins = glob.glob(os.path.abspath(qmodel)+'/pytorch_model*.bin')
+                if len(weight_bins) > 0:
+                    for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
+                        model.load_state_dict(torch.load(weight_bins[i]), strict=False)
+                    break
+                weight_bins = glob.glob(os.path.abspath(qmodel)+'/*.safetensors')
+                if len(weight_bins) > 0:
+                    import safetensors
+                    for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
+                        model.load_state_dict(safetensors.torch.load_file(
+                            weight_bins[i], device="cpu"), strict=False)
+                    break
+                raise ValueError(f"{qmodel} is not a folder containing weights or safetensors")
             # weight_dict = torch.load(weight_bins[0])
             # for i in range(1, len(weight_bins)):
             #    weight_dict.update(torch.load(weight_bins[i]))
@@ -143,11 +162,9 @@ class ModelQuantizationBase(object):
                         "w_bit": args.wbits, "version": "GEMM"}
         quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_info["method"] = args.method
-        if args.pack_mode == "awq" or (args.pack_mode == "auto" and is_the_machine_support_awq_engine(args.wbits)):
-            target_layer = WQLinear_GEMM
-        else:
-            target_layer = QuantLinear
-            quant_config["version"] = "DQ"
+
+        target_layer, quant_config["version"] = select_quant_linear(
+            args.pack_mode, args.wbits)
 
         make_mixbits_quant_linear(model, quantizers, quant_info, target_layer=target_layer)
         qlayers = find_layers(model, [target_layer])
@@ -171,72 +188,45 @@ class ModelQuantizationBase(object):
         logger.info('Done.')
         return model, quant_info, quant_config
 
-    def pipeline_to_multiple_gpu(self, model, gpulist: list, sample_inputs):
-        def input_gpu_device_hook(mod, inputs, kwargs):
-            modifyed_inputs = []
-            first_dev = None
-            for layer_input in inputs:
-                if type(layer_input) is not torch.Tensor:
-                    modifyed_inputs.append(layer_input)
-                elif hasattr(mod, 'weight'):
-                    modifyed_inputs.append(layer_input.to(mod.weight.device))
-                elif hasattr(mod, 'parameters'):
-                    device = next(mod.parameters(), layer_input).device
-                    modifyed_inputs.append(layer_input.to(device))
-                elif hasattr(next(mod.children(), None), 'weight'):
-                    modifyed_inputs.append(layer_input.to(next(mod.children()).weight.device))
-                elif first_dev is not None and layer_input.device != first_dev:
-                    modifyed_inputs.append(layer_input.to(first_dev))
-                else:
-                    modifyed_inputs.append(layer_input)
-                if first_dev is None:
-                    first_dev = modifyed_inputs[0].device
-            for key, value in kwargs.items():
-                if type(value) is torch.Tensor:
-                    kwargs[key] = value.to(first_dev)
-            return (tuple(modifyed_inputs), kwargs)
-
-        def move_layer_to_device_rurc(mod, dev):
-            mod.to(dev)
-            for layer in mod.named_children():
-                move_layer_to_device_rurc(layer[1], dev)
-
-        model = model.half()
-        all_hooks = []
-        # model.register_module_forward_pre_hook(input_gpu_device_hook)
-        all_hooks.append(model.register_forward_pre_hook(input_gpu_device_hook, with_kwargs=True))
-        pre_fix = list(model.named_children())[0][0]
-        for top_name, top_module in model.named_children():
-            for name, module in top_module.named_children():
-                all_hooks.append(module.register_forward_pre_hook(input_gpu_device_hook, with_kwargs=True))
-                if type(module) in [torch.nn.ModuleList]:
-                    import math
-                    num_layers_on_each_gpu = math.floor(len(module)/len(gpulist))
-                    for idx, attn_layer in enumerate(module):
-                        all_hooks.append(attn_layer.register_forward_pre_hook(input_gpu_device_hook, with_kwargs=True))
-
-                        to_dev = gpulist[min(idx//num_layers_on_each_gpu, len(gpulist))]
-                        attn_layer.to(to_dev)
-                        move_layer_to_device_rurc(attn_layer, to_dev)
-                        logger.info(f"move {pre_fix}.{name}.{idx} to {to_dev}")
-                else:
-                    module.to(gpulist[0])
-                    logger.info(f"move {pre_fix}.{name} to {gpulist[0]}")
-            if len(list(top_module.named_children())) == 0:
-                top_module.to(gpulist[0])
-                logger.info(f"move {top_name} to {gpulist[0]}")
-
-        # for hook in all_hooks:
-        #    hook.remove()
-        with torch.no_grad():
-            out = model(sample_inputs[0], attention_mask=sample_inputs[1])
-        logger.info(out)
+    def re_pack_to_new_mode(self, model, args):
+        bits, groupsize = args.wbits, args.groupsize
+        source_layer, _ = select_quant_linear(args.pack_mode, args.wbits)
+        target_layer, _ = select_quant_linear("ort", args.wbits)
+        qlayers = find_layers(model, [source_layer])
+        for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc=f"replacing {args.pack_mode} with ort pack_mode"):
+            fp16_weight, scales, zeros = qlayer.unpack()
+            qlayer.weight = fp16_weight
+            tmp = qlayer
+            new_module = target_layer(bits, groupsize, tmp.infeatures, tmp.outfeatures, tmp.bias is not None)
+            set_op_by_name(model, module_name, new_module)
+            new_module.pack_gpu(tmp, scales.T, zeros.T, None)
+            qlayer.to('cpu')
+        del qlayers
+        torch.cuda.empty_cache()
         return model
 
     @torch.no_grad()
-    def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, opset=16):
+    def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, args=None):
+        if args.pack_mode != "ORT":
+            model = self.re_pack_to_new_mode(model, args)
         from .utils.onnx import exporter
-        return exporter.export_onnx(model, onnx_path_str, sample_inputs, with_past, opset)
+        opset = 16
+        exporter.export_onnx(model, onnx_path_str, sample_inputs, with_past, opset)
+
+        #verify correctness
+        import onnxruntime
+        onnx_model_path = onnx_path_str+'/model_one_for_all.onnx'
+        session = onnxruntime.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'])
+        mask = np.ones(sample_inputs[0].shape, dtype=np.int64) if sample_inputs[1] is None else sample_inputs[1].cpu().numpy()
+        num_layers = model.config.num_hidden_layers
+        inputs = {'input_ids': sample_inputs[0].cpu().numpy(), 'attention_mask': mask, 'use_cache_branch': np.array([0], dtype=np.bool_)}
+        for i in range(num_layers):
+            inputs[f'present_key.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
+            inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
+        outputs = session.run(None, inputs)
+        ref = model(sample_inputs[0].cuda())
+        err = ref.logits.cpu().numpy()-outputs[0]
+        print("max abs err:", np.abs(err).max())
 
 
     def run(self, args):
@@ -287,7 +277,7 @@ class ModelQuantizationBase(object):
             self.eval_model(model, DEV)
 
         if args.export_onnx:
-            self.export_onnx(model, args.export_onnx, dataloader[0], True)
+            self.export_onnx(model, args.export_onnx, dataloader[0], True, args=args)
 
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion

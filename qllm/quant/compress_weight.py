@@ -133,7 +133,7 @@ class CompressWeight(object):
         fp16_weight = self.dequant_weight(weight.T, zeros.T).cuda()
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
-        return fp16_weight, weight, zeros
+        return fp16_weight, self.scales, zeros
 
     # odd bits, 3,5,6,7
     def pack_on_device_for_odd_bits(self, intweight_gpu, intzeros):
@@ -194,7 +194,7 @@ class CompressWeight(object):
         e2 = time.time()-s
 
         if self.oweight != None:
-            fw, iw, iz = self.unpack()
+            fw, _, iz = self.unpack()
             assert (fw == self.oweight.cuda()).all()
 
     def reorder_int_tensor(self, int_tensor):
@@ -257,7 +257,7 @@ class CompressWeight(object):
         e2 = time.time()-s
 
         if self.oweight != None:
-            fw, iw, iz = self.unpack()
+            fw, _, iz = self.unpack()
             assert (fw == self.oweight.cuda()).all()
 
     def pack_gpu(self, linear, scales, zeros, g_idx=None):

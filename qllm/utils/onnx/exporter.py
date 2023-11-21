@@ -6,7 +6,7 @@ from ..logger import get_logger
 from .merge_encoder_decoder import merge_decoders
 logger = get_logger()
 
-@torch.no_grad()
+
 def export_onnx(model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, opset=16):
     # since onnxruntime 1.7
     logger.info("Exporting onnx model ...")
