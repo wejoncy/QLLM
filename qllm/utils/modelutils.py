@@ -43,21 +43,18 @@ def gen_conditions(_wbits, _groupsize):
     return conditions
 
 
-def select_quant_linear(pack_mode: str, wbits:int = 4) -> tuple:
+def select_quant_linear(pack_mode: str, wbits:int = 4):
     from ..quant import QuantLinear
     from ..quant.quant_linear_awq import WQLinear_GEMM, is_the_machine_support_awq_engine
     from ..quant.quant_linear_onnxruntime import QuantLinearORT
 
-    if pack_mode == "awq" or (pack_mode == "auto" and is_the_machine_support_awq_engine(wbits)):
+    if pack_mode == "GEMM" or (pack_mode == "AUTO" and is_the_machine_support_awq_engine(wbits)):
         target_layer = WQLinear_GEMM
-        vertion = "GEMM"
-    elif pack_mode == "ort":
+    elif pack_mode == "ORT":
         target_layer = QuantLinearORT
-        version = "ORT"
     else:
         target_layer = QuantLinear
-        version = "DQ"
-    return target_layer, version
+    return target_layer
 
 # copy from https://github.com/openppl-public/ppq/blob/master/ppq/quantization/measure/norm.py
 def torch_snr_error(y_pred: torch.Tensor, y_real: torch.Tensor, reduction: str = 'mean') -> torch.Tensor:

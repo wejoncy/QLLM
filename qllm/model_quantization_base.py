@@ -24,6 +24,41 @@ logger = get_logger()
 NEED_CHECK_PACK = False
 
 
+def remove_unquantized_layers(qmodel, layers, args):
+    # backward compatability
+    if not (Path(qmodel)/"quant.op.json").exists():
+        quant_layers_json = {layer_name: {"groupsize": args.groupsize, "wbits": args.wbits}
+                                for layer_name in layers.keys() if len(layer_name.split('.')) > 3}
+        quant_layers_json["method"] = args.method
+        open(Path(qmodel)/"quant.op.json", "w").write(json.dumps(quant_layers_json))
+
+    # load quant info
+    with open(Path(qmodel)/"quant.op.json") as fp:
+        qunat_info = json.load(fp)
+        args.method = qunat_info["method"]
+        args.qunat_info = qunat_info
+    for layer_name in list(layers.keys()):
+        if layer_name not in qunat_info:
+            del layers[layer_name]
+
+def load_quant_config(qmodel, args):
+    if (Path(qmodel)/"quant_config.json").exists():
+        quant_config = json.load(open(Path(qmodel)/"quant_config.json"))
+        args.wbits = quant_config["w_bit"]
+        args.groupsize = quant_config["q_group_size"]
+    elif (Path(qmodel)/"quantize_config.json").exists(): #GPTQ-for-llama/AutoGPTQ
+        quant_config = json.load(open(Path(qmodel)/"quantize_config.json"))
+        args.wbits = quant_config["bits"]
+        args.groupsize = quant_config["group_size"]
+    else:
+        raise ValueError("quant_config.json not found in checkpoint directory")
+    pack_mode = quant_config["version"]
+
+    if args.pack_mode != quant_config["version"]:
+        logger.warn(f"pack_mode {args.pack_mode} is not compatiable with checkpoint version" +
+                    f"{pack_mode}, will force to use the checkpoint version {pack_mode}")
+        args.pack_mode = pack_mode
+
 class ModelQuantizationBase(object):
     def __init__(self) -> None:
         super().__init__()
@@ -76,36 +111,13 @@ class ModelQuantizationBase(object):
             model, dataloader = self.get_torch_model(args, dev='cpu')
 
         layers = find_layers(model, layers=self.quant_layers)
-        # backward compatability
-        if not (Path(qmodel)/"quant.op.json").exists():
-            quant_layers_json = {layer_name: {"groupsize": args.groupsize, "wbits": args.wbits}
-                                 for layer_name in layers.keys() if len(layer_name.split('.')) > 3}
-            quant_layers_json["method"] = args.method
-            open(Path(qmodel)/"quant.op.json", "w").write(json.dumps(quant_layers_json))
-
-        # load quant info
-        with open(Path(qmodel)/"quant.op.json") as fp:
-            qunat_info = json.load(fp)
-        for layer_name in list(layers.keys()):
-            if layer_name not in qunat_info:
-                del layers[layer_name]
+        remove_unquantized_layers(qmodel, layers, args)
+        load_quant_config(qmodel, args)
         
-        if (Path(qmodel)/"quant_config.json").exists():
-            quant_config = json.load(open(Path(qmodel)/"quant_config.json"))
-        elif (Path(qmodel)/"quantize_config.json").exists():
-            quant_config = json.load(open(Path(qmodel)/"quantize_config.json"))
-        else:
-            raise ValueError("quant_config.json not found in checkpoint directory")
-        pack_mode = quant_config["version"]
-
-        if args.pack_mode != quant_config["version"]:
-            logger.warn(f"pack_mode {args.pack_mode} is not compatiable with checkpoint version" +
-                        f"{pack_mode}, will force to use the checkpoint version {pack_mode}")
-            args.pack_mode = pack_mode
-        target_layer, _ = select_quant_linear(pack_mode, args.wbits)
+        target_layer = select_quant_linear(args.pack_mode, args.wbits)
         make_mixbits_quant_linear(
-            model, layers, qunat_info, target_layer=target_layer)
-        if qunat_info["method"] == "awq":
+            model, layers, args.qunat_info, target_layer=target_layer)
+        if args.method == "awq":
             from .quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
@@ -159,11 +171,11 @@ class ModelQuantizationBase(object):
         attention_layers = find_layers(model, self.quant_layers+[ScaledLinear])
         attention_layers = {n: attention_layers[n] for n in quantizers}
         quant_config = {"zero_point": True, "q_group_size": args.groupsize,
-                        "w_bit": args.wbits, "version": "GEMM"}
+                        "w_bit": args.wbits, "version": args.pack_mode}
         quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_info["method"] = args.method
 
-        target_layer, quant_config["version"] = select_quant_linear(
+        target_layer = select_quant_linear(
             args.pack_mode, args.wbits)
 
         make_mixbits_quant_linear(model, quantizers, quant_info, target_layer=target_layer)

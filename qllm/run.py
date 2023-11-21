@@ -86,11 +86,13 @@ When this feature enabled, `--save` or `--save_safetensors` would be disable.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--use_plugin', action='store_true', help='test with plugin, such as fastchat conversation')
     parser.add_argument('--pack_mode', type=str, default='auto',
-                        choices=["auto", "gemm", "dq", "ort"], help="""the quantization pack mode, 
-`gemm` represents to use AWQ GEMM engine, same as what AutoAWQ used, 
+                        choices=["AUTO", "GEMM", "GPTQ", "ORT"], help="""the quantization pack mode, 
+`GEMM` represents to use AWQ GEMM engine, same as what AutoAWQ used, 
 `auto` represents that it is selected by the GPU arch, as awq GEMM needs SM75+ 
-`dq` represent using old GPTQ style DQ+GEMM, it is not fused but more general than AWQ-GEMM, 
-and can be used on all GPU archs.""")
+`GPTQ` represent using old GPTQ style DQ+GEMM, it is not fused but more general than AWQ-GEMM, 
+and can be used on all GPU archs.
+`ORT` represents using onnxruntime pack stype,
+""")
 
     return parser
 
