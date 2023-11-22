@@ -118,9 +118,10 @@ class QuantLinearORT(nn.Module, CompressWeight):
             print('mat_float', mat_float.shape, mat_float.dtype)
 
     def unpack(self):
-        quant_values, scale, zero_point, rows, cols = (self.qweight.numpy(
-        ), self.scales.numpy(), self.qzeros.numpy(), self.infeatures, self.outfeatures)
-        float_values, zero_point, scale= dequantize_blockwise_4bits(quant_values, scale, zero_point, rows, cols)
+        quant_values, scale, zero_point, rows, cols = (self.qweight.cpu().numpy(
+        ), self.scales.cpu().numpy(), self.qzeros.cpu().numpy(), self.infeatures, self.outfeatures)
+        
+        float_values, zero_point, scale = dequantize_blockwise_4bits(quant_values, scale, zero_point, rows, cols)
         float_values = torch.from_numpy(float_values.T)
         zero_point = torch.from_numpy(zero_point.T)
         scale = torch.from_numpy(scale.T)

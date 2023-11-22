@@ -7,7 +7,7 @@ from .merge_encoder_decoder import merge_decoders
 logger = get_logger()
 
 
-def export_onnx(model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, opset=16):
+def export_onnx(model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, opset=16) -> Path:
     # since onnxruntime 1.7
     logger.info("Exporting onnx model ...")
     sample_inputs_tp = list(sample_inputs)
@@ -31,7 +31,7 @@ def export_onnx(model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple
     large_model_exporter.do_export_internal(
         model, onnx_io_tuple, onnx_inputs, onnx_path_enc, opset)
     if not with_past:
-        return
+        return onnx_path_enc
 
     onnx_io_tuple = large_model_exporter.fetch_onnx_inputs_outputs_name(model, onnx_inputs, input_keys, past_key_value, with_past, True)
 
@@ -43,3 +43,4 @@ def export_onnx(model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple
 
     onnx_path_one_for_all = onnx_path_enc.parent / "model_one_for_all.onnx"
     merge_decoders(onnx_path_enc, onnx_path_dec, save_path=onnx_path_one_for_all)
+    return onnx_path_one_for_all

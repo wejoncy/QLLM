@@ -5,11 +5,14 @@ We alread supported
 - [x] GPTQ quantization 
 - [x] AWQ quantization
 
-We support 2-8 bits quantization and conresspoing kernels on **Nvidia-GPU**, we will consider support **AMD-GPU** too.
 
 Features:
-- [x] for GPTQ, we support quantization for all GPT-Like models, it's a general quantization method.
+- [x] GPTQ supports all LLM models in huggingface/transformers, it will automatically detect the model type and quantize it.
+- [x] for GPTQ, we support to quantize model by 2-8 bits, and support to quantize model with different quantization bits for different layers.
 - [x] for AWQ, we support only those models in llm-awq/auto-awq for now.
+- [x] we support to load  model which quantized by AutoGPTQ and AutoAWQ.
+- [x] we only support **Nvidia-GPU** platform for now,
+- [ ] we will consider support **AMD-GPU**.
 
 ## Installation
 ```
@@ -21,23 +24,49 @@ pip install git+https://github.com/wejoncy/QLLM.git
 * `transformers`: tested on v4.28.0.dev0
 * `datasets`: tested on v2.10.1
 * `safetensors`: tested on v0.3.0
-* `onnxruntime`: 
+* `onnxruntime`: tested on v1.16.1
 * `onnx`
 
-# Language Generation
-
+# Model Quantization
+```bash
+#  Quantize and Save compressed model
+CUDA_VISIBLE_DEVICES=0 python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit
 ```
-# Save compressed model
-CUDA_VISIBLE_DEVICES=0 python -m qllm.run --model=meta-llama/Llama-2-7b-hf --save ./Llama-2-7b-4bit
 
-# convert to onnx model and save torch model
-python -m qllm.run --model=meta-llama/Llama-2-7b-hf --save ./Llama-2-7b-4bit --onnx ././Llama-2-7b-4bit-onnx
+# Convert to onnx model
+use `--export_onnx ./onnx_model` to export and save onnx model
+```
+python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
+```
 
 # model inference with the saved model
+```bash
 CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load ./Llama-2-7b-4bit --eval
+```
 
 # model inference with ORT
-TO be DONE
+```python
+import onnxruntime
+from transformers import AutoTokenizer
+onnx_path_str = './Llama-2-7b-4bit-onnx'
+
+tokenizer = AutoTokenizer.from_pretrained(onnx_path_str, use_fast=True)
+sample_inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+onnx_model_path = onnx_path_str+'/model_one_for_all.onnx'
+session = onnxruntime.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'])
+mask = np.ones(sample_inputs[0].shape, dtype=np.int64) if sample_inputs[1] is None else sample_inputs[1].cpu().numpy()
+num_layers = model.config.num_hidden_layers
+inputs = {'input_ids': sample_inputs[0].cpu().numpy(), 'attention_mask': mask, 'use_cache_branch': np.array([0], dtype=np.bool_)}
+for i in range(num_layers):
+    inputs[f'present_key.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
+    inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
+outputs = session.run(None, inputs)
+```
+
+# Load quantized model from hugingface/transformers
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load TheBloke/Llama-2-7B-Chat-AWQ --eval
+CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
 ```
 
 # start a chatbot
@@ -50,19 +79,12 @@ or
 python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
 ```
 
-# Convert to onnx model
-use `--export_onnx ./onnx_model` to export and save onnx model
-```
-python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
-```
 
 # Acknowledgements
 This code is based on [GPTQ](https://github.com/IST-DASLab/gptq)
 
-Thanks to Meta AI for releasing [LLaMA](https://arxiv.org/abs/2302.13971), a powerful LLM.
-
 Triton GPTQ kernel code is based on [GPTQ-triton](https://github.com/fpgaminer/GPTQ-triton)
 
-Thanks to [GPTQ-for-LLaMa](https://github.com/qwopqwop200/GPTQ-for-LLaMa)
+Thanks to [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ)
 
 Thanks to [llm-awq](https://github.com/mit-han-lab/llm-awq) and [AutoAWQ](https://github.com/casper-hansen/AutoAWQ) for releasing AWQ quantization method.
