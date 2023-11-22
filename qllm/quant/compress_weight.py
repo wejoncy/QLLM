@@ -101,9 +101,12 @@ class CompressWeight(object):
     def unpack(self):
         qzeros = self.qzeros.cuda()
         qweight = self.qweight.cuda()
-
+        if "GEMM" in self._get_name():
+            qweight = qweight.T.contiguous()
         scales = self.scales
         scales = scales.reshape(-1, 1, scales.shape[-1])
+        import os
+        load_from_autogptq = int(os.environ.get('load_from_autogptq', "0"))
 
         if self.bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, self.bits)), dtype=torch.int32, device=qzeros.device).unsqueeze(0)
@@ -111,7 +114,7 @@ class CompressWeight(object):
                 torch.int16 if self.bits == 8 else torch.int8)
             torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
 
-            # zeros = zeros + 1
+            zeros = zeros + load_from_autogptq
             zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
 
             weight = torch.bitwise_right_shift(torch.unsqueeze(
@@ -129,11 +132,17 @@ class CompressWeight(object):
             zeros = zeros.T
             self.general_unpack_on_row(qzeros.T, zeros)
             zeros = zeros.T
+            zeros = zeros + load_from_autogptq
+
+        if "GEMM" in self._get_name():
+            zeros = zeros.T.contiguous()
+        zeros = self.reverse_reorder_int_tensor(zeros)
+        weight = self.reverse_reorder_int_tensor(weight)
 
         fp16_weight = self.dequant_weight(weight.T, zeros.T).cuda()
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
-        return fp16_weight, weight, zeros
+        return fp16_weight, self.scales, zeros
 
     # odd bits, 3,5,6,7
     def pack_on_device_for_odd_bits(self, intweight_gpu, intzeros):
@@ -194,30 +203,20 @@ class CompressWeight(object):
         e2 = time.time()-s
 
         if self.oweight != None:
-            fw, iw, iz = self.unpack()
+            fw, _, iz = self.unpack()
             assert (fw == self.oweight.cuda()).all()
 
     def reorder_int_tensor(self, int_tensor):
-        compress_ratio = (32 // self.bits)
-        assert int_tensor.shape[-1] % compress_ratio == 0
-        if self.w_bit == 4:
-            order_map = [0, 2, 4, 6, 1, 3, 5, 7]
-        else:
-            raise NotImplementedError("Only 4-bit are supported for now.")
-        order_tensor = torch.tensor(order_map, dtype=torch.int32, device=int_tensor.device).reshape(1, -1)
-        order_tensor = order_tensor.repeat(int_tensor.shape[1]//compress_ratio, 1)
-        order_tensor = order_tensor + torch.arange(0, int_tensor.shape[1],
-                                                   compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
-        order_tensor = order_tensor.reshape(-1)
-        int_tensor = int_tensor[:, order_tensor]
-        int_tensor = int_tensor.T.contiguous()
+        return int_tensor
+
+    def reverse_reorder_int_tensor(self, int_tensor):
         return int_tensor
 
     def pack_on_device_for_even_bits(self, intweight_gpu, intzeros):
         compress_ratio = (32 // self.bits)
-        if "WQ" in self._get_name():
-            intweight_gpu = self.reorder_int_tensor(intweight_gpu)
-            intzeros = self.reorder_int_tensor(intzeros)
+        intweight_gpu = self.reorder_int_tensor(intweight_gpu)
+        intzeros = self.reorder_int_tensor(intzeros)
+        if "GEMM" in self._get_name():
             intzeros = intzeros.T.contiguous()
         assert intweight_gpu.shape[0] // 32 * self.bits == int(round(intweight_gpu.shape[0] * self.bits / 32 + 0.5))
         import time
@@ -237,7 +236,7 @@ class CompressWeight(object):
                     raise NotImplementedError("Only 2,4,8 bits are supported.")
         pack_on_row_fast_4bit(qweight_gpu, intweight_gpu)
         e1 = time.time()-s
-        if "WQ" in self._get_name():
+        if "GEMM" in self._get_name():
             qweight_gpu = qweight_gpu.T.contiguous()
         self.qweight = qweight_gpu.cpu()
 
@@ -257,7 +256,7 @@ class CompressWeight(object):
         e2 = time.time()-s
 
         if self.oweight != None:
-            fw, iw, iz = self.unpack()
+            fw, _, iz = self.unpack()
             assert (fw == self.oweight.cuda()).all()
 
     def pack_gpu(self, linear, scales, zeros, g_idx=None):
@@ -271,10 +270,10 @@ class CompressWeight(object):
 
         intzeros = zeros.t().contiguous().int()
 
-        if self.bits not in [2, 4, 8]:
-            return self.pack_on_device_for_odd_bits(intweight_gpu, intzeros)
-        else:
+        if self.bits in [2, 4, 8]:
             return self.pack_on_device_for_even_bits(intweight_gpu, intzeros)
+        else:
+            return self.pack_on_device_for_odd_bits(intweight_gpu, intzeros)
 
     def pack(self, linear, scales, zeros, g_idx=None):
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx

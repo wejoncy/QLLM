@@ -46,8 +46,8 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         if w_bit not in [4]:
             raise NotImplementedError("Only 4-bit are supported for now.")
 
-        self.in_features = in_features
-        self.out_features = out_features
+        self.infeatures = in_features
+        self.outfeatures = out_features
         self.w_bit = w_bit
         self.group_size = group_size if group_size != -1 else in_features
         self.groupsize = self.group_size
@@ -55,7 +55,7 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         self.oweight = None
 
         # quick sanity check (make sure aligment)
-        assert self.in_features % self.group_size == 0
+        assert self.infeatures % self.group_size == 0
         assert out_features % (32 // self.w_bit) == 0
 
         self.g_idx = torch.tensor([i // group_size for i in range(in_features)], dtype=torch.int32)
@@ -71,17 +71,56 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         else:
             self.bias = None
 
+    def reorder_int_tensor(self, int_tensor):
+        compress_ratio = (32 // self.bits)
+        assert int_tensor.shape[-1] % compress_ratio == 0
+        if self.w_bit == 4:
+            order_map = [0, 2, 4, 6, 1, 3, 5, 7]
+        else:
+            raise NotImplementedError("Only 4-bit are supported for now.")
+        order_tensor = torch.tensor(
+            order_map, dtype=torch.int32, device=int_tensor.device).reshape(1, -1)
+        order_tensor = order_tensor.repeat(
+            int_tensor.shape[1]//compress_ratio, 1)
+        order_tensor = order_tensor + torch.arange(0, int_tensor.shape[1],
+                                                   compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
+        order_tensor = order_tensor.reshape(-1)
+        int_tensor = int_tensor[:, order_tensor]
+        int_tensor = int_tensor.T.contiguous()
+        return int_tensor
+        
+    def reverse_reorder_int_tensor(self, int_tensor):
+        int_tensor = int_tensor.T.contiguous()
+        compress_ratio = (32 // self.bits)
+        assert int_tensor.shape[-1] % compress_ratio == 0
+        if self.w_bit == 4:
+            order_map = [0, 2, 4, 6, 1, 3, 5, 7]
+        else:
+            raise NotImplementedError("Only 4-bit are supported for now.")
+        order_tensor = torch.tensor(
+            order_map, dtype=torch.int32, device=int_tensor.device).reshape(1, -1)
+        order_tensor = order_tensor.repeat(
+            int_tensor.shape[1]//compress_ratio, 1)
+        order_tensor = order_tensor + torch.arange(0, int_tensor.shape[1],
+                                                   compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
+        order_tensor = order_tensor.reshape(-1)
+
+        reverse_order_tensor = torch.arange(order_tensor.shape[0]).cuda()[order_tensor]
+        reverse_order_tensor = reverse_order_tensor[order_tensor]
+        int_tensor = int_tensor[:, reverse_order_tensor]
+        return int_tensor
+
     @torch.no_grad()
     def forward(self, x):
-        out_shape = x.shape[:-1] + (self.out_features, )
+        out_shape = x.shape[:-1] + (self.outfeatures, )
         out = awq_inference_engine.gemm_forward_cuda(
             x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8)
         out = out + self.bias if self.bias is not None else out
         return out.reshape(out_shape)
 
     def extra_repr(self) -> str:
-        return 'in_features={}, out_features={}, bias={}, w_bit={}, group_size={}'.format(
-            self.in_features, self.out_features, self.bias is not None, self.w_bit, self.group_size
+        return 'infeatures={}, outfeatures={}, bias={}, w_bit={}, group_size={}'.format(
+            self.infeatures, self.outfeatures, self.bias is not None, self.w_bit, self.group_size
         )
 
 

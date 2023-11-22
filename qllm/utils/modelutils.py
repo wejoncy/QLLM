@@ -43,6 +43,19 @@ def gen_conditions(_wbits, _groupsize):
     return conditions
 
 
+def select_quant_linear(pack_mode: str, wbits:int = 4):
+    from ..quant import QuantLinear
+    from ..quant.quant_linear_awq import WQLinear_GEMM, is_the_machine_support_awq_engine
+    from ..quant.quant_linear_onnxruntime import QuantLinearORT
+
+    if pack_mode == "GEMM" or (pack_mode == "AUTO" and is_the_machine_support_awq_engine(wbits)):
+        target_layer = WQLinear_GEMM
+    elif pack_mode == "ORT":
+        target_layer = QuantLinearORT
+    else:
+        target_layer = QuantLinear
+    return target_layer
+
 # copy from https://github.com/openppl-public/ppq/blob/master/ppq/quantization/measure/norm.py
 def torch_snr_error(y_pred: torch.Tensor, y_real: torch.Tensor, reduction: str = 'mean') -> torch.Tensor:
     """
@@ -143,17 +156,17 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
             new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None)
             set_op_by_name(module, module_name, new_module)
     return        
-    if isinstance(module, target_layer):
-        return
-    for attr in dir(module):
-        tmp = getattr(module, attr)
-        name1 = name + '.' + attr if name != '' else attr
-        if name1 in replaced_names:
-            delattr(module, attr)
-            bits, groupsize = quant_info[name1]['wbits'], quant_info[name1]['groupsize']
-            setattr(module, attr, target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
-    for name1, child in module.named_children():
-        make_mixbits_quant_linear(child, replaced_names, quant_info, name + '.' + name1 if name != '' else name1, target_layer)
+    #if isinstance(module, target_layer):
+    #    return
+    #for attr in dir(module):
+    #    tmp = getattr(module, attr)
+    #    name1 = name + '.' + attr if name != '' else attr
+    #    if name1 in replaced_names:
+    #        delattr(module, attr)
+    #        bits, groupsize = quant_info[name1]['wbits'], quant_info[name1]['groupsize']
+    #        setattr(module, attr, target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
+    #for name1, child in module.named_children():
+    #    make_mixbits_quant_linear(child, replaced_names, quant_info, name + '.' + name1 if name != '' else name1, target_layer)
 
 
 # deprecated
