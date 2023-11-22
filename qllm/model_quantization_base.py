@@ -75,9 +75,7 @@ class ModelQuantizationBase(object):
 
         make_mixbits_quant_linear(model, quantizers, quant_info, target_layer=target_layer)
         qlayers = find_layers(model, [target_layer])
-        logger.info('Packing ...')
-        for name in qlayers:
-            logger.info(name)
+        for name in tqdm.tqdm(qlayers, desc='Packing weights....'):
             quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
             # rewrite weight as quantized
             if NEED_CHECK_PACK:
@@ -89,7 +87,6 @@ class ModelQuantizationBase(object):
 
             qlayers[name].pack_gpu(attention_layers[name], scale, zero, g_idx)
 
-        logger.info('Done.')
         return model, quant_info, quant_config
 
     def re_pack_to_new_mode(self, model, args, new_pack_mode):
@@ -145,7 +142,6 @@ class ModelQuantizationBase(object):
         if args.tokenizer == "":
             args.tokenizer = args.model if args.model else args.load
 
-        inputs_dataloader = auto_datasets.get_sample_datas_for_quantization(args)
         if args.load:
             model = self.__load_quant(args)
             model.eval()
@@ -154,7 +150,9 @@ class ModelQuantizationBase(object):
             model.eval()
         else:
             raise ValueError("either --model or --load must be specified. \
-                Please refer to the usage and run again with correct args.")
+Please run with `-h` to refer the usage.")
+
+        inputs_dataloader = auto_datasets.get_sample_datas_for_quantization(args)
 
         if not args.load and args.wbits < 16 and not args.nearest:
             if args.mix_qlayer_conf:
