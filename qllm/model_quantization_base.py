@@ -127,7 +127,8 @@ class ModelQuantizationBase(object):
         outputs = session.run(None, inputs)
         ref = model(sample_inputs[0].cuda())
         err = ref.logits.cpu().numpy()-outputs[0]
-        print("max abs err:", np.abs(err).max())
+        print("max abs err:", np.abs(err).max(), "correctness check ",
+              "" if np.abs(err).max() < 1e-2 else "not", " passed")
 
 
     def run(self, args):
