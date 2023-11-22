@@ -52,7 +52,12 @@ class ModelQuantizationBase(object):
     @torch.inference_mode()
     def eval_model(self, model, dev, args):
         logger.info('Evaluating ...')
-        logger.warn("you should rewrite this function for your model")
+
+        from .quant.quant_linear_awq import has_awq_inference_engine
+        if not has_awq_inference_engine() and args.pack_mode == "GEMM":
+            logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
+            model = self.re_pack_to_new_mode(model, args, "GPTQ")
+
         model.eval()
         model.to(dev)
 
@@ -94,7 +99,7 @@ class ModelQuantizationBase(object):
         source_layer = select_quant_linear(args.pack_mode, args.wbits)
         target_layer = select_quant_linear(new_pack_mode, args.wbits)
         qlayers = find_layers(model, [source_layer])
-        for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc=f"replacing model packed-weight from pack_mode=`{args.pack_mode}` to `ORT`"):
+        for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc=f"replacing model packed-weight from pack_mode=`{args.pack_mode}` to `{new_pack_mode}`"):
             fp16_weight, scales, zeros = qlayer.unpack()
             qlayer.weight = fp16_weight
             tmp = qlayer
