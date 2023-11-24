@@ -1,2 +1,6 @@
 __pycache__/
 build
+*.egg-info
+*.so
+Llama*
+*.json
