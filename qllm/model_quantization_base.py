@@ -56,14 +56,14 @@ class ModelQuantizationBase(object):
         from .quant.quant_linear_awq import has_awq_inference_engine
         if not has_awq_inference_engine() and args.pack_mode == "GEMM":
             logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
-            model = self.re_pack_to_new_mode(model, args, "GPTQ")
+            model = self.repack_to_new_mode(model, args, "GPTQ")
 
         model.eval()
         model.to(dev)
 
         inputs = self.tokenizer("compared with awq, gptq is", return_tensors="pt").to(model.device)
-
         out = model.generate(**inputs, max_length=50)
+        
         model.to('cpu')
         print(self.tokenizer.decode(out[0]))
 
@@ -94,7 +94,7 @@ class ModelQuantizationBase(object):
 
         return model, quant_info, quant_config
 
-    def re_pack_to_new_mode(self, model, args, new_pack_mode):
+    def repack_to_new_mode(self, model, args, new_pack_mode):
         bits, groupsize = args.wbits, args.groupsize
         source_layer = select_quant_linear(args.pack_mode, args.wbits)
         target_layer = select_quant_linear(new_pack_mode, args.wbits)
@@ -114,7 +114,7 @@ class ModelQuantizationBase(object):
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, args=None):
         if args.pack_mode != "ORT":
-            model = self.re_pack_to_new_mode(model, args, "ORT")
+            model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
         onnx_model_path = exporter.export_onnx(model, onnx_path_str, sample_inputs, with_past, opset)

@@ -89,22 +89,29 @@ class AutoQuantizedModelForCausalLM:
         with stack_attr(['normal_', 'uniform_', 'kaiming_uniform_', 'kaiming_normal_']):
             model = AutoModelForCausalLM.from_config(
                 transformers.AutoConfig.from_pretrained(model_name_or_path)).half()
-        
+
+        if quantize_config is None:
+            quantize_config = BaseQuantizeConfig.from_pretrained(model_name_or_path, args)
+        model.quantize_config = quantize_config
+
         quant_layers = [torch.nn.Linear]
         layers = utils.find_layers(model, layers=quant_layers)
-        if quantize_config is None:
-            quantize_config = BaseQuantizeConfig()
-            quantize_config.try_make_default_quant_op_config(layers, args)
-            quantize_config.from_pretrained(model_name_or_path, args)
 
-        for layer_name in list(layers.keys()):
-            if layer_name not in quantize_config.quantize_op_info:
-                del layers[layer_name]
+        # all layers has the same quantization config
+        if 'groupsize' not in quantize_config.quantize_op_info:
+            for layer_name in list(layers.keys()):
+                if layer_name not in quantize_config.quantize_op_info:
+                    del layers[layer_name]
+        else: # removed unquantized layer, TODO load layers from safetensors
+            for layer_name in list(layers.keys()):
+                if len(layer_name.split('.')) <= 3:
+                    del layers[layer_name]
 
-        target_layer = utils.modelutils.select_quant_linear(args.pack_mode, args.wbits)
+        target_layer = utils.modelutils.select_quant_linear(
+            args.pack_mode, quantize_config.wbits())
         utils.modelutils.make_mixbits_quant_linear(
             model, layers, quantize_config.quantize_op_info, target_layer=target_layer)
-        if args.method == "awq":
+        if quantize_config.method == "awq":
             from ..quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
@@ -130,8 +137,7 @@ class AutoQuantizedModelForCausalLM:
                             model.load_state_dict(torch.load(weight_bins[i]), strict=False)
                         break
                     weight_bins = glob.glob(str(Path(model_name_or_path).absolute()/'*.safetensors'))
-                    if len(weight_bins) > 0:
-                        
+                    if len(weight_bins) > 0:                        
                         for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
                             model.load_state_dict(safetensors.torch.load_file(
                                 weight_bins[i], device="cpu"), strict=False)
@@ -154,4 +160,14 @@ class AutoQuantizedModelForCausalLM:
             #    weight_dict.update(torch.load(weight_bins[i]))
             # model.load_state_dict(weight_dict)
             # quant.autotune_warmup_linear(model, transpose=False)
+
+        # autogptq has extra -1 in qzeros but we don't have it.
+        if quantize_config.load_from_autogptq:
+            qlayers = utils.find_layers(model, [target_layer])
+            for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc="Repacking AutoGPTQ qzeros..."):
+                qlayer.handle_qzeros_for_autogptq()
+            import os
+            os.environ['load_from_autogptq'] = '0'
+            # The kernel with load_from_autogptq has some bugs now in XbitOps, let's always replace qzeros
+
         return model
