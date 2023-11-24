@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 import importlib
-from .compress_weight import CompressWeight, general_unpack_on_row
+from .compress_weight import CompressWeight, general_unpack_on_row, general_pack_on_row
 
 
 try:
@@ -68,14 +68,14 @@ class QuantLinearTorchFunction(torch.autograd.Function):
 
 class DequantAndUnpack(torch.autograd.Function):
     @staticmethod
-    def symbolic(g, qself_qweight, scales, qzeros, groupsize, bits, in_features):
+    def symbolic(g, qself_qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order):
         return g.op("com.microsoft::DequantizeAndUnpackWeight", qself_qweight, scales, qzeros,
                     outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)
 
     @staticmethod
-    def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features):
+    def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order):
         load_from_autogptq = int(os.environ.get('load_from_autogptq', "0"))
-        if has_module_XbitOps and qweight.is_cuda:
+        if has_module_XbitOps and qweight.is_cuda and not act_order:
             return XbitOps.dequant(qweight, scales, qzeros, groupsize, bits, in_features, load_from_autogptq)
         scales = scales.reshape(-1, 1, scales.shape[-1])
         if bits in [2, 4, 8]:
@@ -99,20 +99,28 @@ class DequantAndUnpack(torch.autograd.Function):
             zeros = zeros.T
             zeros = zeros.reshape(-1, 1, zeros.shape[1])
 
-        scale_zeros = zeros * scales
-        weight = weight.reshape(-1, groupsize, weight.shape[-1])
-        weight = (scales * weight - scale_zeros.half())
+        if act_order:
+            zeros.squeeze_(1)
+            scales.squeeze_(1)
+            weight = weight.view(-1, weight.shape[-1])
+            scale_zeros = zeros * scales
+            weight = (scales[g_idx] * weight - scale_zeros[g_idx])
+            weight = weight.view(-1, groupsize, weight.shape[-1])
+        else:
+            scale_zeros = zeros * scales
+            weight = weight.reshape(-1, groupsize, weight.shape[-1])
+            weight = (scales * weight - scale_zeros.half())
 
         # weight = (scales * (weight - zeros))
         weight = weight.reshape(-1, weight.shape[2])
         return weight
 
 
-def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features):
+def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features, act_order):
     load_from_autogptq = int(os.environ.get('load_from_autogptq', "0"))
-    if not torch.onnx.is_in_onnx_export() and input.reshape(-1, input.shape[-1]).shape[0] <= 4:
+    if not act_order and not torch.onnx.is_in_onnx_export() and input.reshape(-1, input.shape[-1]).shape[0] <= 4:
         return XbitOps.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, load_from_autogptq)
-    weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features)
+    weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order)
     out = torch.matmul(input, weight.contiguous())
     return out
 
@@ -126,6 +134,7 @@ class QuantLinear(nn.Module, CompressWeight):
         self.infeatures = infeatures
         self.outfeatures = outfeatures
         self.bits = bits
+        self.act_order = None
         self.oweight = None
         self.maxq = 2**self.bits - 1
         self.groupsize = groupsize if groupsize != -1 else infeatures
@@ -141,8 +150,24 @@ class QuantLinear(nn.Module, CompressWeight):
         else:
             self.bias = None
 
+    def handle_qzeros_for_autogptq(self):
+        qzeros = self.qzeros.T.contiguous().cuda()
+        zeros = torch.zeros((self.outfeatures, self.infeatures//self.groupsize),
+                            dtype=torch.int32, device=qzeros.device)
+
+        general_unpack_on_row(qzeros, zeros, self.bits)
+        zeros = zeros.reshape(-1, zeros.shape[-1]).to(torch.int32)
+
+        zeros += 1
+
+        general_pack_on_row(qzeros, zeros, self.bits)
+
+        self.qzeros = qzeros.T.contiguous().cpu()
+
 
     def forward(self, x):
+        if self.act_order is None:
+            self.act_order = not (self.g_idx[:self.groupsize//self.bits].sum() == 0)
         # would contiguous() here affect accuracy? the default should be contiguous().T
         # out =  torch.matmul(x.reshape(-1, x.shape[-1]),self.oweight.T.contiguous())
         out_shape = x.shape[:-1] + (self.outfeatures, )
@@ -150,6 +175,6 @@ class QuantLinear(nn.Module, CompressWeight):
         # sbias = self.bias if self.bias is not None else torch.tensor([0],dtype=torch.float16)
         # out = QuantLinearTorchFunction.apply(x, self.qweight, self.scales, self.qzeros, sbias, self.g_idx, self.bits, self.groupsize, self.infeatures)
         out = QuantLinearTorchFunction_forward(x, self.qweight, self.scales,
-                                               self.qzeros, self.g_idx, self.bits, self.groupsize, self.infeatures)
+                                               self.qzeros, self.g_idx, self.bits, self.groupsize, self.infeatures, self.act_order)
         out = out + self.bias if self.bias is not None else out
         return out

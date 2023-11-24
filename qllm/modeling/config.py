@@ -12,6 +12,20 @@ class BaseQuantizeConfig:
         self.args = None
         self.quantize_config = {}
         self.quantize_op_info = {}
+        self.method = None
+        self.load_from_autogptq = False
+
+    
+    def groupsize(self, layer_name: str = None):
+        if layer_name is not None and layer_name in self.quantize_op_info:
+            return self.quantize_op_info[layer_name]["groupsize"]
+        return self.quantize_config.get('group_size',None) or self.quantize_config.get('q_group_size',None)
+    
+    
+    def wbits(self, layer_name:str = None):
+        if layer_name is not None and layer_name in self.quantize_op_info:
+            return self.quantize_op_info[layer_name]["wbits"]
+        return self.quantize_config.get('bits', None) or self.quantize_config.get('w_bit', None)
 
     def get_resolved_base_dir(self, model_name_or_path, quantize_config_filename) -> Path:
         if os.path.isdir(model_name_or_path):  # Local
@@ -32,23 +46,21 @@ class BaseQuantizeConfig:
                 resolved_config_file = None
         return resolved_config_file
         
-    def try_make_default_quant_op_config(self, layers, args):
-        # backward compatability
-        quant_layers_json = {layer_name: {"groupsize": args.groupsize, "wbits": args.wbits}
-                                for layer_name in layers.keys() if len(layer_name.split('.')) > 3}
-        quant_layers_json["method"] = args.method
-        self.quantize_op_info = quant_layers_json
+    def try_make_default_quant_op_config(self):
+        if self.quantize_op_info: return
+        # backward compatability, we just make a genaral config
+        self.quantize_op_info = {
+            "groupsize": self.groupsize(), "wbits": self.wbits()}
 
     def load_quant_op_config(self, model_name_or_path, args):
         if not (Path(model_name_or_path)/"quant.op.json").exists():
-            return
+            return self.try_make_default_quant_op_config()
         # load quant info
         with open(Path(model_name_or_path)/"quant.op.json") as fp:
             qunat_info = json.load(fp)
             args.method = qunat_info["method"]
             args.qunat_info = qunat_info
             self.quantize_op_info = qunat_info
-
 
 
     def load_quant_config(self, model_name_or_path, args):
@@ -67,18 +79,24 @@ class BaseQuantizeConfig:
             raise ValueError("quant_config.json not found in checkpoint directory")
         
         if "version" not in quant_config:
+            self.method = "GPTQ"
             quant_config["version"] = "GPTQ"
+            self.load_from_autogptq = True
             import os
             os.environ['load_from_autogptq'] = '1' # FixMe: hacky
+        else: #FIXME is it correct?
+            self.method = "AWQ"
         pack_mode = quant_config["version"]
 
         if args.pack_mode != quant_config["version"]:
             logger.warn(f"pack_mode {args.pack_mode} is not compatiable with checkpoint version" +
-                        f"{pack_mode}, will force to use the checkpoint version {pack_mode}")
+                        f", will force to use the checkpoint version {pack_mode}")
             args.pack_mode = pack_mode
         self.quantize_config = quant_config
 
-    def from_pretrained(self, model_name_or_path, args):
-        self.load_quant_op_config(model_name_or_path, args)
-        self.load_quant_config(model_name_or_path, args)
-        return self
+    @classmethod
+    def from_pretrained(cls, model_name_or_path, args):
+        obj = cls()
+        obj.load_quant_config(model_name_or_path, args)
+        obj.load_quant_op_config(model_name_or_path, args)
+        return obj

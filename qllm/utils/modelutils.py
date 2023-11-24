@@ -152,7 +152,10 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
                     desc="Replacing linear layers..."):
         if module_name in replaced_names:
             tmp = sub_module
-            bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
+            if "groupsize" in quant_info and 'wbits' in quant_info:
+                bits, groupsize = quant_info['wbits'], quant_info['groupsize']
+            else:
+                bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
             new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None)
             set_op_by_name(module, module_name, new_module)
     return        
