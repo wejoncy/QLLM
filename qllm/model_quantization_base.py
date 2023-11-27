@@ -36,6 +36,10 @@ class ModelQuantizationBase(object):
             args.model, use_fast=True)
         return AutoQuantizedModelForCausalLM.from_pretrained(args.model, args=args)
 
+    def get_datasets(self, args):
+        return auto_datasets.get_sample_datas_for_quantization(
+            args)
+
 
     def __load_quant(self, args):
         from transformers import AutoTokenizer
@@ -113,12 +117,12 @@ class ModelQuantizationBase(object):
 
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, args=None):
-        if args.pack_mode != "ORT":
+        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK") != "1":
             model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
         onnx_model_path = exporter.export_onnx(model, onnx_path_str, sample_inputs, with_past, opset)
-        self.tokenizer.save_pretrained(onnx_path_str)
+        self.tokenizer is not None and self.tokenizer.save_pretrained(onnx_path_str)
 
         #verify correctness
         import onnxruntime
@@ -156,7 +160,7 @@ class ModelQuantizationBase(object):
             raise ValueError("either --model or --load must be specified. \
 Please run with `-h` to refer the usage.")
 
-        inputs_dataloader = auto_datasets.get_sample_datas_for_quantization(args)
+        inputs_dataloader = self.get_datasets(args)
 
         if not args.load and args.wbits < 16:
             if args.mix_qlayer_conf:
@@ -170,7 +174,7 @@ Please run with `-h` to refer the usage.")
 
         if args.save:
             model.save_pretrained(args.save)
-            self.tokenizer.save_pretrained(args.save)
+            self.tokenizer is not None and self.tokenizer.save_pretrained(args.save)
 
             open(args.save+"/quant.op.json", 'w').write(json.dumps(quant_info))
             open(args.save+"/quant_config.json", 'w').write(json.dumps(quant_config))
