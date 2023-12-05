@@ -30,24 +30,40 @@ pip install git+https://github.com/wejoncy/QLLM.git
 * `onnxruntime`: tested on v1.16.1
 * `onnx`
 
-# Model Quantization
+
+# How to use it
+
+## Quantize llama2
 ```bash
 #  Quantize and Save compressed model
 CUDA_VISIBLE_DEVICES=0 python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit
 ```
 
-# Convert to onnx model
+## (NEW) Quantize model with mix bits/groupsize for higher precision (PPL)
+```bash
+#  Quantize and Save compressed model
+python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --observe --true-sequential
+```
+### NOTE:
+1. only support GPTQ
+2. observe option refered from gptq-for-llama, QLLM makes it easier to use and flexible
+3. wjat different with gptq-for-llama is we grow bit by one instead of times 2.
+4. all configurations will be saved/load automaticlly instead of quant-table which used by gptq-for-llama.
+5. if --observe is enabled, The saved model is not compatible with vLLM for now.
+
+
+## Convert to onnx model
 use `--export_onnx ./onnx_model` to export and save onnx model
 ```
 python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
 ```
 
-# model inference with the saved model
+## model inference with the saved model
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load ./Llama-2-7b-4bit --eval
 ```
 
-# model inference with ORT
+## model inference with ORT
 ```python
 import onnxruntime
 from transformers import AutoTokenizer
@@ -66,13 +82,13 @@ for i in range(num_layers):
 outputs = session.run(None, inputs)
 ```
 
-# Load quantized model from hugingface/transformers
+## Load quantized model from hugingface/transformers
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load TheBloke/Llama-2-7B-Chat-AWQ --eval
 CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
 ```
 
-# start a chatbot
+## start a chatbot
 use `--use_plugin` to enable a chatbot plugin
 
 ```
