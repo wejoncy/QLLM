@@ -73,7 +73,7 @@ class AutoQuantizedModelForCausalLM:
         use_triton: bool = False,
         torch_dtype: Optional[torch.dtype] = None,
         use_cuda_fp16: bool = True,
-        quantize_config: Optional[BaseQuantizeConfig] = None,
+        quant_config: Optional[BaseQuantizeConfig] = None,
         use_safetensors: bool = True,
         trust_remote_code: bool = False,
         warmup_triton: bool = False,
@@ -90,17 +90,17 @@ class AutoQuantizedModelForCausalLM:
             model = AutoModelForCausalLM.from_config(
                 transformers.AutoConfig.from_pretrained(model_name_or_path)).half()
 
-        if quantize_config is None:
-            quantize_config = BaseQuantizeConfig.from_pretrained(model_name_or_path, args)
-        model.quantize_config = quantize_config
+        if quant_config is None:
+            quant_config = BaseQuantizeConfig.from_pretrained(model_name_or_path, args)
+        model.quant_config = quant_config
 
         quant_layers = [torch.nn.Linear]
         layers = utils.find_layers(model, layers=quant_layers)
 
         # all layers has the same quantization config
-        if 'groupsize' not in quantize_config.quantize_op_info:
+        if 'groupsize' not in quant_config.quant_config_by_op:
             for layer_name in list(layers.keys()):
-                if layer_name not in quantize_config.quantize_op_info:
+                if layer_name not in quant_config.quant_config_by_op:
                     del layers[layer_name]
         else: # removed unquantized layer, TODO load layers from safetensors
             for layer_name in list(layers.keys()):
@@ -108,10 +108,10 @@ class AutoQuantizedModelForCausalLM:
                     del layers[layer_name]
 
         target_layer = utils.modelutils.select_quant_linear(
-            args.pack_mode, quantize_config.wbits())
+            args.pack_mode, quant_config.wbits())
         utils.modelutils.make_mixbits_quant_linear(
-            model, layers, quantize_config.quantize_op_info, target_layer=target_layer)
-        if quantize_config.method == "awq":
+            model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
+        if quant_config.method == "awq":
             from ..quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
@@ -144,7 +144,7 @@ class AutoQuantizedModelForCausalLM:
                         break
                     raise ValueError(f"{model_name_or_path} is not a folder containing weights or safetensors")
             else:
-                index_config_file = quantize_config.get_resolved_base_dir(model_name_or_path, "model.safetensors.index.json")
+                index_config_file = quant_config.get_resolved_base_dir(model_name_or_path, "model.safetensors.index.json")
                 if index_config_file:
                     index_files = set(json.load(open(index_config_file))["weight_map"].values())
                     for index_file in tqdm.tqdm(index_files, desc="loading weights"):
@@ -162,7 +162,7 @@ class AutoQuantizedModelForCausalLM:
             # quant.autotune_warmup_linear(model, transpose=False)
 
         # autogptq has extra -1 in qzeros but we don't have it.
-        if quantize_config.load_from_autogptq:
+        if quant_config.load_from_autogptq:
             qlayers = utils.find_layers(model, [target_layer])
             for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc="Repacking AutoGPTQ qzeros..."):
                 qlayer.handle_qzeros_for_autogptq()

@@ -58,13 +58,13 @@ def load_quant(qmodel, argv_user, args):
     import transformers
     layers = find_layers(model, layers=[torch.nn.Linear, lora.MergedLinear, lora.Linear])
     # backward compatability
-    if not (Path(qmodel)/"quant.op.json").exists():
+    if not (Path(qmodel)/"quant_config_by_layer.json").exists():
         quant_layers_json = {layer_name: {"groupsize": args.groupsize, "wbits": args.wbits}
                              for layer_name in layers.keys() if len(layer_name.split('.')) > 3}
-        open(Path(qmodel)/"quant.op.json").write(json.dumps(quant_layers_json))
+        open(Path(qmodel)/"quant_config_by_layer.json").write(json.dumps(quant_layers_json))
 
     # load quant info
-    with open(Path(qmodel)/"quant.op.json") as fp:
+    with open(Path(qmodel)/"quant_config_by_layer.json") as fp:
         qunat_info = json.load(fp)
     for layer_name in list(layers.keys()):
         if layer_name not in qunat_info:
@@ -156,7 +156,7 @@ def mpt_sequential(model, dataloader, mix_qlayer_conf, dev):
             subset = {n: full[n] for n in names}
             gptq = {}
             for name in subset:
-                gptq[name] = GPTQ(subset[name], observe=args.observe)
+                gptq[name] = GPTQ(subset[name], allow_mix_bits=args.allow_mix_bits)
                 gptq[name].quantizer.configure(args.wbits, perchannel=True, sym=args.sym, mse=False)
 
             def add_batch(name):
@@ -183,7 +183,7 @@ def mpt_sequential(model, dataloader, mix_qlayer_conf, dev):
                 quantizers['transformer.blocks.%d.%s' % (i, name)] = (
                     gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
 
-                if args.observe:
+                if args.allow_mix_bits:
                     observer.submit(name=name, layerid=i, gptq=gptq[name], error=error)
                 else:
                     gptq[name].free()
@@ -204,7 +204,7 @@ def mpt_sequential(model, dataloader, mix_qlayer_conf, dev):
         print('+------------------+--------------+------------+-----------+-------+')
         print('\n')
 
-    if args.observe:
+    if args.allow_mix_bits:
         observer.print()
         conditions = gen_conditions(args.wbits, args.groupsize)
         for item in observer.items():
@@ -266,12 +266,12 @@ def mpt_pack(model, quantizers):
         quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
         # rewrite weight as quantized
         if NEED_CHECK_PACK:
-            qlayers[name].oweight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
-            layers[name].weight.data = qlayers[name].oweight
-            assert (qlayers[name].oweight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
+            qlayers[name].orig_fp_weight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
+            layers[name].weight.data = qlayers[name].orig_fp_weight
+            assert (qlayers[name].orig_fp_weight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
             layers[name].nbits = qlayers[name].bits
 
-        qlayers[name].pack_gpu(layers[name], scale, zero, g_idx)
+        qlayers[name].pack(layers[name], scale, zero, g_idx)
 
     # quant.make_linear_qdq_back(model,layers)
     # quant.autotune_warmup_linear(model, transpose=False)
@@ -352,7 +352,7 @@ def process_forward_args(args):
 
 
 if __name__ == '__main__':
-    # ,'--observe','--act-order'
+    # ,'--allow_mix_bits','--act-order'
     append_default_args()
     parser = argparse.ArgumentParser()
 
@@ -384,7 +384,7 @@ if __name__ == '__main__':
     parser.add_argument('--new-eval', action='store_true', help='Whether to use the new PTB and C4 eval')
     parser.add_argument('--layers-dist', type=str, default='',
                         help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
-    parser.add_argument('--observe',
+    parser.add_argument('--allow_mix_bits',
                         action='store_true',
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
             When this feature enabled, `--save` or `--save_safetensors` would be disable.')
@@ -423,7 +423,7 @@ if __name__ == '__main__':
 
     if args.save:
         model.save_pretrained(args.save)
-        open(args.save+"/quant.op.json", 'w').write(json.dumps(quant_info))
+        open(args.save+"/quant_config_by_layer.json", 'w').write(json.dumps(quant_info))
 
     if args.eval:
         mpt_eval(model, args.forward_args, DEV)

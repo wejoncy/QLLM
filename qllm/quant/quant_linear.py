@@ -135,9 +135,10 @@ class QuantLinear(nn.Module, CompressWeight):
         self.outfeatures = outfeatures
         self.bits = bits
         self.act_order = None
-        self.oweight = None
+        self.orig_fp_weight = None
         self.maxq = 2**self.bits - 1
         self.groupsize = groupsize if groupsize != -1 else infeatures
+        self.pack_mode = "GPTQ"
 
         self.register_buffer('qweight', torch.zeros((infeatures // 32 * self.bits, outfeatures), dtype=torch.int32))
         self.register_buffer('qzeros', torch.zeros((math.ceil(infeatures / self.groupsize),
@@ -151,7 +152,8 @@ class QuantLinear(nn.Module, CompressWeight):
             self.bias = None
 
     def handle_qzeros_for_autogptq(self):
-        qzeros = self.qzeros.T.contiguous().cuda()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        qzeros = self.qzeros.T.contiguous().to(device)
         zeros = torch.zeros((self.outfeatures, self.infeatures//self.groupsize),
                             dtype=torch.int32, device=qzeros.device)
 
@@ -169,7 +171,7 @@ class QuantLinear(nn.Module, CompressWeight):
         if self.act_order is None:
             self.act_order = not (self.g_idx[:self.groupsize//self.bits].sum() == 0)
         # would contiguous() here affect accuracy? the default should be contiguous().T
-        # out =  torch.matmul(x.reshape(-1, x.shape[-1]),self.oweight.T.contiguous())
+        # out =  torch.matmul(x.reshape(-1, x.shape[-1]),self.orig_fp_weight.T.contiguous())
         out_shape = x.shape[:-1] + (self.outfeatures, )
         # out = QuantLinearFunction.apply(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, self.g_idx, self.bits, self.maxq)
         # sbias = self.bias if self.bias is not None else torch.tensor([0],dtype=torch.float16)

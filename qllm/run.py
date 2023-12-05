@@ -27,7 +27,7 @@ def append_default_args():
 
 
 def define_basic_args():
-    # ,'--observe','--act-order'
+    # ,'--allow_mix_bits','--act-order'
     append_default_args()
     parser = argparse.ArgumentParser(description="""
 A general tool to quantize LLMs with the GPTQ/AWQ method.
@@ -72,7 +72,7 @@ A typical usage is:
     parser.add_argument('--act-order', action='store_true',
                         help='Whether to apply the activation order GPTQ heuristic')
     parser.add_argument('--true-sequential', action='store_true', help='Whether to run in true sequential model.')
-    parser.add_argument('--observe',action='store_true',
+    parser.add_argument('--allow_mix_bits',action='store_true',
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
 When this feature enabled, `--save` or `--save_safetensors` would be disable.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')

@@ -296,6 +296,7 @@ class QuantLinear(nn.Module, CompressWeight):
         self.bits = bits
         self.maxq = maxq
         self.transpose = transpose
+        self.pack_mode = "GPTQ"
 
         self.qweight = nn.Parameter(torch.Tensor(out_features, in_features // 8))
         self.scales = nn.Parameter(torch.Tensor(out_features))
