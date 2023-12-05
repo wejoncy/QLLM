@@ -36,7 +36,7 @@ def gen_conditions(_wbits, _groupsize):
         if groupsize > 32:
             groupsize /= 2
         else:
-            wbits *= 2
+            wbits += 1
             groupsize = _groupsize
 
         conditions.append((int(wbits), int(groupsize)))

@@ -16,7 +16,7 @@ import contextlib
 import tqdm
 
 from . import utils, auto_datasets
-from .utils import find_layers, DEV, export_quant_table
+from .utils import find_layers, DEV
 from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear, select_quant_linear, set_op_by_name
 from .utils.logger import get_logger
 from .modeling import AutoQuantizedModelForCausalLM
@@ -137,11 +137,9 @@ class ModelQuantizationBase(object):
 
 
     def run(self, args):
-        if args.layers_dist:
-            gpu_dist = [int(x) for x in args.layers_dist.split(':')]
-        else:
-            gpu_dist = []
-
+        if args.pack_mode == "AUTO" and args.observe:
+            assert args.method == "gptq", "only gptq support observe mode"
+            args.pack_mode = "GPTQ"
         if type(args.load) is not str:
             args.load = args.load.as_posix()
 
@@ -160,7 +158,7 @@ Please run with `-h` to refer the usage.")
 
         inputs_dataloader = auto_datasets.get_sample_datas_for_quantization(args)
 
-        if not args.load and args.wbits < 16 and not args.nearest:
+        if not args.load and args.wbits < 16:
             if args.mix_qlayer_conf:
                 args.mix_qlayer_conf = json.load(open(args.mix_qlayer_conf))
             else:
@@ -170,10 +168,7 @@ Please run with `-h` to refer the usage.")
             model, quant_info, quant_config = self.pack_model(model, quantizers, args)
             logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
-        if args.quant_directory is not None:
-            export_quant_table(quantizers, args.quant_directory)
-
-        if not args.observe and args.save:
+        if args.save:
             model.save_pretrained(args.save)
             self.tokenizer.save_pretrained(args.save)
 
@@ -189,11 +184,3 @@ Please run with `-h` to refer the usage.")
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
             loop_in_chat_completion(args.tokenizer, model)
-
-        if not args.observe and args.save_safetensors:
-            from safetensors.torch import save_file as safe_save
-            state_dict = model.state_dict()
-            state_dict = {k: v.clone().contiguous() for k, v in state_dict.items()}
-            safe_save(state_dict, args.save_safetensors)
-
-
