@@ -8,6 +8,7 @@ datasets==2.10.1
 texttable
 tqdm
 numpy
+onnx
 #protobuf==3.20.2
 XbitOps @git+https://github.com/wejoncy/XbitOps.git
 #--extra-index-url https://test.pypi.org/simple/ 

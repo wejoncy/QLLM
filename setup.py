@@ -150,7 +150,7 @@ def build_cuda_extensions():
 
 setuptools.setup(
     name="qllm",
-    version=find_version(get_path(".", "versions.txt")),
+    version=find_version(get_path("./qllm/", "__init__.py")),
     author="qllm Team",
     license="Apache 2.0",
     description="A GPTQ based quantization engine for LLMs",
