@@ -1,3 +1,4 @@
+import tqdm
 import argparse
 import time
 import numpy as np
@@ -26,14 +27,17 @@ def get_mpt(model, argv_user, nsamples, is_load_quant=False):
         argv_user[lora_ind+1] = 'False'
 
 
-    import examples_ads    
-    from examples_ads import run_mpt_prompt
-    argv_user.insert(0, run_mpt_prompt.__file__)
+    import examples_ads
+    if 'mpt-' in ' '.join(argv_user):
+        from examples_ads import run_mpt_prompt as prompt_script
+    else:
+        from examples_ads import run_llama_prompt as prompt_script
+    argv_user.insert(0, prompt_script.__file__)
     argv_back = sys.argv
     sys.argv = argv_user
 
     print('\n\n\nCalling custom model with args ... \n', sys.argv)
-    model,data_sets = run_mpt_prompt.main(True)
+    model, data_sets = prompt_script.main(True)
     new_data = []
     for idx, indata in enumerate(data_sets):
         if idx>=nsamples:break
@@ -47,9 +51,19 @@ def load_quant(qmodel, argv_user, args):
     os.environ["nbits"] = "4"
 
     model,dataloader = get_mpt(args.model, argv_user, args.nsamples, is_load_quant=True)
-    import transformers
-    layers = find_layers(model,layers=[transformers.models.mpt.fewbits_quant_linear.FewBitsQuantLinear])
+    layers = find_layers(model, layers=[torch.nn.Linear])
+    for layer_name in list(layers.keys()):
+        if len(layer_name.split('.')) <= 3:
+            del layers[layer_name]
     quant.replace_quant_linear_layer(model,layers ,args.wbits, args.groupsize)
+    model_name_or_path = qmodel
+    import glob
+    from pathlib import Path
+    weight_bins = glob.glob(
+        str(Path(model_name_or_path).absolute()/'pytorch_model*.bin'))
+    assert len(weight_bins) > 0, 'No weight bin found.'
+    for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
+        model.load_state_dict(torch.load(weight_bins[i]), strict=False)
     #quant.autotune_warmup_linear(model, transpose=False)
     return model.cuda(),dataloader
 
@@ -236,8 +250,12 @@ def mpt_eval(model, argv_user, dev):
     print('Evaluating ...')
     sys.argv = argv_user
     import examples_ads
-    from examples_ads import run_mpt_prompt
-    run_mpt_prompt.main(quant_model = model)
+    if 'llama' in str(type(model)).lower():
+        from examples_ads import run_llama_prompt as prompt_script
+    else:
+        from examples_ads import run_mpt_prompt as prompt_script
+    print('\n\n\nCalling custom model with args ... \n', sys.argv)
+    prompt_script.main(quant_model = model)
 
 
 # TODO: perform packing on GPU
@@ -267,6 +285,9 @@ def mpt_pack(model, quantizers, wbits, groupsize):
             layers[name].qzeros = qlayers[name].qzeros
             layers[name].g_idx = qlayers[name].g_idx
             layers[name].qweight = qlayers[name].qweight
+            qlayers[name].oweight = None  # free memory
+        
+    del qlayers
 
 
     #quant.make_linear_qdq_back(model,layers)
@@ -302,7 +323,7 @@ def export_onnx(model, onnx_path, sample_inputs:tuple):
     import onnx
     onnx_model=onnx.load(str(onnx_filepath))
     onnx_filepath = onnx_path
-    onnx.save_model(onnx_model, str(onnx_filepath), save_as_external_data=True, all_tensors_to_one_file=True, location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
+    onnx.save_model(onnx_model, str(onnx_filepath), save_as_external_data=True, all_tensors_to_one_file=True, location="graph.data", size_threshold=1024, convert_attribute=False)
     print(f"Exported onnx model to {onnx_filepath}")
     
 
@@ -399,6 +420,7 @@ if __name__ == '__main__':
         tick = time.time()
         quantizers = mpt_sequential(model, dataloader, DEV)
         model = mpt_pack(model, quantizers, args.wbits, args.groupsize)
+        del quantizers # free memory
         print(time.time() - tick)
 
     if args.eval:

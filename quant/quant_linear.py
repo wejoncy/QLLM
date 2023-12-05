@@ -651,10 +651,10 @@ def replace_quant_linear_layer(module, names, bits, groupsize, name=''):
         name1 = name + '.' + attr if name != '' else attr
         if name1 in names:
             ql=QuantLinear(bits, groupsize, tmp_layer.in_features, tmp_layer.out_features, tmp_layer.bias is not None)
-            ql.qweight = tmp_layer.qweight
-            ql.qzeros = tmp_layer.qzeros
-            ql.scales = tmp_layer.scales
-            ql.g_idx = tmp_layer.g_idx
+            #ql.qweight = tmp_layer.qweight
+            #ql.qzeros = tmp_layer.qzeros
+            #ql.scales = tmp_layer.scales
+            #ql.g_idx = tmp_layer.g_idx
             delattr(module, attr)
             setattr(module, attr, ql)
     for name1, child in module.named_children():
