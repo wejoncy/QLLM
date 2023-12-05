@@ -54,7 +54,6 @@ A typical usage is:
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration data samples.')
     parser.add_argument('--percdamp', type=float, default=.01,
                         help='Percent of the average Hessian diagonal to use for dampening.')
-    parser.add_argument('--nearest', action='store_true', help='Whether to run the RTN baseline.')
     parser.add_argument('--wbits', type=int, default=16,
                         choices=[2, 3, 4, 5, 6, 7, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
@@ -73,16 +72,9 @@ A typical usage is:
     parser.add_argument('--act-order', action='store_true',
                         help='Whether to apply the activation order GPTQ heuristic')
     parser.add_argument('--true-sequential', action='store_true', help='Whether to run in true sequential model.')
-    parser.add_argument('--new-eval', action='store_true', help='Whether to use the new PTB and C4 eval')
-    parser.add_argument('--layers-dist', type=str, default='',
-                        help='Distribution of layers across GPUs. e.g. 2:1:1 for 2 layers on GPU 0, 1 layer on GPU 1, \
-and 1 layer on GPU 2. Any remaining layers will be assigned to your last GPU.')
-    parser.add_argument('--observe',
-                        action='store_true',
+    parser.add_argument('--observe',action='store_true',
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
 When this feature enabled, `--save` or `--save_safetensors` would be disable.')
-    parser.add_argument('--quant-directory', type=str, default=None,
-                        help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--use_plugin', action='store_true', help='test with plugin, such as fastchat conversation')
     parser.add_argument('--pack_mode', type=str, default='AUTO',

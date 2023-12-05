@@ -22,42 +22,43 @@ class ObserverHelper:
         return False
 
     def post_quant(self, quantizers, state_dict_prefix):
-        if self.args.observe:
-            args = self.args
-            self.observer.print()
-            conditions = gen_conditions(args.wbits, args.groupsize)
-            for item in self.observer.items():
-                name = item[0]
-                layerid = item[1]
-                gptq = item[2]['gptq']
-                error = item[2]['error']
-                target = error / 2
+        if not self.args.observe:
+            return
+        args = self.args
+        logger.debug(self.observer.print())
+        conditions = gen_conditions(args.wbits, args.groupsize)
+        for item in tqdm.tqdm(self.observer.items(), desc="Optimizing with mix bits/groupsize"):
+            name = item[0]
+            layerid = item[1]
+            gptq = item[2]['gptq']
+            error = item[2]['error']
+            target = error / 2
 
-                table = Texttable()
-                table.header(['wbits', 'groupsize', 'error'])
-                table.set_cols_dtype(['i', 'i', 'f'])
-                table.add_row([args.wbits, args.groupsize, error])
+            table = Texttable()
+            table.header(['wbits', 'groupsize', 'error'])
+            table.set_cols_dtype(['i', 'i', 'f'])
+            table.add_row([args.wbits, args.groupsize, error])
 
-                print('Optimizing {} {} ..'.format(name, layerid))
-                for wbits, groupsize in conditions:
+            logger.debug('Optimizing {} {} ..'.format(name, layerid))
+            for wbits, groupsize in conditions:
 
-                    if error < target:
-                        # if error dropped 50%, skip
-                        break
+                if error < target:
+                    # if error dropped 50%, skip
+                    break
 
-                    gptq.quantizer.configure(wbits, perchannel=True, sym=args.sym, mse=False)
+                gptq.quantizer.configure(wbits, perchannel=True, sym=args.sym, mse=False)
 
-                    scale, zero, g_idx, error = gptq.fasterquant(
-                        percdamp=args.percdamp, groupsize=groupsize, actorder=args.act_order, name=name)
+                scale, zero, g_idx, error = gptq.fasterquant(
+                    percdamp=args.percdamp, groupsize=groupsize, actorder=args.act_order, name=name)
 
-                    table.add_row([wbits, groupsize, error])
-                    quantizers[f'{state_dict_prefix}.{layerid}.{name}'] = (
-                        gptq.quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), wbits, groupsize)
+                table.add_row([wbits, groupsize, error])
+                quantizers[f'{state_dict_prefix}.{layerid}.{name}'] = (
+                    gptq.quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), wbits, groupsize)
 
-                print(table.draw())
-                print('\n')
-                gptq.layer.to('cpu')
-                gptq.free()
+            logger.debug(table.draw())
+            logger.debug('\n')
+            gptq.layer.to('cpu')
+            gptq.free()
 
 
 class GPTQQuant(QuantFrameBase):
@@ -91,11 +92,6 @@ class GPTQQuant(QuantFrameBase):
         observer_helper = ObserverHelper(args)
         for i in tqdm.tqdm(range(len(attention_layers)), desc="running GPTQ"):
             self.hook_before_qlayer(i, args)
-
-            logger.debug(f'Quantizing layer {i+1}/{len(attention_layers)}..')
-            logger.debug('+------------------+--------------+------------+-----------+-------+')
-            logger.debug('|       name       | weight_error | fp_inp_SNR | q_inp_SNR | time  |')
-            logger.debug('+==================+==============+============+===========+=======+')
 
             block_layer = attention_layers[i].to(dev)
             named_linear_layers = find_layers(block_layer, self.quant_layers)
@@ -132,8 +128,6 @@ class GPTQQuant(QuantFrameBase):
             torch.cuda.empty_cache()
 
             inps, outs = outs, inps
-            logger.debug('+------------------+--------------+------------+-----------+-------+')
-            logger.debug('\n')
 
         observer_helper.post_quant(quantizers, state_dict_prefix)
 

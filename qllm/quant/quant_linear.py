@@ -118,7 +118,7 @@ class DequantAndUnpack(torch.autograd.Function):
 
 def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features, act_order):
     load_from_autogptq = int(os.environ.get('load_from_autogptq', "0"))
-    if not act_order and not torch.onnx.is_in_onnx_export() and input.reshape(-1, input.shape[-1]).shape[0] <= 4:
+    if not act_order and not torch.onnx.is_in_onnx_export() and input.reshape(-1, input.shape[-1]).shape[0] <= 4 and bits == 4 and groupsize==128:
         return XbitOps.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, load_from_autogptq)
     weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order)
     out = torch.matmul(input, weight.contiguous())
