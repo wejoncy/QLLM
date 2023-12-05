@@ -1,5 +1,5 @@
 from ..quant import make_mixbits_quant_linear, QuantLinear
-from ..utils import find_layers, DEV, export_quant_table, gen_conditions
+from ..utils import find_layers, DEV, gen_conditions
 from ..quantization.gptq import GPTQ, Observer
 from texttable import Texttable
 import os
@@ -411,7 +411,7 @@ if __name__ == '__main__':
         model, dataloader = get_mpt(args.model, args.forward_args, args.nsamples)
         model.eval()
 
-    if not args.load and args.wbits < 16 and not args.nearest:
+    if not args.load and args.wbits < 16:
         if args.mix_qlayer_conf:
             args.mix_qlayer_conf = json.load(open(args.mix_qlayer_conf))
         else:
@@ -421,10 +421,7 @@ if __name__ == '__main__':
         model, quant_info = mpt_pack(model, quantizers)
         print(time.time() - tick)
 
-    if args.quant_directory is not None:
-        export_quant_table(quantizers, args.quant_directory)
-
-    if not args.observe and args.save:
+    if args.save:
         model.save_pretrained(args.save)
         open(args.save+"/quant.op.json", 'w').write(json.dumps(quant_info))
 
@@ -433,9 +430,3 @@ if __name__ == '__main__':
 
     if args.export_onnx:
         export_onnx(model, args.export_onnx, dataloader[0])
-
-    if not args.observe and args.save_safetensors:
-        from safetensors.torch import save_file as safe_save
-        state_dict = model.state_dict()
-        state_dict = {k: v.clone().contiguous() for k, v in state_dict.items()}
-        safe_save(state_dict, args.save_safetensors)

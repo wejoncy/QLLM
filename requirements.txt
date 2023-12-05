@@ -6,10 +6,9 @@ datasets==2.10.1
 #accelerate==0.17.1
 #triton==2.0.0
 texttable
-toml
 tqdm
 numpy
 #protobuf==3.20.2
-#XbitOps @git+https://github.com/wejoncy/XbitOps.git
---extra-index-url https://test.pypi.org/simple/ 
-XbitOps
+XbitOps @git+https://github.com/wejoncy/XbitOps.git
+#--extra-index-url https://test.pypi.org/simple/ 
+#XbitOps
