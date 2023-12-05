@@ -20,8 +20,8 @@ from texttable import Texttable
 DO_QDQ = False
 
 
-def get_mpt(model, argv_user,nsamples):
-    if argv_user[argv_user.index('--model_name_or_path')+1] not in ['ckpt/mpt-7b-storywriter/', 'ckpt/mpt-7b-storywriter']:
+def get_mpt(model, argv_user, nsamples, is_load_quant=False):
+    if is_load_quant or argv_user[argv_user.index('--model_name_or_path')+1] not in ['ckpt/mpt-7b-storywriter/', 'ckpt/mpt-7b-storywriter']:
         lora_ind = argv_user.index('--use_lora')
         argv_user[lora_ind+1] = 'False'
 
@@ -32,6 +32,7 @@ def get_mpt(model, argv_user,nsamples):
     argv_back = sys.argv
     sys.argv = argv_user
 
+    print('\n\n\nCalling custom model with args ... \n', sys.argv)
     model,data_sets = run_mpt_prompt.main(True)
     new_data = []
     for idx, indata in enumerate(data_sets):
@@ -45,7 +46,7 @@ def load_quant(qmodel, argv_user, args):
     argv_user[argv_user.index('--model_name_or_path')+1] = os.path.abspath(qmodel)
     os.environ["nbits"] = "4"
 
-    model,dataloader = get_mpt(args.model, argv_user, args.nsamples)
+    model,dataloader = get_mpt(args.model, argv_user, args.nsamples, is_load_quant=True)
     import transformers
     layers = find_layers(model,layers=[transformers.models.mpt.fewbits_quant_linear.FewBitsQuantLinear])
     quant.replace_quant_linear_layer(model,layers ,args.wbits, args.groupsize)
@@ -58,15 +59,31 @@ def mpt_sequential(model, dataloader, dev):
     model=model.cpu()
     use_cache = model.config.use_cache
     model.config.use_cache = False
-    layers = model.get_decoder().blocks
 
-    model.get_decoder().wte = model.get_decoder().wte.to(dev)
-    model.get_decoder().norm_f = model.get_decoder().norm_f.to(dev)
+    is_mpt = hasattr(model, 'get_decoder')
+    d_model = 4096
+    if is_mpt:
+        inter_decoder = model.get_decoder()
+        layers = model.get_decoder().blocks
+        inter_decoder.wte = inter_decoder.wte.to(dev)
+        inter_decoder.norm_f = inter_decoder.norm_f.to(dev)
+        d_model = model.config.d_model
+        prefix = 'transformer.blocks'
+    else:
+        inter_decoder = model.model
+        layers = model.model.layers
+        inter_decoder.embed_tokens = inter_decoder.embed_tokens.to(dev)
+        inter_decoder.norm = inter_decoder.norm.to(dev)
+        d_model = model.config.hidden_size
+        prefix = 'model.layers'
+
+
     layers[0] = layers[0].to(dev)
 
     dtype = next(iter(model.parameters())).dtype
     #model.config.max_seq_len
-    inps = torch.zeros((args.nsamples, dataloader[0][0].shape[-1], model.config.d_model), dtype=dtype, device=dev)
+
+    inps = torch.zeros((args.nsamples, dataloader[0][0].shape[-1], d_model), dtype=dtype, device=dev)
     cache = {'i': 0, 'attention_mask': None}
 
     class Catcher(nn.Module):
@@ -79,7 +96,8 @@ def mpt_sequential(model, dataloader, dev):
             inps[cache['i']] = inp
             cache['i'] += 1
             cache['attention_mask'] = kwargs['attention_mask']
-            #cache['position_ids'] = kwargs['position_ids']
+            if 'position_ids' in kwargs:
+                cache['position_ids'] = kwargs['position_ids']
             raise ValueError
 
     layers[0] = Catcher(layers[0])
@@ -91,13 +109,20 @@ def mpt_sequential(model, dataloader, dev):
     layers[0] = layers[0].module
 
     layers[0] = layers[0].cpu()
-    model.get_decoder().wte = model.get_decoder().wte.cpu()
-    model.get_decoder().norm_f = model.get_decoder().norm_f.cpu()
+    if is_mpt:
+        inter_decoder.wte = inter_decoder.wte.cpu()
+        inter_decoder.norm_f = inter_decoder.norm_f.cpu()
+    else:
+        inter_decoder.embed_tokens = inter_decoder.embed_tokens.cpu()
+        inter_decoder.norm = inter_decoder.norm.cpu()
+        # higher precision with true_sequential
+        args.true_sequential = True
     torch.cuda.empty_cache()
 
     outs = torch.zeros_like(inps)
-    attention_mask = cache['attention_mask']
-    #position_ids = cache['position_ids']
+    input_args = {'attention_mask': cache['attention_mask']}
+    if 'position_ids' in cache:
+        input_args['position_ids'] = cache['position_ids']
 
     print('Ready.')
 
@@ -135,16 +160,15 @@ def mpt_sequential(model, dataloader, dev):
             for name in subset:
                 handles.append(subset[name].register_forward_hook(add_batch(name)))
             for j in range(args.nsamples):
-                layer.attn.Wqkv.nbits = 16
-                layer.attn.out_proj.nbits = 16
-                outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, #position_ids=position_ids
-                )[0]
+                #layer.attn.Wqkv.nbits = 16
+                #layer.attn.out_proj.nbits = 16
+                outs[j] = layer(inps[j].unsqueeze(0), **input_args)[0]
             for h in handles:
                 h.remove()
 
             for name in subset:
                 scale, zero, g_idx, error = gptq[name].fasterquant(percdamp=args.percdamp, groupsize=args.groupsize, actorder=args.act_order, name=name)
-                quantizers['transformer.blocks.%d.%s' % (i, name)] = (gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
+                quantizers['%s.%d.%s' % (prefix, i, name)] = (gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
 
                 if args.observe:
                     observer.submit(name=name, layerid=i, gptq=gptq[name], error=error)
@@ -155,7 +179,7 @@ def mpt_sequential(model, dataloader, dev):
         # I am supposing layer's weight should be quantized and modified, we are statisting the error 
         # accumulated from the previous layers and compensate next layer
         for j in range(args.nsamples):
-            outs[j] = layer(inps[j].unsqueeze(0), attention_mask=attention_mask, #position_ids=position_ids
+            outs[j] = layer(inps[j].unsqueeze(0), **input_args
             )[0]
 
         layers[i] = layer.cpu()
@@ -195,7 +219,7 @@ def mpt_sequential(model, dataloader, dev):
                 scale, zero, g_idx, error = gptq.fasterquant(percdamp=args.percdamp, groupsize=groupsize, actorder=args.act_order, name=name)
 
                 table.add_row([wbits, groupsize, error])
-                quantizers['transformer.blocks.%d.%s' % (layerid, name)] = (gptq.quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), wbits, groupsize)
+                quantizers['%s.%d.%s' % (prefix, layerid, name)] = (gptq.quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), wbits, groupsize)
 
             print(table.draw())
             print('\n')
@@ -254,6 +278,7 @@ def mpt_pack(model, quantizers, wbits, groupsize):
 
 
 def export_onnx(model, onnx_path, sample_inputs:tuple):
+    torch.cuda.empty_cache()
     from pathlib import Path
     import shutil
     onnx_path = Path(onnx_path).absolute()
@@ -267,6 +292,9 @@ def export_onnx(model, onnx_path, sample_inputs:tuple):
     attention_mask=inputs['attention_mask']
     past_key_values=None
     onnx_inputs = (input_ids,past_key_values,attention_mask,None,None,None,True,False,False,False)
+    if 'llama' in str(type(model)).lower():
+        onnx_inputs = (input_ids,attention_mask,None,  None,None,None,False,False,  False,True)
+
     onnx_inp_names = ("input_ids", "attention_mask")
     onnx_out_names = ("logits",)
     onnx_dynamic_axes = {"input_ids": {0 : 'batch_size', 1:"seq_len"}, "attention_mask": {0 : 'batch_size', 1:"seq_len"}}
@@ -275,6 +303,7 @@ def export_onnx(model, onnx_path, sample_inputs:tuple):
     onnx_model=onnx.load(str(onnx_filepath))
     onnx_filepath = onnx_path
     onnx.save_model(onnx_model, str(onnx_filepath), save_as_external_data=True, all_tensors_to_one_file=True, location="mpt_ext.data", size_threshold=1024, convert_attribute=False)
+    print(f"Exported onnx model to {onnx_filepath}")
     
 
 def append_default_args():
@@ -287,11 +316,11 @@ def append_default_args():
     if '--nsamples' not in sys.argv:
         sys.argv += ['--nsamples', '512']
 
-    if '--export_onnx' not in sys.argv:
-        sys.argv += ['--export_onnx', './mpt_onnx_q4/mpt.onnx']
+    #if '--export_onnx' not in sys.argv:
+    #    sys.argv += ['--export_onnx', './mpt_onnx_q4/mpt.onnx']
  
-    if '--eval' not in sys.argv:
-        sys.argv += ['--eval']
+    #if '--eval' not in sys.argv:
+    #    sys.argv += ['--eval']
 
     #if '--save' not in sys.argv:
     #    sys.argv += ['--save', './mpt_q4']
@@ -301,11 +330,11 @@ def append_default_args():
 def process_forward_args(args):
     argv_user = args.forward_args
     import re
-    vs = re.findall(r'(".*")', argv_user)
+    key_with_space = re.findall(r'(".*"|\'.*\')', argv_user)
     argv_map = {}
-    for idx,v in enumerate(vs):
-        argv_user = re.sub(v, f'____{idx}___',argv_user)
-        argv_map[f'____{idx}___'] = v
+    for idx, v in enumerate(key_with_space):
+        argv_user = re.sub(v, f'____{idx}___', argv_user)
+        argv_map[f'____{idx}___'] = v.strip('"')
     argv_user = argv_user.split(' ')
     argv_user = list(filter(None, argv_user))
     idx = 0
