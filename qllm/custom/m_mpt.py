@@ -271,7 +271,7 @@ def mpt_pack(model, quantizers):
             assert (qlayers[name].orig_fp_weight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
             layers[name].nbits = qlayers[name].bits
 
-        qlayers[name].pack_gpu(layers[name], scale, zero, g_idx)
+        qlayers[name].pack(layers[name], scale, zero, g_idx)
 
     # quant.make_linear_qdq_back(model,layers)
     # quant.autotune_warmup_linear(model, transpose=False)

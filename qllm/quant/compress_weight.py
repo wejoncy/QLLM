@@ -274,7 +274,7 @@ class CompressWeight(object):
             fw, _, iz = self.unpack()
             assert (fw == self.orig_fp_weight.cuda()).all()
 
-    def pack_gpu(self, linear, scales, zeros, g_idx=None):
+    def accelerate_pack_on_gpu(self, linear, scales, zeros, g_idx=None):
         scales = scales.cuda()
         zeros = zeros.cuda()
         layer_weight = linear.weight.data.cuda()
@@ -291,6 +291,10 @@ class CompressWeight(object):
             return self.pack_on_device_for_odd_bits(intweight_gpu, intzeros)
 
     def pack(self, linear, scales, zeros, g_idx=None):
+        try:
+            return self.accelerate_pack_on_gpu(linear, scales, zeros, g_idx)
+        except:
+            pass
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
 
         scales = scales.t().contiguous()
@@ -322,7 +326,7 @@ class CompressWeight(object):
         qweight = qweight.astype(np.int32)
         self.qweight = torch.from_numpy(qweight)
 
-        zeros -= 1
+        #zeros -= 1 ### ORIGINAL GPTQ minus 1 for zeros, Not quite sure why
         zeros = zeros.numpy().astype(np.uint32)
         qzeros = np.zeros((zeros.shape[0], zeros.shape[1] // 32 * self.bits), dtype=np.uint32)
         i = 0

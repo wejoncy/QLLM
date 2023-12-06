@@ -153,7 +153,7 @@ class WQLinear_GEMV(nn.Module):
         else:
             self.bias = None
 
-    def pack_gpu(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
+    def accelerate_pack_on_gpu(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
         awq_linear = cls(w_bit, group_size, linear.in_features, linear.out_features,
                          linear.bias is not None, linear.weight.device)
         if init_only:  # just prepare for loading sd

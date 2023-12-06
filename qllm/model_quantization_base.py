@@ -94,7 +94,7 @@ class ModelQuantizationBase(object):
                     attention_layers[name], scale, zero, g_idx).cuda()).all()
                 attention_layers[name].nbits = qlayers[name].bits
 
-            qlayers[name].pack_gpu(attention_layers[name], scale, zero, g_idx)
+            qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
         return model, quant_info, quant_config
 
@@ -109,7 +109,7 @@ class ModelQuantizationBase(object):
             tmp = qlayer
             new_module = target_layer(bits, groupsize, tmp.infeatures, tmp.outfeatures, tmp.bias is not None)
             set_op_by_name(model, module_name, new_module)
-            new_module.pack_gpu(tmp, scales.T, zeros.T, None)
+            new_module.pack(tmp, scales.T, zeros.T, None)
             qlayer.to('cpu')
         del qlayers
         torch.cuda.empty_cache()
