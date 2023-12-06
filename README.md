@@ -51,6 +51,20 @@ python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama
 4. all configurations will be saved/load automaticlly instead of quant-table which used by gptq-for-llama.
 5. if --observe is enabled, The saved model is not compatible with vLLM for now.
 
+## Conversion between AWQ and GPTQ
+```bash
+python -m qllm.run --load TheBloke/Llama-2-7B-Chat-AWQ --eval --save ./Llama-2-7b-chat-hf_gptq_q4/ --pack_mode=GPTQ
+```
+Or you can use `--pack_mode=AWQ` to convert GPTQ to AWQ.
+```bash
+python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval --save ./Llama-2-7b-chat-hf_awq_q4/ --pack_mode=GEMM
+```
+### Note:
+Not all cases are supported, for example,
+1)  if you quantized model with different quantization bits for different layers, you can't convert it to AWQ.
+2)  if GPTQ model is quantized with `--observe` option, you can't convert it to AWQ.
+3)  if GPTQ model is quantized with `--act_order` option, you can't convert it to AWQ.
+
 
 ## Convert to onnx model
 use `--export_onnx ./onnx_model` to export and save onnx model

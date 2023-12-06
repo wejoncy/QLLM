@@ -266,9 +266,9 @@ def mpt_pack(model, quantizers):
         quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
         # rewrite weight as quantized
         if NEED_CHECK_PACK:
-            qlayers[name].oweight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
-            layers[name].weight.data = qlayers[name].oweight
-            assert (qlayers[name].oweight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
+            qlayers[name].orig_fp_weight = qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()
+            layers[name].weight.data = qlayers[name].orig_fp_weight
+            assert (qlayers[name].orig_fp_weight == qlayers[name].weight_qdq(layers[name], scale, zero, g_idx).cuda()).all()
             layers[name].nbits = qlayers[name].bits
 
         qlayers[name].pack_gpu(layers[name], scale, zero, g_idx)

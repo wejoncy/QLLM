@@ -226,9 +226,9 @@ class CompressWeight(object):
         self.qzeros = qzeros_cuda.T.contiguous().cpu()
         e2 = time.time()-s
 
-        if self.oweight != None:
+        if self.orig_fp_weight != None:
             fw, _, iz = self.unpack()
-            assert (fw == self.oweight.cuda()).all()
+            assert (fw == self.orig_fp_weight.cuda()).all()
 
     def reorder_int_tensor(self, int_tensor):
         return int_tensor
@@ -270,9 +270,9 @@ class CompressWeight(object):
         self.qzeros = qzeros_cuda.T.contiguous().cpu()
         e2 = time.time()-s
 
-        if self.oweight != None:
+        if self.orig_fp_weight != None:
             fw, _, iz = self.unpack()
-            assert (fw == self.oweight.cuda()).all()
+            assert (fw == self.orig_fp_weight.cuda()).all()
 
     def pack_gpu(self, linear, scales, zeros, g_idx=None):
         scales = scales.cuda()

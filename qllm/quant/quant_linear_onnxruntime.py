@@ -55,7 +55,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
         self.infeatures = infeatures
         self.outfeatures = outfeatures
         self.bits = bits
-        self.oweight = None
+        self.orig_fp_weight = None
         self.maxq = 2**self.bits - 1
         self.groupsize = groupsize if groupsize != -1 else infeatures
         self.act_order = None

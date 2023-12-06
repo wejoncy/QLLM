@@ -52,7 +52,7 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         self.group_size = group_size if group_size != -1 else in_features
         self.groupsize = self.group_size
         self.bits = w_bit
-        self.oweight = None
+        self.orig_fp_weight = None
 
         # quick sanity check (make sure aligment)
         assert self.infeatures % self.group_size == 0
