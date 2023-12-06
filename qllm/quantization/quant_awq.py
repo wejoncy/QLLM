@@ -136,4 +136,7 @@ class AWQQuant(QuantFrameBase):
             # Haotian: check activation replacement
             clear_memory(input_feat)
         # real_quantize_model_weight(attention_layers, args.wbits, self.q_config)
+        quantize_config = {"zero_point": True, "q_group_size": args.groupsize,
+                "w_bit": args.wbits}
+        model.quantize_config = quantize_config
         return quantizers

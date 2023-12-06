@@ -53,6 +53,7 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         self.groupsize = self.group_size
         self.bits = w_bit
         self.orig_fp_weight = None
+        self.pack_mode = "GEMM"
 
         # quick sanity check (make sure aligment)
         assert self.infeatures % self.group_size == 0
@@ -135,6 +136,7 @@ class WQLinear_GEMV(nn.Module):
         self.w_bit = w_bit
         self.group_size = group_size if group_size != -1 else in_features
         self.split_k_iters = 8
+        self.pack_mode = "GEMV"
 
         # quick sanity check (make sure aligment)
         assert self.in_features % self.group_size == 0

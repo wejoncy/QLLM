@@ -59,6 +59,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
         self.maxq = 2**self.bits - 1
         self.groupsize = groupsize if groupsize != -1 else infeatures
         self.act_order = None
+        self.pack_mode = "ORT"
 
         self.register_buffer('qweight', torch.zeros(
             (outfeatures, infeatures//self.groupsize, self.groupsize//(8//bits)), dtype=torch.uint8))

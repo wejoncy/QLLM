@@ -1,6 +1,6 @@
 #safetensors==0.3.0
 torch
-datasets==2.10.1
+datasets==2.15.0
 #sentencepiece
 #git+https://github.com/huggingface/transformers
 #accelerate==0.17.1

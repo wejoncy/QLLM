@@ -53,10 +53,10 @@ class BaseQuantizeConfig:
             "groupsize": self.groupsize(), "wbits": self.wbits()}
 
     def load_quant_op_config(self, model_name_or_path, args):
-        if not (Path(model_name_or_path)/"quant.op.json").exists():
+        if not (Path(model_name_or_path)/"quant_config_by_layer.json").exists():
             return self.try_make_default_quant_op_config()
         # load quant info
-        with open(Path(model_name_or_path)/"quant.op.json") as fp:
+        with open(Path(model_name_or_path)/"quant_config_by_layer.json") as fp:
             qunat_info = json.load(fp)
             args.method = qunat_info["method"]
             args.qunat_info = qunat_info

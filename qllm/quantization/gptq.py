@@ -57,7 +57,7 @@ class Observer:
 
 class GPTQ:
 
-    def __init__(self, layer, observe=False):
+    def __init__(self, layer, allow_mix_bits=False):
         self.layer = layer
         self.dev = self.layer.weight.device
         W = layer.weight.data.clone()
@@ -70,11 +70,11 @@ class GPTQ:
         self.H = torch.zeros((self.columns, self.columns), device=self.dev)
         self.nsamples = 0
         self.quantizer = InternalGPTQQuantizer()
-        self.observe = observe
+        self.allow_mix_bits = allow_mix_bits
 
     def add_batch(self, inp, out):
         # Hessian H = 2 X XT + λ I
-        if self.observe:
+        if self.allow_mix_bits:
             self.inp1 = inp
             self.out1 = out
         else:
@@ -141,7 +141,7 @@ class GPTQ:
             self.quantizer.find_params(W, weight=True)
 
         H = self.H
-        if not self.observe:
+        if not self.allow_mix_bits:
             del self.H
         dead = torch.diag(H) == 0
         H[dead, dead] = 1

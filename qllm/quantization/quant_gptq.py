@@ -16,13 +16,13 @@ class ObserverHelper:
         self.args = args
 
     def submit(self, name, layerid, gptq, error):
-        if self.args.observe:
+        if self.args.allow_mix_bits:
             self.observer.submit(name=name, layerid=layerid, gptq=gptq, error=error)
             return True
         return False
 
     def post_quant(self, quantizers, state_dict_prefix):
-        if not self.args.observe:
+        if not self.args.allow_mix_bits:
             return
         args = self.args
         logger.debug(self.observer.print())
@@ -105,7 +105,7 @@ class GPTQQuant(QuantFrameBase):
                 subset = {n: named_linear_layers[n] for n in names}
                 gptq = {}
                 for name in subset:
-                    gptq[name] = GPTQ(subset[name], observe=args.observe)
+                    gptq[name] = GPTQ(subset[name], allow_mix_bits=args.allow_mix_bits)
                     gptq[name].quantizer.configure(args.wbits, perchannel=True, sym=args.sym, mse=False)
 
                 self.hijack_internal_block(gptq, subset, block_layer, inps, layer_input_args)
@@ -135,4 +135,8 @@ class GPTQQuant(QuantFrameBase):
         observer_helper.post_quant(quantizers, state_dict_prefix)
 
         model.config.use_cache = self.rec_use_cache
+        quantize_config = dict(percdamp=args.percdamp, groupsize=args.groupsize, act_order=args.act_order,
+                               wbits=args.wbits, sym=args.sym, allow_mix_bits=args.allow_mix_bits,
+                               true_sequential=args.true_sequential)
+        model.quantize_config = quantize_config
         return quantizers

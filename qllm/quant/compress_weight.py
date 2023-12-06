@@ -103,8 +103,8 @@ def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits):
 class CompressWeight(object):
     def quant_weight(self, weight, scales, zeros, g_idx=None, need_transpose=True):
         device = weight.device
-        scales = scales.t().contiguous()
-        zeros = zeros.t().contiguous()
+        scales = scales.t().contiguous().to(device)
+        zeros = zeros.t().contiguous().to(device)
         g_idx = self.g_idx.long().to(device)
         scale_zeros = zeros * scales
         self.scales = (scales.clone().half() if self.scales.sum() == 0 else self.scales).cpu()
@@ -130,10 +130,11 @@ class CompressWeight(object):
 
     def dequant_weight(self, intweight, zeros):
         # scales = scales.t().contiguous()
-        scales = self.scales
+        device = intweight.device
+        scales = self.scales.to(device)
         zeros = zeros.t().contiguous()
         scale_zeros = zeros * scales
-        g_idx = self.g_idx.long()
+        g_idx = self.g_idx.long().to(device)
 
         # qdq_weight=linear.weight.clone().to(device)
         # for idx in range(self.infeatures):
@@ -239,6 +240,7 @@ class CompressWeight(object):
         return int_tensor
 
     def pack_on_device_for_even_bits(self, intweight_gpu, intzeros):
+        device = intweight_gpu.device
         compress_ratio = (32 // self.bits)
         intweight_gpu = self.reorder_int_tensor(intweight_gpu)
         intzeros = self.reorder_int_tensor(intzeros)
@@ -248,7 +250,7 @@ class CompressWeight(object):
         import time
         s = time.time()
         qweight_gpu = torch.zeros(
-            (intweight_gpu.shape[0] // 32 * self.bits, intweight_gpu.shape[1]), dtype=torch.int32, device=intweight_gpu.device)
+            (intweight_gpu.shape[0] // 32 * self.bits, intweight_gpu.shape[1]), dtype=torch.int32, device=device)
 
         
         pack_on_row_fast_248bit(qweight_gpu, intweight_gpu, self.bits)
@@ -263,7 +265,7 @@ class CompressWeight(object):
         # zeros_cuda = (zeros - 1).to(device).int()
         zeros_cuda = (intzeros).int()
         qzeros_cuda = torch.zeros((intzeros.shape[0], intzeros.shape[1] //
-                                  32 * self.bits), dtype=torch.int32, device=zeros_cuda.device)
+                                  32 * self.bits), dtype=torch.int32, device=device)
         i = 0
         col = 0
         qzeros_cuda = qzeros_cuda.T.contiguous()
