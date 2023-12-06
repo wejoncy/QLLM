@@ -42,14 +42,14 @@ CUDA_VISIBLE_DEVICES=0 python -m qllm.run --model=meta-llama/Llama-2-7b-hf --met
 ## (NEW) Quantize model with mix bits/groupsize for higher precision (PPL)
 ```bash
 #  Quantize and Save compressed model
-python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --observe --true-sequential
+python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --allow_mix_bits --true-sequential
 ```
 ### NOTE:
 1. only support GPTQ
-2. observe option refered from gptq-for-llama, QLLM makes it easier to use and flexible
+2. allow_mix_bits option refered from gptq-for-llama, QLLM makes it easier to use and flexible
 3. wjat different with gptq-for-llama is we grow bit by one instead of times 2.
 4. all configurations will be saved/load automaticlly instead of quant-table which used by gptq-for-llama.
-5. if --observe is enabled, The saved model is not compatible with vLLM for now.
+5. if --allow_mix_bits is enabled, The saved model is not compatible with vLLM for now.
 
 ## Conversion between AWQ and GPTQ
 ```bash
@@ -62,7 +62,7 @@ python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval --save ./Llama-2-
 ### Note:
 Not all cases are supported, for example,
 1)  if you quantized model with different quantization bits for different layers, you can't convert it to AWQ.
-2)  if GPTQ model is quantized with `--observe` option, you can't convert it to AWQ.
+2)  if GPTQ model is quantized with `--allow_mix_bits` option, you can't convert it to AWQ.
 3)  if GPTQ model is quantized with `--act_order` option, you can't convert it to AWQ.
 
 
