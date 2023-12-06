@@ -78,7 +78,7 @@ class ModelQuantizationBase(object):
 
         target_layer = select_quant_linear(args.pack_mode, args.wbits)
 
-        model.quantize_config["version"] = target_layer.pack_mode
+        model.quant_config["version"] = target_layer.pack_mode
         quantize_config_by_layer = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quantize_config_by_layer["method"] = args.method
 
@@ -96,7 +96,7 @@ class ModelQuantizationBase(object):
 
             qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
-        return model, quantize_config_by_layer, model.quantize_config
+        return model, quantize_config_by_layer, model.quant_config
 
     def repack_to_new_mode(self, model, args, new_pack_mode):
         bits, groupsize = args.wbits, args.groupsize

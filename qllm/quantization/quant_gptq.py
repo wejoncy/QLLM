@@ -135,8 +135,8 @@ class GPTQQuant(QuantFrameBase):
         observer_helper.post_quant(quantizers, state_dict_prefix)
 
         model.config.use_cache = self.rec_use_cache
-        quantize_config = dict(percdamp=args.percdamp, groupsize=args.groupsize, act_order=args.act_order,
-                               wbits=args.wbits, sym=args.sym, allow_mix_bits=args.allow_mix_bits,
-                               true_sequential=args.true_sequential)
-        model.quantize_config = quantize_config
+        quant_config = dict(damp_percent=args.percdamp, group_size=args.groupsize, desc_act=args.act_order,
+                               bits=args.wbits, sym=args.sym, allow_mix_bits=args.allow_mix_bits,
+                               true_sequential=args.true_sequential, method='gptq')
+        model.quant_config = quant_config
         return quantizers
