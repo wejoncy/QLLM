@@ -151,7 +151,8 @@ class QuantLinear(nn.Module, CompressWeight):
             self.bias = None
 
     def handle_qzeros_for_autogptq(self):
-        qzeros = self.qzeros.T.contiguous().cuda()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        qzeros = self.qzeros.T.contiguous().to(device)
         zeros = torch.zeros((self.outfeatures, self.infeatures//self.groupsize),
                             dtype=torch.int32, device=qzeros.device)
 

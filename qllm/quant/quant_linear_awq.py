@@ -105,7 +105,7 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
                                                    compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
         order_tensor = order_tensor.reshape(-1)
 
-        reverse_order_tensor = torch.arange(order_tensor.shape[0]).cuda()[order_tensor]
+        reverse_order_tensor = torch.arange(order_tensor.shape[0]).to(int_tensor.device)[order_tensor]
         reverse_order_tensor = reverse_order_tensor[order_tensor]
         int_tensor = int_tensor[:, reverse_order_tensor]
         return int_tensor
@@ -153,7 +153,7 @@ class WQLinear_GEMV(nn.Module):
         else:
             self.bias = None
 
-    def accelerate_pack_on_gpu(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
+    def accelerate_pack_on_device(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
         awq_linear = cls(w_bit, group_size, linear.in_features, linear.out_features,
                          linear.bias is not None, linear.weight.device)
         if init_only:  # just prepare for loading sd
