@@ -110,7 +110,6 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         int_tensor = int_tensor[:, reverse_order_tensor]
         return int_tensor
 
-    @torch.no_grad()
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.outfeatures, )
         out = awq_inference_engine.gemm_forward_cuda(
@@ -213,7 +212,6 @@ class WQLinear_GEMV(nn.Module):
         awq_linear.qzeros = qzeros
         return awq_linear
 
-    @torch.no_grad()
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.out_features, )
         inputs = x.reshape(-1, x.shape[-1])
