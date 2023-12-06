@@ -52,7 +52,8 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         self.group_size = group_size if group_size != -1 else in_features
         self.groupsize = self.group_size
         self.bits = w_bit
-        self.oweight = None
+        self.orig_fp_weight = None
+        self.pack_mode = "GEMM"
 
         # quick sanity check (make sure aligment)
         assert self.infeatures % self.group_size == 0
@@ -105,12 +106,11 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
                                                    compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
         order_tensor = order_tensor.reshape(-1)
 
-        reverse_order_tensor = torch.arange(order_tensor.shape[0]).cuda()[order_tensor]
+        reverse_order_tensor = torch.arange(order_tensor.shape[0]).to(int_tensor.device)[order_tensor]
         reverse_order_tensor = reverse_order_tensor[order_tensor]
         int_tensor = int_tensor[:, reverse_order_tensor]
         return int_tensor
 
-    @torch.no_grad()
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.outfeatures, )
         out = awq_inference_engine.gemm_forward_cuda(
@@ -136,6 +136,7 @@ class WQLinear_GEMV(nn.Module):
         self.w_bit = w_bit
         self.group_size = group_size if group_size != -1 else in_features
         self.split_k_iters = 8
+        self.pack_mode = "GEMV"
 
         # quick sanity check (make sure aligment)
         assert self.in_features % self.group_size == 0
@@ -153,7 +154,7 @@ class WQLinear_GEMV(nn.Module):
         else:
             self.bias = None
 
-    def pack_gpu(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
+    def accelerate_pack_on_device(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
         awq_linear = cls(w_bit, group_size, linear.in_features, linear.out_features,
                          linear.bias is not None, linear.weight.device)
         if init_only:  # just prepare for loading sd
@@ -213,7 +214,6 @@ class WQLinear_GEMV(nn.Module):
         awq_linear.qzeros = qzeros
         return awq_linear
 
-    @torch.no_grad()
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.out_features, )
         inputs = x.reshape(-1, x.shape[-1])
