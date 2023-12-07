@@ -37,9 +37,9 @@ return (INT)(((size_t)a + (size_t)b - 1) /
 
 #define half2 __half2
 
-__device__ __forceinline__ void DequantizeEightElements(uint32_t values_quant, half scale, half zp, half* output) {
+__device__ __forceinline__ void DequantizeEightElements(uint32_t values_quant, half scale, uint8_t zp, half* output) {
   half2 scale_half2 = {scale, scale};
-  half zp_adjust = -scale * __short2half_rn(zp);
+  half zp_adjust = __hmul(__float2half (-1.0f),__hmul(scale , __short2half_rn(zp)));
   half2 zp_adjust2 = {zp_adjust, zp_adjust};
 
   alignas(16) half2 results[4];
@@ -64,7 +64,7 @@ __device__ __forceinline__ void DequantizeEightElements(uint32_t values_quant, h
   *(reinterpret_cast<float4*>(output)) = *(reinterpret_cast<float4*>(results));
 }
 
-__device__ __forceinline__ void DequantizeEightElements(uint32_t values_quant, float scale, float zp, float* output) {
+__device__ __forceinline__ void DequantizeEightElements(uint32_t values_quant, float scale, uint8_t zp, float* output) {
   float zp_adjust = -scale * zp;
   output[0] = float(values_quant & 0xF) * scale + zp_adjust;
   output[1] = float((values_quant >> 4) & 0xF) * scale + zp_adjust;
@@ -95,7 +95,7 @@ __global__ void Dequantize4BitsKernel(
   }
 
   output = output + element_offset;
-  DequantizeEightElements(quant_value, scale, static_cast<T>(zp), output);
+  DequantizeEightElements(quant_value, scale, (zp), output);
 }
 
 template <class T>

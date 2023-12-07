@@ -1,4 +1,4 @@
-name: Build qllm Wheels with CUDA
+name: Build qllm Wheels and Release python package
 
 on:
   push:
