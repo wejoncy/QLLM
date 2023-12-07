@@ -62,13 +62,18 @@ def get_compute_capabilities(compute_capabilities: Set[int]):
                 raise RuntimeError("GPUs with compute capability less than 8.0 are not supported.")
             compute_capabilities.add(major * 10 + minor)
 
-    nvcc_cuda_version = get_nvcc_cuda_version(CUDA_HOME)
-    if nvcc_cuda_version < Version("11.1"):
-        compute_capabilities.discard(86)
-    if nvcc_cuda_version < Version("11.8"):
-        compute_capabilities.discard(89)
-        compute_capabilities.discard(90)
+    if len(compute_capabilities) == 0:
+        compute_capabilities.add(70)
+        compute_capabilities.add(75)
+        compute_capabilities.add(80)
+        nvcc_cuda_version = get_nvcc_cuda_version(CUDA_HOME)
+        if nvcc_cuda_version > Version("11.1"):
+            compute_capabilities.add(86)
+        if nvcc_cuda_version > Version("11.8"):
+            compute_capabilities.add(89)
+            compute_capabilities.add(90)
 
+    print(f"build pacakge for archs: {compute_capabilities}")
     capability_flags = []
     for cap in compute_capabilities:
         capability_flags += ["-gencode", f"arch=compute_{cap},code=sm_{cap}"]
@@ -98,6 +103,9 @@ def get_generator_flag():
 extensions = []
 
 def build_cuda_extensions():
+    if CUDA_HOME is None:
+        print("No cuda environment is detected, we are ignoring all cuda related extensions")
+        return []
     include_dirs = get_include_dirs()
     generator_flags = get_generator_flag()
     arch_flags = get_compute_capabilities(set([]))
@@ -125,26 +133,33 @@ def build_cuda_extensions():
                 "--expt-relaxed-constexpr",
                 "--expt-extended-lambda",
                 "--use_fast_math",
-            ] + arch_flags + generator_flags
+            ] + generator_flags
         }
-    if os.getenv("CUDA_ARCH", "") == "ALL" or torch.cuda.get_device_properties(0).major >= 8:
+    if  not torch.cuda.is_available() or torch.cuda.get_device_properties(0).major >= 8:
+        if not torch.cuda.is_available(): 
+            arch_flags = get_compute_capabilities(set([80]))
+        else:
+            arch_flags = get_compute_capabilities(set([]))
+        extra_compile_args_awq = {"cxx":extra_compile_args["cxx"], "nvcc":extra_compile_args["nvcc"]+arch_flags}
         extensions.append(
             CUDAExtension(
                 "awq_inference_engine",
                 [
                     "src/awq_cuda/pybind_awq.cpp",
                     "src/awq_cuda/quantization/gemm_cuda_gen.cu",
-                    "src/awq_cuda/layernorm/layernorm.cu",
-                    "src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                    #"src/awq_cuda/layernorm/layernorm.cu",
+                    #"src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
                     "src/awq_cuda/quantization/gemv_cuda.cu"
-                ], extra_compile_args=extra_compile_args
+                ], extra_compile_args=extra_compile_args_awq
             )
         )
 
+    arch_flags = get_compute_capabilities(set([]))
+    extra_compile_args_ort = {"cxx":extra_compile_args["cxx"], "nvcc":extra_compile_args["nvcc"]+arch_flags}
     extensions.append(CUDAExtension("ort_ops", [
         "src/ort_cuda/ort_ops.cc",
         "src/ort_cuda/dq.cu",
-    ], extra_compile_args=extra_compile_args))
+    ], extra_compile_args=extra_compile_args_ort))
     return extensions
 
 

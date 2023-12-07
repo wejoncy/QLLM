@@ -476,7 +476,7 @@ def merge_decoders(
             else:
                 raise e
     else:
-        logger.info(
+        print(
             "Merged ONNX model exceeds 2GB, the model will not be checked without `save_path` given.")
 
 # example usage

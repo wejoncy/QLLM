@@ -1,5 +1,5 @@
 #safetensors==0.3.0
-torch
+torch==2.1.0
 datasets==2.15.0
 #sentencepiece
 #git+https://github.com/huggingface/transformers

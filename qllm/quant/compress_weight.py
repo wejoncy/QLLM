@@ -1,12 +1,9 @@
 import torch
 import math
 
-import numpy as np
 
 def lcm(a, b): 
     return int(a*b/math.gcd(a, b))
-
-
 
 def pack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
     compress_ratio = (32 // bits)
@@ -208,10 +205,11 @@ class CompressWeight(object):
 
     # odd bits, 3,5,6,7
     def pack_on_device_for_odd_bits(self, intweight_gpu, intzeros):
+        device = intweight_gpu.device
         import time
         s = time.time()
         qweight_gpu = torch.zeros(
-            ((intweight_gpu.shape[0] * self.bits+31) // 32, intweight_gpu.shape[1]), dtype=torch.int32, device=intweight_gpu.device)
+            ((intweight_gpu.shape[0] * self.bits+31) // 32, intweight_gpu.shape[1]), dtype=torch.int32, device=device)
 
         general_pack_on_row(qweight_gpu, intweight_gpu, self.bits)
         self.qweight = qweight_gpu.cpu()
@@ -220,7 +218,7 @@ class CompressWeight(object):
         # zeros_cuda = (zeros - 1).to(device).int()
         zeros_cuda = (intzeros).int()
         qzeros_cuda = torch.zeros(
-            (intzeros.shape[0], (intzeros.shape[1] * self.bits+31) // 32), dtype=torch.int32, device=zeros_cuda.device)
+            (intzeros.shape[0], (intzeros.shape[1] * self.bits+31) // 32), dtype=torch.int32, device=device)
 
         qzeros_cuda = qzeros_cuda.T.contiguous()
         zeros_cuda = zeros_cuda.T.contiguous()

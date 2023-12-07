@@ -4,6 +4,7 @@ from transformers import AutoModelForCausalLM
 from pathlib import Path
 import tqdm
 import glob
+import json
 import contextlib
 import torch
 from typing import Dict, List, Optional, Union
