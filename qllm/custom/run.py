@@ -108,7 +108,7 @@ please switch to the right directory and try again")
             assert version.parse(torch.__version__) >= version.parse('2.0.0')
             return super().export_onnx(model, onnx_path_str, sample_inputs, with_past, args)
         except:
-            warnings.warn('this exporter will be deprecated, please upgrade to torch 2.0.1+ and onnxruntime 1.17+',
+            warnings.warn('this exporter will be deprecated, please upgrade to torch 2.1.0+ and onnxruntime 1.17+',
                       DeprecationWarning, stacklevel=2)
         #model = self.pipeline_to_multiple_gpu(model, [torch.device(i)
         #                                            for i in range(torch.cuda.device_count())], sample_inputs)

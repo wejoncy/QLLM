@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a variety of Python versions
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Python package
+name: Build QLLM Wheels with CUDA
 
 on:
   push:
@@ -10,26 +10,53 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
+  build_wheels:
+    name: Build QLLM
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8","3.9", "3.10", "3.11"]
+        os: [ubuntu-latest]
+        python-version: ["3.8","3.9", "3.10"]
+        cuda-version: ["11.8", "12.1"]
 
     steps:
+    - name: Free Disk Space
+      uses: jlumbroso/free-disk-space@v1.3.0
+      if: runner.os == 'Linux' && github.event.pull_request.merged == true
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        docker-images: true
+        swap-storage: false
+
     - uses: actions/checkout@v3
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+
+    - name: Install CUDA ${{ matrix.cuda-version }}
+      if: github.event.pull_request.merged == true
+      run: |
+        bash -x .github/workflows/scripts/cuda-install.sh ${{ matrix.cuda-version }} ubuntu-20.04
+
+    - name: Install PyTorch 2.1.0 with CUDA ${{ matrix.cuda-version }}
+      if: github.event.pull_request.merged == true
+      run: |
+        pip config set global.cache-dir "/tmp/.cache/pip"
+        bash -x .github/workflows/scripts/pytorch-install.sh ${{ matrix.python-version }} 2.1.0 ${{ matrix.cuda-version }}
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install flake8 pytest
+        python -m pip install flake8 pytest build wheel packaging
         #python -m pip install git+https://github.com/wejoncy/XbitOps.git
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        #if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -39,5 +66,18 @@ jobs:
         flake8 ./qllm/quantization --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
         flake8 ./qllm/utils --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: build pypi package
+      if: github.event.pull_request.merged == true
       run: |
-        python setup.py sdist
+        set -x
+        python setup.py bdist_wheel --dist-dir=dist
+
+    - name: build pypi package-cpu
+      if: github.event.pull_request.merged == false
+      run: |
+        set -x
+        MAX_JOBS=2 python -m build
+    - name: upload wheel artifacts   
+      uses: actions/upload-artifact@v3
+      with:
+        name: wheel-${{ matrix.python-version }}
+        path: dist/*.whl
