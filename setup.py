@@ -13,6 +13,7 @@ from torch.utils.cpp_extension import BuildExtension, CUDA_HOME, CUDAExtension
 
 
 def is_pypi_build():
+    print(os.environ)
     return os.getenv("PYPI_BUILD", "0") == "1"
 
 def get_path(*filepath) -> str:
