@@ -12,6 +12,9 @@ ROOT_DIR = os.path.dirname(__file__)
 from torch.utils.cpp_extension import BuildExtension, CUDA_HOME, CUDAExtension
 
 
+def is_pypi_build():
+    return os.getenv("PYPI_BUILD", "0") == "1"
+
 def get_path(*filepath) -> str:
     return os.path.join(ROOT_DIR, *filepath)
 
@@ -25,7 +28,11 @@ def find_version(filepath: str):
         version_match = re.search(
             r"^__version__ = ['\"]([^'\"]*)['\"]", fp.read(), re.M)
         if version_match:
-            return version_match.group(1)
+            VERSION = version_match.group(1)
+            if torch.cuda.is_available():
+                cuda_version = str(get_nvcc_cuda_version()).replace('.', '')
+                VERSION = VERSION + f"+cu{cuda_version}" if is_pypi_build() else VERSION
+            return VERSION
         raise RuntimeError("Unable to find version string.")
 
 
@@ -41,20 +48,35 @@ def get_requirements() -> List[str]:
     requirements = [req for req in requirements if 'https' not in req]
     return requirements
 
-def get_nvcc_cuda_version(cuda_dir: str) -> Version:
+def get_nvcc_cuda_version(cuda_dir: str = "") -> Version:
     """Get the CUDA version from nvcc.
 
     Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
     """
-    nvcc_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"],
-                                          universal_newlines=True)
-    output = nvcc_output.split()
-    release_idx = output.index("release") + 1
-    nvcc_cuda_version = parse(output[release_idx].split(",")[0])
+    if cuda_dir == "": cuda_dir = os.getenv("CUDA_HOME", CUDA_HOME)
+    CUDA_VERSION = os.getenv("CUDA_VERSION", None)
+    if CUDA_VERSION is not None:
+        nvcc_cuda_version = CUDA_VERSION
+    else:
+        nvcc_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"],
+                                              universal_newlines=True)
+        output = nvcc_output.split()
+        release_idx = output.index("release") + 1
+        nvcc_cuda_version = output[release_idx].split(",")[0]
+    nvcc_cuda_version = parse(nvcc_cuda_version)
     return nvcc_cuda_version
 
-def get_compute_capabilities(compute_capabilities: Set[int]):
+def get_compute_capabilities(compute_capabilities: Set[int], lower: int = 70):
     # Collect the compute capabilities of all available GPUs.
+    if len(compute_capabilities) == 0 and (is_pypi_build() or not torch.cuda.is_available()):
+        if 70 >= lower:
+            compute_capabilities.add(70)
+        if 75 >= lower:
+            compute_capabilities.add(75)
+        compute_capabilities.add(80)
+        compute_capabilities.add(86)
+        compute_capabilities.add(89)
+
     if len(compute_capabilities) == 0:
         for i in range(torch.cuda.device_count()):
             major, minor = torch.cuda.get_device_capability(i)
@@ -66,7 +88,7 @@ def get_compute_capabilities(compute_capabilities: Set[int]):
         compute_capabilities.add(70)
         compute_capabilities.add(75)
         compute_capabilities.add(80)
-        nvcc_cuda_version = get_nvcc_cuda_version(CUDA_HOME)
+        nvcc_cuda_version = get_nvcc_cuda_version()
         if nvcc_cuda_version > Version("11.1"):
             compute_capabilities.add(86)
         if nvcc_cuda_version > Version("11.8"):
@@ -106,6 +128,8 @@ def build_cuda_extensions():
     if CUDA_HOME is None:
         print("No cuda environment is detected, we are ignoring all cuda related extensions")
         return []
+    else:
+        print(f"detect cuda home: {CUDA_HOME}")
     #include_dirs = get_include_dirs()
     def get_extra_compile_args(x_arch_flags = None):
         arch_flags = x_arch_flags if x_arch_flags is not None else get_compute_capabilities(set([]))
@@ -137,11 +161,8 @@ def build_cuda_extensions():
                 ] + generator_flags+arch_flags
             }
         return extra_compile_args
-    if  not torch.cuda.is_available() or torch.cuda.get_device_properties(0).major >= 8:
-        if not torch.cuda.is_available(): 
-            arch_flags = get_compute_capabilities(set([80]))
-        else:
-            arch_flags = get_compute_capabilities(set([]))
+    if not torch.cuda.is_available() or torch.cuda.get_device_properties(0).major >= 8 or is_pypi_build():
+        arch_flags = get_compute_capabilities(set([]), 80)
         extra_compile_args_awq = get_extra_compile_args(arch_flags)
         extensions.append(
             CUDAExtension(
