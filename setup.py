@@ -106,41 +106,43 @@ def build_cuda_extensions():
     if CUDA_HOME is None:
         print("No cuda environment is detected, we are ignoring all cuda related extensions")
         return []
-    include_dirs = get_include_dirs()
-    generator_flags = get_generator_flag()
-    arch_flags = get_compute_capabilities(set([]))
-    if os.name == "nt":
-        include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
+    #include_dirs = get_include_dirs()
+    def get_extra_compile_args(x_arch_flags = None):
+        arch_flags = x_arch_flags if x_arch_flags is not None else get_compute_capabilities(set([]))
+        generator_flags = get_generator_flag()
+        if os.name == "nt":
+            include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
 
-        # Relaxed args on Windows
-        if include_arch:
-            extra_compile_args={"nvcc": arch_flags}
+            # Relaxed args on Windows
+            if include_arch:
+                extra_compile_args={"nvcc": arch_flags}
+            else:
+                extra_compile_args={}
         else:
-            extra_compile_args={}
-    else:
-        extra_compile_args={
-            "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
-            "nvcc": [
-                "-O3", 
-                "-std=c++17",
-                "-DENABLE_BF16",
-                "-U__CUDA_NO_HALF_OPERATORS__",
-                "-U__CUDA_NO_HALF_CONVERSIONS__",
-                "-U__CUDA_NO_BFLOAT16_OPERATORS__",
-                "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
-                "-U__CUDA_NO_BFLOAT162_OPERATORS__",
-                "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
-                "--expt-relaxed-constexpr",
-                "--expt-extended-lambda",
-                "--use_fast_math",
-            ] + generator_flags
-        }
+            extra_compile_args={
+                "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
+                "nvcc": [
+                    "-O3", 
+                    "-std=c++17",
+                    "-DENABLE_BF16",
+                    "-U__CUDA_NO_HALF_OPERATORS__",
+                    "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "-U__CUDA_NO_BFLOAT16_OPERATORS__",
+                    "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+                    "-U__CUDA_NO_BFLOAT162_OPERATORS__",
+                    "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
+                    "--expt-relaxed-constexpr",
+                    "--expt-extended-lambda",
+                    "--use_fast_math",
+                ] + generator_flags+arch_flags
+            }
+        return extra_compile_args
     if  not torch.cuda.is_available() or torch.cuda.get_device_properties(0).major >= 8:
         if not torch.cuda.is_available(): 
             arch_flags = get_compute_capabilities(set([80]))
         else:
             arch_flags = get_compute_capabilities(set([]))
-        extra_compile_args_awq = {"cxx":extra_compile_args["cxx"], "nvcc":extra_compile_args["nvcc"]+arch_flags}
+        extra_compile_args_awq = get_extra_compile_args(arch_flags)
         extensions.append(
             CUDAExtension(
                 "awq_inference_engine",
@@ -154,8 +156,7 @@ def build_cuda_extensions():
             )
         )
 
-    arch_flags = get_compute_capabilities(set([]))
-    extra_compile_args_ort = {"cxx":extra_compile_args["cxx"], "nvcc":extra_compile_args["nvcc"]+arch_flags}
+    extra_compile_args_ort = get_extra_compile_args()
     extensions.append(CUDAExtension("ort_ops", [
         "src/ort_cuda/ort_ops.cc",
         "src/ort_cuda/dq.cu",
