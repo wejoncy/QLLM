@@ -1,4 +1,4 @@
-name: Build qllm Wheels with CUDA
+name: Build qllm Wheels and Release python package
 
 on:
   push:
@@ -105,7 +105,7 @@ jobs:
           if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
             $env:PYPI_BUILD = 1
           }
-          python setup.py sdist bdist_wheel
+          CUDA_VERSION=$env:CUDA_VERSION python setup.py sdist bdist_wheel
       
       - name: Upload Assets
         uses: shogo82148/actions-upload-release-asset@v1
