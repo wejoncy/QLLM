@@ -29,9 +29,8 @@ def find_version(filepath: str):
             r"^__version__ = ['\"]([^'\"]*)['\"]", fp.read(), re.M)
         if version_match:
             VERSION = version_match.group(1)
-            if torch.cuda.is_available():
-                cuda_version = str(get_nvcc_cuda_version()).replace('.', '')
-                VERSION = VERSION + f"+cu{cuda_version}" if is_pypi_build() else VERSION
+            cuda_version = str(get_nvcc_cuda_version()).replace('.', '')
+            VERSION = VERSION + f"+cu{cuda_version}" if is_pypi_build() else VERSION
             return VERSION
         raise RuntimeError("Unable to find version string.")
 
@@ -57,6 +56,8 @@ def get_nvcc_cuda_version(cuda_dir: str = "") -> Version:
     CUDA_VERSION = os.getenv("CUDA_VERSION", None)
     if CUDA_VERSION is not None:
         nvcc_cuda_version = CUDA_VERSION
+    elif not torch.cuda.is_available():
+        nvcc_cuda_version = "0.0"
     else:
         nvcc_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"],
                                               universal_newlines=True)
