@@ -76,11 +76,10 @@ class ModelQuantizationBase(object):
         attention_layers = find_layers(model, self.quant_layers+[ScaledLinear])
         attention_layers = {n: attention_layers[n] for n in quantizers}
 
-        target_layer = select_quant_linear(args.pack_mode, args.wbits)
-
-        model.quant_config["version"] = target_layer.pack_mode
         quantize_config_by_layer = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quantize_config_by_layer["method"] = args.method
+        
+        target_layer = select_quant_linear(args.pack_mode, args.wbits)
 
         make_mixbits_quant_linear(
             model, quantizers, quantize_config_by_layer, target_layer=target_layer)
@@ -96,6 +95,7 @@ class ModelQuantizationBase(object):
 
             qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
+        model.quant_config["version"] = qlayers[name].pack_mode
         return model, quantize_config_by_layer, model.quant_config
 
     def repack_to_new_mode(self, model, args, new_pack_mode):
@@ -160,10 +160,8 @@ class ModelQuantizationBase(object):
             raise ValueError("either --model or --load must be specified. \
 Please run with `-h` to refer the usage.")
 
-        if args.export_onnx and not args.load and args.wbits < 16:
+        if args.export_onnx or (not args.load and args.wbits < 16):
             inputs_dataloader = self.get_datasets(args)
-        else:
-            inputs_dataloader = None
 
         if not args.load and args.wbits < 16:
             if args.mix_qlayer_conf:

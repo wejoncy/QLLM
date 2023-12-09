@@ -210,7 +210,6 @@ setuptools.setup(
     packages=setuptools.find_packages(exclude=("")),
     python_requires=">=3.8",
     install_requires=get_requirements(),
-    dependency_links=['https://test.pypi.org/simple/XbitOps'],
     ext_modules=build_cuda_extensions(),
     cmdclass={'build_ext': BuildExtension},
 )
