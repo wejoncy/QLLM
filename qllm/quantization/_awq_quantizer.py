@@ -4,7 +4,7 @@ import torch.nn as nn
 import math
 from ..utils.comm_utils import clear_memory
 from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name, ScaledLinear
-
+from .sequential_layes_awq_config import auto_detect_scaling,auto_detect_sequential_layers
 USE_ACCUMULATE_BATCH = -1
 
 
@@ -102,7 +102,7 @@ def get_model_specific_quant_layer(module, input_feat, module_kwargs):
             inp=input_feat['ffn.down_proj'],
         ))
     else:
-        raise NotImplementedError(f"{type(module)} not supported yet!")
+        scales_list = auto_detect_sequential_layers(module, input_feat, type(module), module_kwargs)
 
     return scales_list
 

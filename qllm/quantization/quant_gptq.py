@@ -7,7 +7,7 @@ from .quant_frame_base import QuantFrameBase
 from .gptq import GPTQ, Observer
 from ..utils import find_layers, gen_conditions
 from ..utils.logger import get_logger
-from . import sequential_layes_config
+from . import sequential_layes_gptq_config
 logger = get_logger('qllm')
 
 class ObserverHelper:
@@ -99,7 +99,7 @@ class GPTQQuant(QuantFrameBase):
             # [ TODO ] how to filter out the layers, which won't be quantized or harness the quality
             sequential = [list(named_linear_layers.keys())]
             if args.true_sequential:
-                sequential = sequential_layes_config.auto_detect_sequential_layers(
+                sequential = sequential_layes_gptq_config.auto_detect_sequential_layers(
                     sequential, model.__class__.__name__)
             for names in sequential:
                 subset = {n: named_linear_layers[n] for n in names}
