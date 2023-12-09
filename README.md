@@ -17,6 +17,9 @@ Features:
 - [x] we only support **Nvidia-GPU** platform for now,
 - [ ] we will consider support **AMD-GPU**.
 
+*Latest News* 🔥
+- [2023/12] The first PyPi package released 
+
 ## Installation
 ```
 pip install git+https://github.com/wejoncy/QLLM.git
@@ -36,7 +39,7 @@ pip install git+https://github.com/wejoncy/QLLM.git
 ## Quantize llama2
 ```bash
 #  Quantize and Save compressed model
-CUDA_VISIBLE_DEVICES=0 python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit
+python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit
 ```
 
 ## (NEW) Quantize model with mix bits/groupsize for higher precision (PPL)
@@ -74,7 +77,7 @@ python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --data
 
 ## model inference with the saved model
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load ./Llama-2-7b-4bit --eval
+python -m qllm.run --load ./Llama-2-7b-4bit --eval
 ```
 
 ## model inference with ORT
@@ -98,8 +101,8 @@ outputs = session.run(None, inputs)
 
 ## Load quantized model from hugingface/transformers
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load TheBloke/Llama-2-7B-Chat-AWQ --eval
-CUDA_VISIBLE_DEVICES=0 python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
+python -m qllm.run --load TheBloke/Llama-2-7B-Chat-AWQ --eval
+python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
 ```
 
 ## start a chatbot
@@ -112,6 +115,11 @@ or
 python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
 ```
 
+## For some users has transformers connect issues.
+Please set environment with PROXY_PORT=your http proxy port
+PowerShell
+$env:PROXY_PORT=1080
+Bash export PROXY_PORT=1080
 
 # Acknowledgements
 This code is based on [GPTQ](https://github.com/IST-DASLab/gptq)

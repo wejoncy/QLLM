@@ -160,7 +160,10 @@ class ModelQuantizationBase(object):
             raise ValueError("either --model or --load must be specified. \
 Please run with `-h` to refer the usage.")
 
-        inputs_dataloader = self.get_datasets(args)
+        if args.export_onnx and not args.load and args.wbits < 16:
+            inputs_dataloader = self.get_datasets(args)
+        else:
+            inputs_dataloader = None
 
         if not args.load and args.wbits < 16:
             if args.mix_qlayer_conf:

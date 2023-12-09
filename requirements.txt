@@ -2,7 +2,7 @@
 torch==2.1.0
 datasets==2.15.0
 #sentencepiece
-#git+https://github.com/huggingface/transformers
+transformers
 #accelerate==0.17.1
 #triton==2.0.0
 texttable

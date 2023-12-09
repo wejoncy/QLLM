@@ -3,7 +3,6 @@ import os
 from importlib.util import find_spec
 
 import numpy as np
-import onnxruntime as ort
 import torch
 import torch.nn as nn
 
