@@ -106,6 +106,10 @@ python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
 ```
 
 ## start a chatbot
+you may need to install fschat and accelerate with pip
+```bash
+pip install fschat accelerate
+```
 use `--use_plugin` to enable a chatbot plugin
 
 ```
