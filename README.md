@@ -21,8 +21,19 @@ Features:
 - [2023/12] The first PyPi package released 
 
 ## Installation
+Install from release package, CUDA-118/121 is supported.
+[py38, py39, py310] https://github.com/wejoncy/QLLM/releases
+
+Build from Source
+If you are using CUDA-121
 ```
 pip install git+https://github.com/wejoncy/QLLM.git
+```
+OR CUDA-118
+```
+git clone https://github.com/wejoncy/QLLM.git
+cd QLLM
+python setup.py install
 ```
 ## Dependencies
 

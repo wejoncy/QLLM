@@ -6,16 +6,12 @@ import os
 import torch.nn as nn
 import torch
 import numpy as np
-import glob
-import argparse
 import time
 from pathlib import Path
 import json
-import sys
-import contextlib
 import tqdm
 
-from . import utils, auto_datasets
+from .auto_datasets import get_sample_datas_for_quantization
 from .utils import find_layers, DEV
 from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear, select_quant_linear, set_op_by_name
 from .utils.logger import get_logger
@@ -37,7 +33,7 @@ class ModelQuantizationBase(object):
         return AutoQuantizedModelForCausalLM.from_pretrained(args.model, args=args)
 
     def get_datasets(self, args):
-        return auto_datasets.get_sample_datas_for_quantization(
+        return get_sample_datas_for_quantization(
             args)
 
 
@@ -58,7 +54,7 @@ class ModelQuantizationBase(object):
         logger.info('Evaluating ...')
 
         from .quant.quant_linear_awq import has_awq_inference_engine
-        if not has_awq_inference_engine() and args.pack_mode == "GEMM":
+        if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
             logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
             model = self.repack_to_new_mode(model, args, "GPTQ")
 
@@ -96,14 +92,18 @@ class ModelQuantizationBase(object):
             qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
         model.quant_config["version"] = qlayers[name].pack_mode
-        return model, quantize_config_by_layer, model.quant_config
+        model.quantize_config_by_layer = quantize_config_by_layer
+
+        return model
 
     def repack_to_new_mode(self, model, args, new_pack_mode):
+        old_pack_mode = model.quant_config["version"]
+        model.quant_config["version"] = new_pack_mode
         bits, groupsize = args.wbits, args.groupsize
-        source_layer = select_quant_linear(args.pack_mode, args.wbits)
+        source_layer = select_quant_linear(old_pack_mode, args.wbits)
         target_layer = select_quant_linear(new_pack_mode, args.wbits)
         qlayers = find_layers(model, [source_layer])
-        for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc=f"replacing model packed-weight from pack_mode=`{args.pack_mode}` to `{new_pack_mode}`"):
+        for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc=f"replacing model packed-weight from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
             fp16_weight, scales, zeros = qlayer.unpack()
             qlayer.weight = fp16_weight
             tmp = qlayer
@@ -144,6 +144,8 @@ class ModelQuantizationBase(object):
         if args.pack_mode == "AUTO" and args.allow_mix_bits:
             assert args.method == "gptq", "only gptq support allow_mix_bits mode"
             args.pack_mode = "GPTQ"
+        if args.allow_mix_bits and args.pack_mode != "GPTQ":
+            raise ValueError("allow_mix_bits only support GPTQ packing mode")
         if type(args.load) is not str:
             args.load = args.load.as_posix()
 
@@ -170,17 +172,21 @@ Please run with `-h` to refer the usage.")
                 args.mix_qlayer_conf = {}
             tick = time.time()
             quantizers = self.__quant_by_sequential(model, inputs_dataloader, args, DEV)
-            model, quant_config_by_layer, quant_config = self.pack_model(
+            model = self.pack_model(
                 model, quantizers, args)
             logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
         if args.save:
+            quant_config_by_layer, quant_config = model.quant_config_by_layer,model.quant_config
+            if args.pack_mode != quant_config["version"] and args.pack_mode != "AUTO":
+                self.repack_to_new_mode(model, args, args.pack_mode)
+
             model.save_pretrained(args.save)
             self.tokenizer is not None and self.tokenizer.save_pretrained(args.save)
 
             open(args.save+"/quant_config_by_layer.json",
                  'w').write(json.dumps(quant_config_by_layer))
-            open(args.save+"/quant_config.json", 'w').write(json.dumps(quant_config))
+            open(args.save+"/quantize_config.json", 'w').write(json.dumps(quant_config))
 
         if args.eval:
             self.eval_model(model, DEV, args)
@@ -190,4 +196,8 @@ Please run with `-h` to refer the usage.")
 
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
+            from .quant.quant_linear_awq import has_awq_inference_engine
+            if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
+                logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
+                model = self.repack_to_new_mode(model, args, "GPTQ")
             loop_in_chat_completion(args.tokenizer, model)

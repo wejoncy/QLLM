@@ -93,7 +93,8 @@ class AutoQuantizedModelForCausalLM:
 
         if quant_config is None:
             quant_config = BaseQuantizeConfig.from_pretrained(model_name_or_path, args)
-        model.quant_config = quant_config
+        model.quant_config = quant_config.quant_config
+        model.quant_config_by_layer = quant_config.quant_config_by_op
 
         quant_layers = [torch.nn.Linear]
         layers = utils.find_layers(model, layers=quant_layers)
@@ -109,7 +110,7 @@ class AutoQuantizedModelForCausalLM:
                     del layers[layer_name]
 
         target_layer = utils.modelutils.select_quant_linear(
-            args.pack_mode, quant_config.wbits())
+            quant_config.quant_config["version"], quant_config.wbits())
         utils.modelutils.make_mixbits_quant_linear(
             model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
         if quant_config.method == "awq":
