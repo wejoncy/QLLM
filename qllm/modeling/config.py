@@ -83,12 +83,6 @@ class BaseQuantizeConfig:
             os.environ['compatible_with_autogptq'] = '1' # FixMe: hacky
         else: #FIXME is it correct?
             self.method = quant_config.get("method", "awq")
-        pack_mode = quant_config["version"]
-
-        if args.pack_mode != quant_config["version"]:
-            logger.warn(f"pack_mode {args.pack_mode} is not compatiable with checkpoint version" +
-                        f", will force to use the checkpoint version {pack_mode}")
-            args.pack_mode = pack_mode
         self.quant_config = quant_config
 
     @classmethod
