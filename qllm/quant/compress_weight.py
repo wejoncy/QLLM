@@ -165,7 +165,7 @@ class CompressWeight(object):
         scales = self.scales
         scales = scales.reshape(-1, 1, scales.shape[-1])
         import os
-        load_from_autogptq = int(os.environ.get('load_from_autogptq', "0"))
+        compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
 
         if self.bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, self.bits)), dtype=torch.int32, device=qzeros.device).unsqueeze(0)
@@ -173,7 +173,7 @@ class CompressWeight(object):
                 torch.int16 if self.bits == 8 else torch.int8)
             torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
 
-            zeros = zeros + load_from_autogptq
+            zeros = zeros + compatible_with_autogptq
             zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
 
             weight = torch.bitwise_right_shift(torch.unsqueeze(
@@ -191,7 +191,7 @@ class CompressWeight(object):
             zeros = zeros.T
             general_unpack_on_row(qzeros.T, zeros, self.bits)
             zeros = zeros.T
-            zeros = zeros + load_from_autogptq
+            zeros = zeros + compatible_with_autogptq
 
         if "GEMM" in self._get_name():
             zeros = zeros.T.contiguous()
@@ -216,7 +216,9 @@ class CompressWeight(object):
 
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
-        zeros_cuda = (intzeros).int()
+        import os
+        compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
+        zeros_cuda = (intzeros-compatible_with_autogptq).int()
         qzeros_cuda = torch.zeros(
             (intzeros.shape[0], (intzeros.shape[1] * self.bits+31) // 32), dtype=torch.int32, device=device)
 
@@ -261,7 +263,9 @@ class CompressWeight(object):
         s = time.time()
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
-        zeros_cuda = (intzeros).int()
+        import os
+        compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
+        zeros_cuda = (intzeros - compatible_with_autogptq).int()
         qzeros_cuda = torch.zeros((intzeros.shape[0], intzeros.shape[1] //
                                   32 * self.bits), dtype=torch.int32, device=device)
         i = 0
