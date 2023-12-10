@@ -74,9 +74,9 @@ class DequantAndUnpack(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order):
-        load_from_autogptq = int(os.environ.get('load_from_autogptq', "0"))
+        compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
         if has_module_XbitOps and qweight.is_cuda and not act_order:
-            return XbitOps.dequant(qweight, scales, qzeros, groupsize, bits, in_features, load_from_autogptq)
+            return XbitOps.dequant(qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
         scales = scales.reshape(-1, 1, scales.shape[-1])
         if bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
@@ -84,7 +84,7 @@ class DequantAndUnpack(torch.autograd.Function):
             zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)
                                               ).to(torch.int16 if bits == 8 else torch.int8)
             zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
-            zeros = zeros + load_from_autogptq
+            zeros = zeros + compatible_with_autogptq
             zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
             # expand is removed as torch will auto broadcast to relavant dimension
             weight = torch.bitwise_right_shift(torch.unsqueeze(
@@ -117,9 +117,9 @@ class DequantAndUnpack(torch.autograd.Function):
 
 
 def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features, act_order):
-    load_from_autogptq = int(os.environ.get('load_from_autogptq', "0"))
+    compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
     if not act_order and not torch.onnx.is_in_onnx_export() and input.reshape(-1, input.shape[-1]).shape[0] <= 4 and bits == 4 and groupsize==128:
-        return XbitOps.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, load_from_autogptq)
+        return XbitOps.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
     weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order)
     out = torch.matmul(input, weight.contiguous())
     return out

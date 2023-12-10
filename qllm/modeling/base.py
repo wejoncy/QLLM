@@ -163,12 +163,12 @@ class AutoQuantizedModelForCausalLM:
             # quant.autotune_warmup_linear(model, transpose=False)
 
         # autogptq has extra -1 in qzeros but we don't have it.
-        if quant_config.load_from_autogptq:
+        if quant_config.compatible_with_autogptq:
             qlayers = utils.find_layers(model, [target_layer])
             for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc="Repacking AutoGPTQ qzeros..."):
                 qlayer.handle_qzeros_for_autogptq()
             import os
-            os.environ['load_from_autogptq'] = '0'
-            # The kernel with load_from_autogptq has some bugs now in XbitOps, let's always replace qzeros
+            os.environ['compatible_with_autogptq'] = '0'
+            # The kernel with compatible_with_autogptq has some bugs now in XbitOps, let's always replace qzeros
 
         return model

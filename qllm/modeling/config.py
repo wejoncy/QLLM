@@ -13,7 +13,7 @@ class BaseQuantizeConfig:
         self.quant_config = {}
         self.quant_config_by_op = {}
         self.method = None
-        self.load_from_autogptq = False
+        self.compatible_with_autogptq = False
 
     
     def groupsize(self, layer_name: str = None):
@@ -78,9 +78,9 @@ class BaseQuantizeConfig:
         if "version" not in quant_config:
             self.method = "GPTQ"
             quant_config["version"] = "GPTQ"
-            self.load_from_autogptq = True
+            self.compatible_with_autogptq = True
             import os
-            os.environ['load_from_autogptq'] = '1' # FixMe: hacky
+            os.environ['compatible_with_autogptq'] = '1' # FixMe: hacky
         else: #FIXME is it correct?
             self.method = quant_config.get("method", "awq")
         pack_mode = quant_config["version"]
