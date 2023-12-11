@@ -129,7 +129,7 @@ class AWQQuant(QuantFrameBase):
             in_quantizer = InternalAWQuantizer()
             in_quantizer.configure(args.wbits, self.q_config, self.auto_scale, self.auto_clip)
 
-            in_quantizer.fast_quant_layer(layer_kwargs, input_feat, layer, attention_layers, i)
+            in_quantizer.fast_quant_layer(layer_kwargs, input_feat, layer, attention_layers, i, model.__class__.__name__)
             self._apply_quant(model, named_linears, quantizers, f"{state_dict_prefix}.{i}")
 
             layer = layer.cpu()

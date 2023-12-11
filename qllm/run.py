@@ -4,31 +4,8 @@ import sys
 from .model_quantization_base import ModelQuantizationBase
 
 
-def append_default_args():
-    if '--wbits' not in ' '.join(sys.argv):
-        sys.argv += ['--wbits', '4']
-
-    if '--groupsize' not in ' '.join(sys.argv):
-        sys.argv += ['--groupsize', '128']
-
-    if '--nsamples' not in ' '.join(sys.argv):
-        sys.argv += ['--nsamples', '512']
-
-    # if '--export_onnx' not in sys.argv:
-    #    sys.argv += ['--export_onnx', './mpt_onnx_q4/mpt.onnx']
-#
-    # if '--eval' not in sys.argv:
-    #    sys.argv += ['--eval']
-
-    # if '--save' not in sys.argv:
-    #    sys.argv += ['--save', './mpt_q4']
-    # if '--load' not in sys.argv:
-    #    sys.argv += ['--load', './mpt_q4']
-
-
 def define_basic_args():
     # ,'--allow_mix_bits','--act-order'
-    append_default_args()
     parser = argparse.ArgumentParser(description="""
 A general tool to quantize LLMs with the GPTQ/AWQ method.
 you can easily quantize your model and save to checkpoint, which is compatiable with \
@@ -54,13 +31,13 @@ A typical usage is:
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration data samples.')
     parser.add_argument('--percdamp', type=float, default=.01,
                         help='Percent of the average Hessian diagonal to use for dampening.')
-    parser.add_argument('--wbits', type=int, default=16,
+    parser.add_argument('--wbits', type=int, default=4,
                         choices=[2, 3, 4, 5, 6, 7, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
     parser.add_argument('--mix_qlayer_conf', type=str, default=None,
                         help='Mix quantization layer configuration.(groupsize,wbits)')
-    parser.add_argument('--groupsize', type=int, default=-1,
-                        help='Groupsize to use for quantization; default uses full row.')
+    parser.add_argument('--groupsize', type=int, default=128,
+                        help='Groupsize to use for quantization; -1 uses full row.')
     parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
     parser.add_argument('--save', type=str, default='', help='Save quantized checkpoint under this name.')
     parser.add_argument('--save_safetensors', type=str, default='',

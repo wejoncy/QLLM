@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
-from .compress_weight import CompressWeight, general_unpack_on_row
+from .compress_weight import CompressWeight
 
 
 try:

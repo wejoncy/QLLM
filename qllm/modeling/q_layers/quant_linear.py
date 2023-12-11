@@ -83,8 +83,8 @@ class DequantAndUnpack(torch.autograd.Function):
             # expand is removed as torch will auto broadcast to relavant dimension
             zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)
                                               ).to(torch.int16 if bits == 8 else torch.int8)
-            zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
             zeros = zeros + compatible_with_autogptq
+            zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
             zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
             # expand is removed as torch will auto broadcast to relavant dimension
             weight = torch.bitwise_right_shift(torch.unsqueeze(
@@ -98,6 +98,8 @@ class DequantAndUnpack(torch.autograd.Function):
             general_unpack_on_row(qzeros.T, zeros, bits)
             zeros = zeros.T
             zeros = zeros.reshape(-1, 1, zeros.shape[1])
+            zeros = zeros + compatible_with_autogptq
+            zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
 
         if act_order:
             zeros.squeeze_(1)
@@ -118,7 +120,9 @@ class DequantAndUnpack(torch.autograd.Function):
 
 def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features, act_order):
     compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-    if not act_order and not torch.onnx.is_in_onnx_export() and input.reshape(-1, input.shape[-1]).shape[0] <= 4 and bits == 4 and groupsize==128:
+    if (has_module_XbitOps and not act_order and not torch.onnx.is_in_onnx_export() and 
+        input.reshape(-1, input.shape[-1]).shape[0] <= 8 and 
+        bits == 4 and groupsize==128):
         return XbitOps.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
     weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order)
     out = torch.matmul(input, weight.contiguous())
@@ -153,18 +157,22 @@ class QuantLinear(nn.Module, CompressWeight):
 
     def handle_qzeros_for_autogptq(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        qzeros = self.qzeros.T.contiguous().to(device)
+        qzeros = self.qzeros.to(device)
         zeros = torch.zeros((self.outfeatures, self.infeatures//self.groupsize),
                             dtype=torch.int32, device=qzeros.device)
 
-        general_unpack_on_row(qzeros, zeros, self.bits)
-        zeros = zeros.reshape(-1, zeros.shape[-1]).to(torch.int32)
+        zeros_t = zeros.T.contiguous()
+        general_unpack_on_row(qzeros, zeros_t, self.bits)
+        zeros = zeros_t.T.contiguous()
 
         zeros += 1
+        torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
 
+        qzeros = qzeros.T.contiguous()
         general_pack_on_row(qzeros, zeros, self.bits)
+        qzeros = qzeros.T.contiguous()
 
-        self.qzeros = qzeros.T.contiguous().cpu()
+        self.qzeros = qzeros.cpu()
 
 
     def forward(self, x):
