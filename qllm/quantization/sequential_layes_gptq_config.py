@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-# refered from AutoGPTQ
 true_sequential_layers_for_model = dict(
     RWForCausalLM=[
         ["self_attention.query_key_value"],

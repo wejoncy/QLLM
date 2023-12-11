@@ -67,9 +67,9 @@ class BaseQuantizeConfig:
         config_file = self.get_resolved_base_dir(model_name_or_path, "quant_config.json")
         if config_file is None:
             # GPTQ-for-llama/AutoGPTQ
-            config_file = self.get_resolved_base_dir(model_name_or_path, "quant_config.json")
+            config_file = self.get_resolved_base_dir(model_name_or_path, "quantize_config.json")
 
-        assert config_file is not None, ("quant_config.json not found in checkpoint directory")
+        assert config_file is not None, ("quant_config.json/quantize_config.json not found in checkpoint directory")
         quant_config = json.load(open(config_file))
         args.wbits = quant_config.get("w_bit", quant_config.get("bits", None))
         args.groupsize = quant_config.get("q_group_size", quant_config.get("group_size", None))
@@ -80,7 +80,7 @@ class BaseQuantizeConfig:
             quant_config["version"] = "GPTQ"
             self.compatible_with_autogptq = True
             import os
-            os.environ['compatible_with_autogptq'] = '1' # FixMe: hacky
+            os.environ["compatible_with_autogptq"] = '1' # FixMe: hacky
         else: #FIXME is it correct?
             self.method = quant_config.get("method", "awq")
         self.quant_config = quant_config
