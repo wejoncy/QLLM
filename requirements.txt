@@ -1,6 +1,7 @@
 #safetensors==0.3.0
-torch==2.1.0
+torch>=2.0.0
 datasets==2.15.0
+zstandard
 #sentencepiece
 transformers
 #accelerate==0.17.1

@@ -1,6 +1,6 @@
 import torch
 import math
-
+import os
 
 def lcm(a, b): 
     return int(a*b/math.gcd(a, b))
@@ -164,8 +164,8 @@ class CompressWeight(object):
             qweight = qweight.T.contiguous()
         scales = self.scales
         scales = scales.reshape(-1, 1, scales.shape[-1])
-        import os
-        compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
+        
+        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
 
         if self.bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, self.bits)), dtype=torch.int32, device=qzeros.device).unsqueeze(0)
@@ -216,8 +216,7 @@ class CompressWeight(object):
 
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
-        import os
-        compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
+        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
         zeros_cuda = (intzeros-compatible_with_autogptq).int()
         qzeros_cuda = torch.zeros(
             (intzeros.shape[0], (intzeros.shape[1] * self.bits+31) // 32), dtype=torch.int32, device=device)
@@ -263,8 +262,7 @@ class CompressWeight(object):
         s = time.time()
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
-        import os
-        compatible_with_autogptq = int(os.environ.get('compatible_with_autogptq', "0"))
+        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
         zeros_cuda = (intzeros - compatible_with_autogptq).int()
         qzeros_cuda = torch.zeros((intzeros.shape[0], intzeros.shape[1] //
                                   32 * self.bits), dtype=torch.int32, device=device)

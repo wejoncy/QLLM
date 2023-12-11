@@ -1,4 +1,4 @@
-from ..quant import make_mixbits_quant_linear, QuantLinear
+from ..modeling.q_layers import make_mixbits_quant_linear, QuantLinear
 from ..utils import find_layers, DEV, gen_conditions
 from ..quantization.gptq import GPTQ, Observer
 from texttable import Texttable
@@ -63,7 +63,7 @@ def load_quant(qmodel, argv_user, args):
                              for layer_name in layers.keys() if len(layer_name.split('.')) > 3}
         open(Path(qmodel)/"quant_config_by_layer.json").write(json.dumps(quant_layers_json))
 
-    # load quant info
+    # load layers info
     with open(Path(qmodel)/"quant_config_by_layer.json") as fp:
         qunat_info = json.load(fp)
     for layer_name in list(layers.keys()):
@@ -78,7 +78,7 @@ def load_quant(qmodel, argv_user, args):
     for i in range(1, len(weight_bins)):
         weight_dict.update(torch.load(weight_bins[i]))
     model.load_state_dict(weight_dict)
-    # quant.autotune_warmup_linear(model, transpose=False)
+    # layers.autotune_warmup_linear(model, transpose=False)
     return model, dataloader
 
 
@@ -273,8 +273,8 @@ def mpt_pack(model, quantizers):
 
         qlayers[name].pack(layers[name], scale, zero, g_idx)
 
-    # quant.make_linear_qdq_back(model,layers)
-    # quant.autotune_warmup_linear(model, transpose=False)
+    # layers.make_linear_qdq_back(model,layers)
+    # layers.autotune_warmup_linear(model, transpose=False)
 
     print('Done.')
     return model, quant_info
@@ -388,7 +388,7 @@ if __name__ == '__main__':
                         action='store_true',
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64. \
             When this feature enabled, `--save` or `--save_safetensors` would be disable.')
-    parser.add_argument('--quant-directory', type=str, default=None,
+    parser.add_argument('--layers-directory', type=str, default=None,
                         help='Specify the directory for export quantization parameters to toml format. `None` means no export by default.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--forward_args', type=str, default=None, help='args for run_prompts_mpt.py')

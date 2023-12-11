@@ -53,7 +53,7 @@ class ModelQuantizationBase(object):
     def eval_model(self, model, dev, args):
         logger.info('Evaluating ...')
 
-        from .quant.quant_linear_awq import has_awq_inference_engine
+        from .modeling.q_layers.quant_linear_awq import has_awq_inference_engine
         if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
             logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
             model = self.repack_to_new_mode(model, args, "GPTQ")
@@ -72,13 +72,13 @@ class ModelQuantizationBase(object):
         attention_layers = find_layers(model, self.quant_layers+[ScaledLinear])
         attention_layers = {n: attention_layers[n] for n in quantizers}
 
-        quantize_config_by_layer = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
-        quantize_config_by_layer["method"] = args.method
+        quant_config_by_layer = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
+        quant_config_by_layer["method"] = args.method
         
         target_layer = select_quant_linear(args.pack_mode, args.wbits)
 
         make_mixbits_quant_linear(
-            model, quantizers, quantize_config_by_layer, target_layer=target_layer)
+            model, quantizers, quant_config_by_layer, target_layer=target_layer)
         qlayers = find_layers(model, [target_layer])
         for name in tqdm.tqdm(qlayers, desc='Packing weights....'):
             quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
@@ -92,7 +92,7 @@ class ModelQuantizationBase(object):
             qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
         model.quant_config["version"] = qlayers[name].pack_mode
-        model.quantize_config_by_layer = quantize_config_by_layer
+        model.quant_config_by_layer = quant_config_by_layer
 
         return model
 
@@ -196,7 +196,7 @@ Please run with `-h` to refer the usage.")
 
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
-            from .quant.quant_linear_awq import has_awq_inference_engine
+            from .modeling.q_layers.quant_linear_awq import has_awq_inference_engine
             if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
                 logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
                 model = self.repack_to_new_mode(model, args, "GPTQ")
