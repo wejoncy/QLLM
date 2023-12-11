@@ -132,9 +132,15 @@ python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --data
 
 ## For some users has transformers connect issues.
 Please set environment with PROXY_PORT=your http proxy port
+
 PowerShell
-$env:PROXY_PORT=1080
-Bash export PROXY_PORT=1080
+`$env:PROXY_PORT=1080`
+
+Bash
+`export PROXY_PORT=1080`
+
+windows cmd
+`set PROXY_PORT=1080`
 
 # Acknowledgements
 This code is based on [GPTQ](https://github.com/IST-DASLab/gptq)

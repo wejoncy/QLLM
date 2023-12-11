@@ -8,7 +8,7 @@ from .sequential_layes_awq_config import auto_detect_scaling,auto_detect_sequent
 USE_ACCUMULATE_BATCH = -1
 
 
-def get_model_specific_quant_layer(module, input_feat, module_kwargs):
+def get_model_specific_quant_layer(module, input_feat, module_kwargs, model_type):
     from transformers.models.opt.modeling_opt import OPTDecoderLayer
     from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
@@ -102,7 +102,7 @@ def get_model_specific_quant_layer(module, input_feat, module_kwargs):
             inp=input_feat['ffn.down_proj'],
         ))
     else:
-        scales_list = auto_detect_sequential_layers(module, input_feat, type(module), module_kwargs)
+        scales_list = auto_detect_sequential_layers(module, input_feat, model_type, module_kwargs)
 
     return scales_list
 
@@ -208,14 +208,13 @@ def apply_scale(module, scales_list, input_feat_dict=None):
         for layer in layers:
             layer.cuda()
         scales.cuda()
-        from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
         if isinstance(prev_op, nn.Linear):
             assert len(layers) == 1
             scale_fc_fc(prev_op, layers[0], scales)
-        elif isinstance(prev_op, (nn.LayerNorm, LlamaRMSNorm)):
+        elif isinstance(prev_op, (nn.LayerNorm,)) or ('rmsnorm' in str(prev_op.__class__).lower()):
             scale_ln_fcs(prev_op, layers, scales)
-        elif isinstance(prev_op, nn.GELU):
+        elif isinstance(prev_op, nn.GELU) or ('gelu' in str(prev_op.__class__).lower()):
             new_module = ScaledActivation(prev_op, scales)
             set_op_by_name(module, prev_op_name, new_module)
             scale_gelu_fc(prev_op, layers[0], scales)
@@ -384,7 +383,7 @@ class InternalAWQuantizer(nn.Module):
         self.auto_clip = auto_clip
 
     @torch.no_grad()
-    def auto_scale_block(self, module, module_kwargs, input_feat):
+    def auto_scale_block(self, module, module_kwargs, input_feat, model_type):
         def w_quantize_func(p):
             return pseudo_quantize_tensor(p, self.w_bit, self.q_config).detach()
 
@@ -476,15 +475,15 @@ class InternalAWQuantizer(nn.Module):
             return (get_op_name(module, prev_op), tuple([get_op_name(module, m) for m in layers]), scales)
 
         sub_modules = get_model_specific_quant_layer(
-            module=module, input_feat=input_feat, module_kwargs=module_kwargs)
+            module=module, input_feat=input_feat, module_kwargs=module_kwargs, model_type=model_type)
         # return the searched scales
         scales_list = [_auto_get_scale(**sub_module) for sub_module in sub_modules]
 
         return scales_list
 
-    def fast_quant_layer(self, layer_kwargs, input_feat, layer, attention_layers, i):
+    def fast_quant_layer(self, layer_kwargs, input_feat, layer, attention_layers, i, model_type):
         if self.auto_scale:  # if it applies, we should also modify the input_feat with scales
-            scales_list = self.auto_scale_block(layer, layer_kwargs, input_feat=input_feat,)
+            scales_list = self.auto_scale_block(layer, layer_kwargs, input_feat=input_feat, model_type=model_type)
             # apply_scale(layer, scales_list, input_feat_dict=input_feat)
             apply_scale(attention_layers[i], scales_list, input_feat_dict=input_feat)
             # append prefix to make names global

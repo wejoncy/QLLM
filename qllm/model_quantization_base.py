@@ -111,6 +111,7 @@ class ModelQuantizationBase(object):
             set_op_by_name(model, module_name, new_module)
             new_module.pack(tmp, scales.T, zeros.T, None)
             qlayer.to('cpu')
+            new_module.to('cpu')
         del qlayers
         torch.cuda.empty_cache()
         return model
@@ -150,9 +151,11 @@ class ModelQuantizationBase(object):
             args.load = args.load.as_posix()
 
         if args.tokenizer == "":
-            args.tokenizer = args.model if args.model else args.load
+            args.tokenizer = args.load if args.load else args.model
 
         if args.load:
+            if args.model != "":
+                logger.warn(f"--model={args.model} will be ignored when --load is specified")
             model = self.__load_quant(args)
             model.eval()
         elif args.model:

@@ -12,9 +12,10 @@ def run_once(func):
     
 @run_once
 def get_logger():
-    #formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger = logging.getLogger('qllm')
     console = logging.StreamHandler()
+    console.setFormatter(formatter)
     logger.addHandler(console)
     logger.setLevel(logging.INFO)
     return logger

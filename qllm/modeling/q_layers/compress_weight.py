@@ -171,9 +171,9 @@ class CompressWeight(object):
             wf = torch.tensor(list(range(0, 32, self.bits)), dtype=torch.int32, device=qzeros.device).unsqueeze(0)
             zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)).to(
                 torch.int16 if self.bits == 8 else torch.int8)
-            torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
 
             zeros = zeros + compatible_with_autogptq
+            torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
             zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
 
             weight = torch.bitwise_right_shift(torch.unsqueeze(
@@ -192,16 +192,24 @@ class CompressWeight(object):
             general_unpack_on_row(qzeros.T, zeros, self.bits)
             zeros = zeros.T
             zeros = zeros + compatible_with_autogptq
+            torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
 
         if "GEMM" in self._get_name():
             zeros = zeros.T.contiguous()
         zeros = self.reverse_reorder_int_tensor(zeros)
         weight = self.reverse_reorder_int_tensor(weight)
 
-        fp16_weight = self.dequant_weight(weight.T, zeros.T).to(device)
+        fp16_weight = self.dequant_weight(weight.T, zeros.T)
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
-        return fp16_weight, self.scales, zeros
+        return fp16_weight, self.scales, zeros.cpu()
+
+
+    def reorder_int_tensor(self, int_tensor):
+        return int_tensor
+
+    def reverse_reorder_int_tensor(self, int_tensor):
+        return int_tensor
 
     # odd bits, 3,5,6,7
     def pack_on_device_for_odd_bits(self, intweight_gpu, intzeros):
@@ -217,7 +225,9 @@ class CompressWeight(object):
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
         compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-        zeros_cuda = (intzeros-compatible_with_autogptq).int()
+        zeros_cuda = (intzeros - compatible_with_autogptq)
+        max_num_in_bits = 2**self.bits - 1
+        zeros_cuda = (zeros_cuda.byte() & max_num_in_bits).int()
         qzeros_cuda = torch.zeros(
             (intzeros.shape[0], (intzeros.shape[1] * self.bits+31) // 32), dtype=torch.int32, device=device)
 
@@ -232,11 +242,6 @@ class CompressWeight(object):
             fw, _, iz = self.unpack()
             assert (fw == self.orig_fp_weight.to(device)).all()
 
-    def reorder_int_tensor(self, int_tensor):
-        return int_tensor
-
-    def reverse_reorder_int_tensor(self, int_tensor):
-        return int_tensor
 
     def pack_on_device_for_even_bits(self, intweight_gpu, intzeros):
         device = intweight_gpu.device
@@ -263,7 +268,9 @@ class CompressWeight(object):
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
         compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-        zeros_cuda = (intzeros - compatible_with_autogptq).int()
+        zeros_cuda = (intzeros - compatible_with_autogptq)
+        max_num_in_bits = 2**self.bits - 1
+        zeros_cuda = (zeros_cuda.byte() & max_num_in_bits).int()
         qzeros_cuda = torch.zeros((intzeros.shape[0], intzeros.shape[1] //
                                   32 * self.bits), dtype=torch.int32, device=device)
         i = 0
