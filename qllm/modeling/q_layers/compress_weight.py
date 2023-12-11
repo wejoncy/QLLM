@@ -199,10 +199,10 @@ class CompressWeight(object):
         zeros = self.reverse_reorder_int_tensor(zeros)
         weight = self.reverse_reorder_int_tensor(weight)
 
-        fp16_weight = self.dequant_weight(weight.T, zeros.T).to(device)
+        fp16_weight = self.dequant_weight(weight.T, zeros.T)
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
-        return fp16_weight, self.scales, zeros
+        return fp16_weight, self.scales, zeros.cpu()
 
 
     def reorder_int_tensor(self, int_tensor):

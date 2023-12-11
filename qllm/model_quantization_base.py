@@ -111,6 +111,7 @@ class ModelQuantizationBase(object):
             set_op_by_name(model, module_name, new_module)
             new_module.pack(tmp, scales.T, zeros.T, None)
             qlayer.to('cpu')
+            new_module.to('cpu')
         del qlayers
         torch.cuda.empty_cache()
         return model
