@@ -150,9 +150,11 @@ class ModelQuantizationBase(object):
             args.load = args.load.as_posix()
 
         if args.tokenizer == "":
-            args.tokenizer = args.model if args.model else args.load
+            args.tokenizer = args.load if args.load else args.model
 
         if args.load:
+            if args.model != "":
+                logger.warn(f"--model={args.model} will be ignored when --load is specified")
             model = self.__load_quant(args)
             model.eval()
         elif args.model:
