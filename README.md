@@ -42,11 +42,9 @@ python setup.py install
 ```
 ## Dependencies
 
-* `torch`: tested on v2.0.0+cu117
+* `torch`: >=v2.0.0 and cu118
 * `transformers`: tested on v4.28.0.dev0
-* `datasets`: tested on v2.10.1
-* `safetensors`: tested on v0.3.0
-* `onnxruntime`: tested on v1.16.1
+* `onnxruntime`: tested on v1.16.3
 * `onnx`
 
 
@@ -55,13 +53,13 @@ python setup.py install
 ## Quantize llama2
 ```bash
 #  Quantize and Save compressed model
-python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit
+python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit
 ```
 
 ## (NEW) Quantize model with mix bits/groupsize for higher precision (PPL)
 ```bash
 #  Quantize and Save compressed model
-python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --allow_mix_bits --true-sequential
+python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --allow_mix_bits --true-sequential
 ```
 ### NOTE:
 1. only support GPTQ
@@ -72,11 +70,11 @@ python -m qllm.run --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama
 
 ## Conversion between AWQ and GPTQ
 ```bash
-python -m qllm.run --load TheBloke/Llama-2-7B-Chat-AWQ --eval --save ./Llama-2-7b-chat-hf_gptq_q4/ --pack_mode=GPTQ
+python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --eval --save ./Llama-2-7b-chat-hf_gptq_q4/ --pack_mode=GPTQ
 ```
 Or you can use `--pack_mode=AWQ` to convert GPTQ to AWQ.
 ```bash
-python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval --save ./Llama-2-7b-chat-hf_awq_q4/ --pack_mode=GEMM
+python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --eval --save ./Llama-2-7b-chat-hf_awq_q4/ --pack_mode=GEMM
 ```
 ### Note:
 Not all cases are supported, for example,
@@ -88,12 +86,12 @@ Not all cases are supported, for example,
 ## Convert to onnx model
 use `--export_onnx ./onnx_model` to export and save onnx model
 ```
-python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
+python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
 ```
 
 ## model inference with the saved model
 ```bash
-python -m qllm.run --load ./Llama-2-7b-4bit --eval
+python -m qllm --load ./Llama-2-7b-4bit --eval
 ```
 
 ## model inference with ORT
@@ -112,13 +110,13 @@ inputs = {'input_ids': sample_inputs[0].cpu().numpy(), 'attention_mask': mask, '
 for i in range(num_layers):
     inputs[f'present_key.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
     inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
-outputs = session.run(None, inputs)
+outputs = session(None, inputs)
 ```
 
 ## Load quantized model from hugingface/transformers
 ```bash
-python -m qllm.run --load TheBloke/Llama-2-7B-Chat-AWQ --eval
-python -m qllm.run --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
+python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --eval
+python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
 ```
 
 ## start a chatbot
@@ -129,10 +127,10 @@ pip install fschat accelerate
 use `--use_plugin` to enable a chatbot plugin
 
 ```
-python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/
+python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/
 
 or 
-python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
+python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
 ```
 
 ## For some users has transformers connect issues.
@@ -148,10 +146,8 @@ windows cmd
 `set PROXY_PORT=1080`
 
 # Acknowledgements
-This code is based on [GPTQ](https://github.com/IST-DASLab/gptq)
-
-Triton GPTQ kernel code is based on [GPTQ-triton](https://github.com/fpgaminer/GPTQ-triton)
-
-Thanks to [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ)
-
-Thanks to [llm-awq](https://github.com/mit-han-lab/llm-awq) and [AutoAWQ](https://github.com/casper-hansen/AutoAWQ) for releasing AWQ quantization method.
+[GPTQ](https://github.com/IST-DASLab/gptq)
+[GPTQ-triton](https://github.com/fpgaminer/GPTQ-triton)
+[AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ)
+[llm-awq](https://github.com/mit-han-lab/llm-awq) 
+[AutoAWQ](https://github.com/casper-hansen/AutoAWQ).
