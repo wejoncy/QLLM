@@ -147,7 +147,7 @@ please switch to the right directory and try again")
                         location="model_ext.data", size_threshold=1024, convert_attribute=False)
 
 
-if __name__ == '__main__':
+def main():
     from .. import run
     parser = run.define_basic_args()
     parser.add_argument('--forward_args', type=str,default=None, help='args for run_prompts_mpt.py')
@@ -160,3 +160,6 @@ if __name__ == '__main__':
         mpt_quanter.argv_user[mpt_quanter.argv_user.index('--model_name_or_path')+1] = os.path.abspath(args.load)
 
     mpt_quanter.run(args)
+
+if __name__ == '__main__':
+    main()

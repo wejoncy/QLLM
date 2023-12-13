@@ -1,6 +1,11 @@
 # QLLM
+<center>
 <img src="https://github.com/wejoncy/QLLM/blob/main/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg?raw=true" width="210">
-
+</center>
+<font size=5>
+<center>Supports any LLMs, mixed bits(2-8bit), GPTQ/AWQ, ONNX export</center>
+</font>
+<br><br>
 QLLM is a out-of-box quantization toolbox for large language models, It didn't limit to a specific model, and designed to be auto-quantization layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
 Besides, model quantized by different quantization method (GPTQ/AWQ) can be loaded from huggingface/transformers and transfor to each other without extra effort. 
 
