@@ -13,7 +13,7 @@ class QuantFrameBase:
     @torch.no_grad()
     def prepare(self, model):
         print('Starting ...')
-        self.rec_use_cache = model.config.use_cache
+        self.rec_use_cache = getattr(model.config, 'use_cache', False)
 
         model = model.cpu()
         model.config.use_cache = False
@@ -37,9 +37,12 @@ class QuantFrameBase:
         # find the attention layers, and the pre layers of attention layers
         # A layer-block has more than 32 layers usually
         transformer_model = model
-        while len(list(transformer_model.named_children())) <= 2:
+        while len(list(transformer_model.named_children())) <= 4:
             decoder_name = next(transformer_model.named_children())[0]
-            transformer_model = getattr(transformer_model, decoder_name)
+            block = getattr(transformer_model, decoder_name)
+            if 'embedding' in block.__class__.__name__.lower():
+                break
+            transformer_model = block
         for name, layer in transformer_model.named_children():
             if type(layer) in [torch.nn.ModuleList]:
                 attention_layers = layer

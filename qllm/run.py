@@ -5,7 +5,6 @@ from .model_quantization_base import ModelQuantizationBase
 
 
 def define_basic_args():
-    # ,'--allow_mix_bits','--act-order'
     parser = argparse.ArgumentParser(description="""
 A general tool to quantize LLMs with the GPTQ/AWQ method.
 you can easily quantize your model and save to checkpoint, which is compatiable with \
@@ -13,7 +12,7 @@ you can easily quantize your model and save to checkpoint, which is compatiable 
 You can also test the quantized model with a conversation plugin.
 
 A typical usage is:
-    python -m qllm.run --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  \
+    python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  \
 --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
 --export_onnx ./onnx_models/
 

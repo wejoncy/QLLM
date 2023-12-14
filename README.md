@@ -38,11 +38,9 @@ Features:
 - [2023/12] The first PyPi package released 
 
 ## Installation
-Easy to install qllm from PyPi [cu121/cu118]
+Easy to install qllm from PyPi [cu121]
 
 `pip install qllm`
-
-`pip install qllm+cu118`
 
 
 Install from release package, CUDA-118/121 is supported.
