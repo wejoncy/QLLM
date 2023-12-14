@@ -67,7 +67,6 @@ and can be used on all GPU archs.
 
 
 def main():
-    print("quantize LLM with base engine")
     parser = define_basic_args()
     args = parser.parse_args()
     print(args)
