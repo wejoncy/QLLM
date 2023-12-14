@@ -3,11 +3,14 @@
 <img src="https://github.com/wejoncy/QLLM/blob/main/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg?raw=true" width="210">
 </center>
 <p align="center">
-    <a href="https://huggingface.co/models?search=awq">
+    <a href="https://huggingface.co/models?search=gptq">
         <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_1000+_models_available-8A2BE2">
     </a>
     <a href="https://github.com/wejoncy/QLLM/releases">
         <img alt="GitHub - Releases" src="https://img.shields.io/github/v/release/wejoncy/QLLM.svg">
+    </a>
+    <a href="https://pypi.org/project/qllm/">
+        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/qllm/month">
     </a>
 </p>
 
@@ -35,6 +38,13 @@ Features:
 - [2023/12] The first PyPi package released 
 
 ## Installation
+Easy to install qllm from PyPi [cu121/cu118]
+
+`pip install qllm`
+
+`pip install qllm+cu118`
+
+
 Install from release package, CUDA-118/121 is supported.
 [py38, py39, py310] https://github.com/wejoncy/QLLM/releases
 
