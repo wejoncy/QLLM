@@ -2,8 +2,17 @@
 <center>
 <img src="https://github.com/wejoncy/QLLM/blob/main/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg?raw=true" width="210">
 </center>
+<p align="center">
+    <a href="https://huggingface.co/models?search=awq">
+        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_1000+_models_available-8A2BE2">
+    </a>
+    <a href="https://github.com/wejoncy/QLLM/releases">
+        <img alt="GitHub - Releases" src="https://img.shields.io/github/v/release/wejoncy/QLLM.svg">
+    </a>
+</p>
+
 <font size=5>
-<center>Supports any LLMs, mixed bits(2-8bit), GPTQ/AWQ, ONNX export</center>
+<center>Supports any LLMs in HuggingFace/Transformers, mixed bits(2-8bit), GPTQ/AWQ, ONNX export</center>
 </font>
 <br><br>
 QLLM is a out-of-box quantization toolbox for large language models, It didn't limit to a specific model, and designed to be auto-quantization layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
@@ -147,7 +156,11 @@ windows cmd
 
 # Acknowledgements
 [GPTQ](https://github.com/IST-DASLab/gptq)
+
 [GPTQ-triton](https://github.com/fpgaminer/GPTQ-triton)
+
 [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ)
-[llm-awq](https://github.com/mit-han-lab/llm-awq) 
+
+[llm-awq](https://github.com/mit-han-lab/llm-awq)
+
 [AutoAWQ](https://github.com/casper-hansen/AutoAWQ).
