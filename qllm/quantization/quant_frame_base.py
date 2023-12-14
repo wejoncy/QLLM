@@ -1,7 +1,10 @@
 import torch
 from torch import nn
 from ..utils import comm_utils
+from ..utils.logger import get_logger
+from ..utils.modelutils import get_op_by_name
 
+logger = get_logger()
 
 class QuantFrameBase:
     def __init__(self, args) -> None:
@@ -21,39 +24,50 @@ class QuantFrameBase:
 
     @torch.no_grad()
     def extract_prefix(self, model):
+        '''
+        heristicly extract the prefix of the state_dict
+        support encoder-decoder model and decoder-only model
+        a model usually has a state_dict like this:
+        x.embed
+        x.model x.encoder x.decoder
+        x.lm_head
+        x.dropout
+        x.loss
+        '''
+
         state_dict_prefix = None
+        prefix_list = [] #encoder/decoder
         for name in model.state_dict().keys():
             if '.0.' not in name:
                 continue
             state_dict_prefix = name.split('.0.')[0]
-        assert state_dict_prefix is not None, "state_dict_prefix not found"
-        return state_dict_prefix
+            prefix_list.append(state_dict_prefix)
+
+        if len(prefix_list) > 1: # encoder-decoder model
+            min_len = min([len(i) for i in prefix_list])
+        prefix_list = [i for i in prefix_list if len(i) == min_len]
+        prefix_list = set(prefix_list)
+        if len(prefix_list) > 1:
+            raise ValueError(f"Multiple prefix found: {prefix_list}, encoder-decoder model is not supported")
+        assert prefix_list, "state_dict_prefix not found"
+        return prefix_list
 
     @torch.no_grad()
-    def extract_layers(self, model):
+    def extract_layers(self, model, model_prefix):
         attention_layers = None
         pre_layers_of_attention = []  # enmbedding layer, norm layer
-
         # find the attention layers, and the pre layers of attention layers
-        # A layer-block has more than 32 layers usually
-        transformer_model = model
-        while len(list(transformer_model.named_children())) <= 4:
-            decoder_name = next(transformer_model.named_children())[0]
-            block = getattr(transformer_model, decoder_name)
-            if 'embedding' in block.__class__.__name__.lower():
-                break
-            transformer_model = block
+        transformer_model = get_op_by_name(model, '.'.join(model_prefix.split('.')[:-1]))
         for name, layer in transformer_model.named_children():
             if type(layer) in [torch.nn.ModuleList]:
                 attention_layers = layer
                 break
             else:
                 pre_layers_of_attention.append(layer)
+        assert attention_layers is not None, "attention_layers not found"
         return attention_layers, pre_layers_of_attention
 
-    def hijack_block_inputs(self, model, dataloader, args, dev):
-        #dtype = next(iter(model.parameters())).dtype
-        # torch.zeros((args.nsamples, dataloader[0][0].shape[-1], model.config.d_model), dtype=dtype)
+    def hijack_block_inputs(self, model, dataloader, model_prefix, dev):
         inps = []
         layer_input_args = {}
         swap_device = self.swap_device
@@ -68,7 +82,7 @@ class QuantFrameBase:
                 layer_input_args.update(kwargs)
                 raise ValueError
 
-        attention_layers, pre_layers_of_attention = self.extract_layers(model)
+        attention_layers, pre_layers_of_attention = self.extract_layers(model, model_prefix)
         for layer in pre_layers_of_attention:
             layer = layer.to(dev)
         attention_layers[0] = attention_layers[0].to(dev)
@@ -94,5 +108,16 @@ class QuantFrameBase:
             args.wbits = args.mix_qlayer_conf[layer_key].get('wbits', args.wbits)
             args.groupsize = args.mix_qlayer_conf[layer_key].get('groupsize', args.groupsize)
 
-    def quantize(self, model, dataloader, args, dev):
+    def do_quantize(self, model, dataloader, model_prefix, dev):
         raise NotImplementedError
+
+    def quantize(self, model, dataloader, dev):
+        model = self.prepare(model)
+        quantizers = {}
+        state_dict_prefix:list = self.extract_prefix(model)
+        for prefix in state_dict_prefix:
+            quantizers.update(self.do_quantize(model, dataloader, prefix, dev))
+
+        model.config.use_cache = self.rec_use_cache
+        model.quant_config = self.quant_config
+        return quantizers

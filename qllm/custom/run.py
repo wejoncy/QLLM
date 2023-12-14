@@ -74,7 +74,7 @@ please switch to the right directory and try again")
         return dataloader
 
     @torch.no_grad()
-    def eval_model(self, model, dev):
+    def eval_model(self, model, dev, args):
         logger.info('Evaluating ...')
         sys.argv = self.argv_user
         import examples_ads

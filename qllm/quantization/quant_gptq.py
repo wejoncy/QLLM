@@ -64,6 +64,9 @@ class ObserverHelper:
 class GPTQQuant(QuantFrameBase):
     def __init__(self, args) -> None:
         super().__init__(args)
+        self.quant_config = dict(damp_percent=args.percdamp, group_size=args.groupsize, desc_act=args.act_order,
+                                 bits=args.wbits, sym=args.sym, allow_mix_bits=args.allow_mix_bits,
+                                 true_sequential=args.true_sequential, method='gptq')
 
     def hijack_internal_block(self, gptq, subset, layer_block, inps, layer_kwargs):
         dev = next(layer_block.parameters()).device
@@ -80,12 +83,11 @@ class GPTQQuant(QuantFrameBase):
             _ = layer_block(inps[j].unsqueeze(0).to(dev), **layer_kwargs)
         for h in handles:
             h.remove()
-
-    def quantize(self, model, dataloader, dev):
+    
+    @torch.inference_mode()
+    def do_quantize(self, model, dataloader, model_prefix, dev):
         args = self.args
-        model = self.prepare(model)
-        state_dict_prefix = self.extract_prefix(model)
-        inps, outs, attention_layers, layer_input_args = self.hijack_block_inputs(model, dataloader, args, dev)
+        inps, outs, attention_layers, layer_input_args = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
         print('Ready.')
 
         quantizers = {}
@@ -113,7 +115,7 @@ class GPTQQuant(QuantFrameBase):
                 for name in subset:
                     scale, zero, g_idx, error = gptq[name].fasterquant(
                         percdamp=args.percdamp, groupsize=args.groupsize, actorder=args.act_order, name=name)
-                    quantizers[f'{state_dict_prefix}.{i}.{name}'] = (
+                    quantizers[f'{model_prefix}.{i}.{name}'] = (
                         gptq[name].quantizer.cpu(), scale.cpu(), zero.cpu(), g_idx.cpu(), args.wbits, args.groupsize)
 
                     if not observer_helper.submit(name=name, layerid=i, gptq=gptq[name], error=error):
@@ -132,11 +134,6 @@ class GPTQQuant(QuantFrameBase):
 
             inps, outs = outs, inps
 
-        observer_helper.post_quant(quantizers, state_dict_prefix)
-
-        model.config.use_cache = self.rec_use_cache
-        quant_config = dict(damp_percent=args.percdamp, group_size=args.groupsize, desc_act=args.act_order,
-                               bits=args.wbits, sym=args.sym, allow_mix_bits=args.allow_mix_bits,
-                               true_sequential=args.true_sequential, method='gptq')
-        model.quant_config = quant_config
+        observer_helper.post_quant(quantizers, model_prefix)
         return quantizers
+

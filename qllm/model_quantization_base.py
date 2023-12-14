@@ -30,11 +30,10 @@ class ModelQuantizationBase(object):
         from transformers import AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
             args.model, use_fast=True)
-        return AutoQuantizedModelForCausalLM.from_pretrained(args.model, args=args)
+        return AutoQuantizedModelForCausalLM.from_pretrained(args.model, args=args, trust_remote_code=True)
 
     def get_datasets(self, args):
-        return get_sample_datas_for_quantization(
-            args)
+        return get_sample_datas_for_quantization(args)
 
 
     def __load_quant(self, args):

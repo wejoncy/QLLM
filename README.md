@@ -10,7 +10,7 @@
         <img alt="GitHub - Releases" src="https://img.shields.io/github/v/release/wejoncy/QLLM.svg">
     </a>
     <a href="https://pypi.org/project/qllm/">
-        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/qllm/month">
+        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/qllm/week">
     </a>
 </p>
 
