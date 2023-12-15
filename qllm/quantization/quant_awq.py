@@ -126,7 +126,7 @@ class AWQQuant(QuantFrameBase):
             in_quantizer.configure(args.wbits, self.quant_config, self.auto_scale, self.auto_clip)
 
             in_quantizer.fast_quant_layer(layer_kwargs, input_feat, layer, attention_layers, i, model.__class__.__name__)
-            self._apply_quant(model, named_linears, quantizers, f"{state_dict_prefix}.{i}")
+            self._apply_quant(model, named_linears, quantizers, f"{model_prefix}.{i}")
 
             layer = layer.cpu()
             # Haotian: check activation replacement
