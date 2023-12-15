@@ -372,20 +372,20 @@ class InternalAWQuantizer(nn.Module):
     def __init__(self):
         super(InternalAWQuantizer, self).__init__()
         self.w_bit = None
-        self.q_config = None
+        self.quant_config = None
         self.auto_scale = None
         self.auto_clip = None
 
     def configure(self, w_bit, q_config, auto_scale=True, auto_clip=True):
         self.w_bit = w_bit
-        self.q_config = q_config
+        self.quant_config = q_config
         self.auto_scale = auto_scale
         self.auto_clip = auto_clip
 
     @torch.no_grad()
     def auto_scale_block(self, module, module_kwargs, input_feat, model_type):
         def w_quantize_func(p):
-            return pseudo_quantize_tensor(p, self.w_bit, self.q_config).detach()
+            return pseudo_quantize_tensor(p, self.w_bit, self.quant_config).detach()
 
         if "use_cache" in module_kwargs:
             module_kwargs.pop("use_cache")
@@ -396,7 +396,7 @@ class InternalAWQuantizer(nn.Module):
             # x: n, ci
             weight = torch.cat([_m.weight for _m in linears2scale], dim=0)
             w_max = get_weight_scale(
-                weight, q_group_size=self.q_config.get("q_group_size", -1))
+                weight, q_group_size=self.quant_config.get("q_group_size", -1))
             # Clear GPU memory
             clear_memory(weight)
 
@@ -493,7 +493,7 @@ class InternalAWQuantizer(nn.Module):
             clear_memory()
 
         if self.auto_clip:
-            clip_list = auto_clip_block(layer, w_bit=self.w_bit, q_config=self.q_config, input_feat=input_feat)
+            clip_list = auto_clip_block(layer, w_bit=self.w_bit, q_config=self.quant_config, input_feat=input_feat)
             apply_clip(layer, clip_list)
             # append prefix to make names global
             # awq_results["clip"] += append_str_prefix(clip_list, get_op_name(model, layer) + ".")

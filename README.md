@@ -10,7 +10,7 @@
         <img alt="GitHub - Releases" src="https://img.shields.io/github/v/release/wejoncy/QLLM.svg">
     </a>
     <a href="https://pypi.org/project/qllm/">
-        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/qllm/month">
+        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/qllm/week">
     </a>
 </p>
 
@@ -38,11 +38,9 @@ Features:
 - [2023/12] The first PyPi package released 
 
 ## Installation
-Easy to install qllm from PyPi [cu121/cu118]
+Easy to install qllm from PyPi [cu121]
 
 `pip install qllm`
-
-`pip install qllm+cu118`
 
 
 Install from release package, CUDA-118/121 is supported.
@@ -87,6 +85,19 @@ python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7
 4. all configurations will be saved/load automaticlly instead of quant-table which used by gptq-for-llama.
 5. if --allow_mix_bits is enabled, The saved model is not compatible with vLLM for now.
 
+## Quantize model for vLLM 
+Due to the zereos diff, we need to set a env variable if you set pack_mode to GPTQ whenver the method is awq or gptq
+```bash
+compatible_with_autogptq=1 python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --pack_mode=GPTQ
+```
+If you use GEMM pack_mode, then you don't have to set the var
+```bash
+python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --pack_mode=GEMM
+```
+
+```bash
+python -m qllm --model=meta-llama/Llama-2-7b-hf --method=awq --save ./Llama-2-7b-4bit --pack_mode=GEMM
+```
 ## Conversion between AWQ and GPTQ
 ```bash
 python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --eval --save ./Llama-2-7b-chat-hf_gptq_q4/ --pack_mode=GPTQ
