@@ -81,6 +81,8 @@ class AutoQuantizedModelForCausalLM:
         **kwargs) -> AutoModelForCausalLM:
 
         args = kwargs.pop("args", None)
+        cls.disable_double_init()
+        
         if isinstance(device_map, str):
             assert device_map in ["auto", "balanced", "balanced_low_0", "sequential"], \
                   'device_map must be auto, balanced, balanced_low_0 or sequential'
@@ -89,7 +91,7 @@ class AutoQuantizedModelForCausalLM:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading quantized model from {model_name_or_path}")
         init_contexts = [transformers.modeling_utils.no_init_weights(),
-                         accelerate.init_empty_weights(include_buffers=False)
+                         #accelerate.init_empty_weights(include_buffers=False)
         ]
         with transformers.utils.generic.ContextManagers(init_contexts):
             model = AutoModelForCausalLM.from_config(
