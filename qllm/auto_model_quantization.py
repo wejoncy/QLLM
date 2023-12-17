@@ -194,4 +194,4 @@ Please run with `-h` to refer the usage.")
             if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
                 logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
                 model = self.repack_to_new_mode(model, args, "GPTQ")
-            loop_in_chat_completion(args.tokenizer, model)
+            loop_in_chat_completion(self.tokenizer, model)
