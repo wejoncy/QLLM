@@ -136,23 +136,14 @@ def build_cuda_extensions():
     def get_extra_compile_args(x_arch_flags = None):
         arch_flags = x_arch_flags if x_arch_flags is not None else get_compute_capabilities(set([]))
         generator_flags = get_generator_flag()
-        if os.name == "nt":
-            include_arch = os.getenv("INCLUDE_ARCH", "1") == "1"
-
-            # Relaxed args on Windows
-            if include_arch:
-                extra_compile_args={"nvcc": arch_flags}
-            else:
-                extra_compile_args={}
-        else:
-            extra_compile_args={
-                "cxx": ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"],
-                "nvcc": [
+        extra_compile_args={
+            "nvcc": [
                     "-O3", 
                     "-std=c++17",
                     "-DENABLE_BF16",
                     "-U__CUDA_NO_HALF_OPERATORS__",
                     "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "-U__CUDA_NO_HALF2_OPERATORS__",
                     "-U__CUDA_NO_BFLOAT16_OPERATORS__",
                     "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
                     "-U__CUDA_NO_BFLOAT162_OPERATORS__",
@@ -161,10 +152,19 @@ def build_cuda_extensions():
                     "--expt-extended-lambda",
                     "--use_fast_math",
                 ] + generator_flags+arch_flags
-            }
+        }
+        if os.name == "nt":
+            extra_compile_args["cxx"] = ["/openmp", "/std:c++17"]
+        else:
+            extra_compile_args["cxx"] = ["-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]
+            
         return extra_compile_args
-    if not torch.cuda.is_available() or torch.cuda.get_device_properties(0).major >= 8 or is_pypi_build():
-        arch_flags = get_compute_capabilities(set([]), 80)
+
+    def get_gpu_ver():
+        prop =torch.cuda.get_device_properties(0)
+        return prop.major * 10 + prop.minor
+    if not torch.cuda.is_available() or get_gpu_ver() >= 75 or is_pypi_build():
+        arch_flags = get_compute_capabilities(set([]), 75)
         extra_compile_args_awq = get_extra_compile_args(arch_flags)
         extensions.append(
             CUDAExtension(
@@ -183,6 +183,7 @@ def build_cuda_extensions():
     extensions.append(CUDAExtension("ort_ops", [
         "src/ort_cuda/ort_ops.cc",
         "src/ort_cuda/dq.cu",
+        "src/ort_cuda/dq_gemv.cu",
     ], extra_compile_args=extra_compile_args_ort))
     return extensions
 

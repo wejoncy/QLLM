@@ -1,6 +1,81 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/extension.h>
 
+#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x) \
+  CHECK_CUDA(x);       \
+  CHECK_CONTIGUOUS(x)
+
+namespace onnxruntime_gptq {
+void lauch_deqantize_cuda_pt_kernel(torch::Tensor& b_fp16, const torch::Tensor& qweight_i32,
+                                    const torch::Tensor& scale_fp16, const torch::Tensor& qzeros_i32,
+                                    int bits, int groupsize, uint32_t mat_k, uint32_t mat_n, uint8_t add_zero_bias);
+
+
+void lauch_Gemv_kernel(torch::Tensor& out_fp16, const torch::Tensor& a_fp16, const torch::Tensor& qweight_i32,
+                       const torch::Tensor& scale_fp16, const torch::Tensor& qzeros_i32,
+                       int bits, int groupsize, uint32_t mat_m, uint32_t mat_k, uint32_t mat_n, uint8_t add_zero_bias);
+} // namespace onnxruntime_gptq
+
+torch::Tensor dequant_any_bit(const torch::Tensor& qweight, const torch::Tensor& scales,
+                              const torch::Tensor& qzeros, int groupsize, int bits, int in_features, uint8_t add_zero_bias) {
+  CHECK_INPUT(qweight);
+  CHECK_INPUT(scales);
+  CHECK_INPUT(qzeros);
+  TORCH_CHECK(qweight.dim() == 2, "qweight must be 2-dimensional");
+  TORCH_CHECK(groupsize >= 16, "groupsize must be >= 16");
+  TORCH_CHECK(bits >= 1 && bits <= 8, "bits must be >= 1 and <= 8");
+  TORCH_CHECK((in_features * bits + 31) / 32 == qweight.size(0), "in_features must be >= 1");
+  cudaSetDevice(qweight.device().index());
+  auto f16_scale = scales;
+  auto ori_dtype = scales.scalar_type();
+  if (ori_dtype == torch::kBFloat16) {
+    f16_scale = scales.to(torch::kFloat16);
+  }
+  at::Tensor output = at::zeros({in_features, qweight.size(1)}, f16_scale.options());
+  onnxruntime_gptq::lauch_deqantize_cuda_pt_kernel(output, qweight, f16_scale, qzeros, bits, groupsize, in_features, qweight.size(1), add_zero_bias);
+  if (ori_dtype == torch::kBFloat16) {
+    output = output.to(torch::kBFloat16);
+  }
+  return output;
+}
+
+torch::Tensor op_gemv(const torch::Tensor& input_a, const torch::Tensor& qweight,
+                      const torch::Tensor& scales, const torch::Tensor& qzeros,
+                      int groupsize, int bits, int in_features, uint8_t add_zero_bias) {
+  CHECK_INPUT(input_a);
+  CHECK_INPUT(qweight);
+  CHECK_INPUT(scales);
+  CHECK_INPUT(qzeros);
+  TORCH_CHECK(qweight.dim() == 2, "qweight must be 2-dimensional");
+  TORCH_CHECK(groupsize >= 16, "groupsize must be >= 16");
+  TORCH_CHECK(bits >= 1 && bits <= 8, "bits must be >= 1 and <= 8");
+  TORCH_CHECK((in_features * bits + 31) / 32 == qweight.size(0), "in_features must be >= 1");
+  TORCH_CHECK(qweight.device().index() == input_a.device().index(), "input and weight must be on the same device");
+  cudaSetDevice(qweight.device().index());
+  std::vector<int64_t> outputshape ={input_a.size(0), qweight.size(1)};
+  uint32_t mat_m = input_a.size(0);
+  if (input_a.dim() > 2) {
+    outputshape.insert(outputshape.begin()+1, input_a.size(1));
+    mat_m *= input_a.size(1);
+  }
+  auto f16_scale = scales;
+  auto ori_dtype = scales.scalar_type();
+  if (ori_dtype == torch::kBFloat16) {
+    f16_scale = scales.to(torch::kFloat16);
+  }
+
+  at::Tensor output = at::zeros(outputshape, f16_scale.options());
+  onnxruntime_gptq::lauch_Gemv_kernel(output, input_a, qweight, f16_scale, qzeros, bits, groupsize, mat_m, in_features, qweight.size(1), add_zero_bias);
+
+  if (ori_dtype == torch::kBFloat16) {
+    output = output.to(torch::kBFloat16);
+  }
+  return output;
+}
+
+
 namespace onnxruntime {
 namespace contrib {
 namespace cuda {
@@ -40,4 +115,8 @@ torch::Tensor Dequantize4Bits(torch::Tensor &qweight, torch::Tensor &qzeros,
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("Dequantize4Bits", &Dequantize4Bits, "Dequantize4Bits.");
+  m.def("dequant", &dequant_any_bit, "dequantize qweight to fp16, \nfunction type: const torch::Tensor& qweight, "
+        "const torch::Tensor& scales, const torch::Tensor& qzeros, int groupsize, int bits, int in_features");
+  m.def("gemv", &op_gemv, "gemv, \nfunction type: const torch::Tensor& input_a, const torch::Tensor& qweight, "
+        "const torch::Tensor& scales, const torch::Tensor& qzeros, int groupsize, int bits, int in_features");
 }

@@ -4,3 +4,4 @@ build
 *.so
 Llama*
 *.json
+dist

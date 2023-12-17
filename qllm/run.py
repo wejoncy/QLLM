@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from .model_quantization_base import ModelQuantizationBase
+from .auto_model_quantization import AutoModelQuantization
 
 
 def define_basic_args():
@@ -70,7 +70,7 @@ def main():
     args = parser.parse_args()
     print(args)
 
-    model_quanter = ModelQuantizationBase()
+    model_quanter = AutoModelQuantization()
     model_quanter.run(args)
 
 

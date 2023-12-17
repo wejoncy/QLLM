@@ -6,24 +6,7 @@ import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 import importlib
 from .compress_weight import CompressWeight, general_unpack_on_row, general_pack_on_row
-
-
-try:
-    has_module_XbitOps = importlib.util.find_spec("XbitOps")
-
-    if not has_module_XbitOps:
-        import subprocess
-        import sys
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install',
-                              'git+https://github.com/wejoncy/XbitOps.git'])
-        import XbitOps  # cuda dequant
-        has_module_XbitOps = True
-    else:
-        import XbitOps  # cuda dequant
-except:
-    print("torch implementation of dequantization would be used")
-    pass
-
+import ort_ops
 
 class QuantLinearTorchFunction(torch.autograd.Function):
     @staticmethod
@@ -75,8 +58,8 @@ class DequantAndUnpack(torch.autograd.Function):
     @staticmethod
     def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order):
         compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-        if has_module_XbitOps and qweight.is_cuda and not act_order:
-            return XbitOps.dequant(qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
+        if qweight.is_cuda and not act_order:
+            return ort_ops.dequant(qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
         scales = scales.reshape(-1, 1, scales.shape[-1])
         if bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
@@ -120,10 +103,10 @@ class DequantAndUnpack(torch.autograd.Function):
 
 def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features, act_order):
     compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-    if (has_module_XbitOps and not act_order and not torch.onnx.is_in_onnx_export() and 
+    if (not act_order and not torch.onnx.is_in_onnx_export() and 
         input.reshape(-1, input.shape[-1]).shape[0] <= 8 and 
         bits == 4 and groupsize==128):
-        return XbitOps.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
+        return ort_ops.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
     weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx, act_order)
     out = torch.matmul(input, weight.contiguous())
     return out
