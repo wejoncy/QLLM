@@ -3,8 +3,8 @@
 <img src="https://github.com/wejoncy/QLLM/blob/main/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg?raw=true" width="210">
 </center>
 <p align="center">
-    <a href="https://huggingface.co/models?search=gptq">
-        <img alt="Huggingface - Models" src="https://img.shields.io/badge/🤗_1000+_models_available-8A2BE2">
+    <a href="https://colab.research.google.com/github/wejoncy/QLLM/blob/colab/qllm_colab.ipynb">
+        <img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg">
     </a>
     <a href="https://github.com/wejoncy/QLLM/releases">
         <img alt="GitHub - Releases" src="https://img.shields.io/github/v/release/wejoncy/QLLM.svg">

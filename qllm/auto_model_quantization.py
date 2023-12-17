@@ -1,4 +1,3 @@
-from texttable import Texttable
 import os
 # if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
 #    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
@@ -20,7 +19,7 @@ from .modeling import AutoQuantizedModelForCausalLM
 logger = get_logger()
 ROUNDTRIP_CHECK = False
 
-class ModelQuantizationBase(object):
+class AutoModelQuantization(object):
     def __init__(self) -> None:
         super().__init__()
         self.quant_layers = [torch.nn.Linear]
@@ -179,16 +178,9 @@ Please run with `-h` to refer the usage.")
             logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
         if args.save:
-            quant_config_by_layer, quant_config = model.quant_config_by_layer,model.quant_config
-            if args.pack_mode != quant_config["version"] and args.pack_mode != "AUTO":
-                self.repack_to_new_mode(model, args, args.pack_mode)
-
-            model.save_pretrained(args.save)
-            self.tokenizer is not None and self.tokenizer.save_pretrained(args.save)
-
-            open(args.save+"/quant_config_by_layer.json",
-                 'w').write(json.dumps(quant_config_by_layer))
-            open(args.save+"/quantize_config.json", 'w').write(json.dumps(quant_config))
+            repack_func = lambda: self.repack_to_new_mode(model, args, args.pack_mode)
+            AutoQuantizedModelForCausalLM.save_pretrained(model, self.tokenizer, args.save, 
+                                                          args.pack_mode, repack_func, save_serialization=False)
 
         if args.eval:
             self.eval_model(model, DEV, args)

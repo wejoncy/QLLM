@@ -7,6 +7,7 @@ import glob
 import json
 import contextlib
 import torch
+import accelerate
 from typing import Dict, List, Optional, Union
 from transformers.utils.hub import cached_file
 
@@ -67,13 +68,12 @@ class AutoQuantizedModelForCausalLM:
     def from_quantized(
         cls, 
         model_name_or_path: Optional[str],
-        device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = None,
+        device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "balanced",
         max_memory: Optional[dict] = None,
         device: Optional[Union[str, int]] = None,
         low_cpu_mem_usage: bool = False,
         use_triton: bool = False,
-        torch_dtype: Optional[torch.dtype] = None,
-        use_cuda_fp16: bool = True,
+        torch_dtype: Optional[torch.dtype] = torch.float16,
         quant_config: Optional[BaseQuantizeConfig] = None,
         use_safetensors: bool = True,
         trust_remote_code: bool = False,
@@ -81,13 +81,17 @@ class AutoQuantizedModelForCausalLM:
         **kwargs) -> AutoModelForCausalLM:
 
         args = kwargs.pop("args", None)
-
-        cls.disable_double_init()
+        if isinstance(device_map, str):
+            assert device_map in ["auto", "balanced", "balanced_low_0", "sequential"], \
+                  'device_map must be auto, balanced, balanced_low_0 or sequential'
 
         if model_name_or_path is None:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading quantized model from {model_name_or_path}")
-        with stack_attr(['normal_', 'uniform_', 'kaiming_uniform_', 'kaiming_normal_']):
+        init_contexts = [transformers.modeling_utils.no_init_weights(),
+                         accelerate.init_empty_weights(include_buffers=False)
+        ]
+        with transformers.utils.generic.ContextManagers(init_contexts):
             model = AutoModelForCausalLM.from_config(
                 transformers.AutoConfig.from_pretrained(model_name_or_path)).half()
 
@@ -120,15 +124,15 @@ class AutoQuantizedModelForCausalLM:
         
         model.tie_weights()
         try:
-            import accelerate
-            accelerate.load_checkpoint_in_model(
+            accelerate.big_modeling.load_checkpoint_and_dispatch(
                 model,
                 checkpoint=model_name_or_path,
-                device_map=None,
+                device_map=device_map,
+                no_split_module_classes=None,
                 offload_folder=None,
-                dtype=None
+                dtype=torch_dtype,
             )
-        except:
+        except Exception as e:
             import safetensors
             if Path(model_name_or_path).exists():  # local
                 while True:
@@ -173,3 +177,16 @@ class AutoQuantizedModelForCausalLM:
             # The kernel with compatible_with_autogptq has some bugs now in XbitOps, let's always replace qzeros
 
         return model
+
+    @staticmethod
+    def save_pretrained(model, tokenizer, save_directory: Union[str, Path], pack_mode:str, repack_func, save_serialization: bool = False):
+        quant_config_by_layer, quant_config = model.quant_config_by_layer,model.quant_config
+        if pack_mode != quant_config["version"] and pack_mode != "AUTO":
+            repack_func()
+
+        model.save_pretrained(save_directory, save_serialization=save_serialization)
+        tokenizer is not None and tokenizer.save_pretrained(save_directory)
+
+        open(save_directory+"/quant_config_by_layer.json",
+                'w').write(json.dumps(quant_config_by_layer))
+        open(save_directory+"/quantize_config.json", 'w').write(json.dumps(quant_config))

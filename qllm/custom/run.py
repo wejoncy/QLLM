@@ -9,7 +9,7 @@ import torch
 from pathlib import Path
 
 from ..utils.logger import get_logger
-from ..model_quantization_base import ModelQuantizationBase
+from ..auto_model_quantization import AutoModelQuantization
 
 logger = get_logger()
 
@@ -22,7 +22,7 @@ import loralib as lora
 NEED_CHECK_PACK = False
 
 
-class CustomModel(ModelQuantizationBase):
+class CustomModel(AutoModelQuantization):
     def __init__(self):
         super().__init__()
         self.argv_user = None

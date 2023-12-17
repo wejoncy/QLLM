@@ -4,13 +4,10 @@ datasets==2.15.0
 zstandard
 #sentencepiece
 transformers
-#accelerate==0.17.1
+accelerate
 #triton==2.0.0
 texttable
 tqdm
 numpy
 onnx
 #protobuf==3.20.2
-XbitOps @git+https://github.com/wejoncy/XbitOps.git
-#--extra-index-url https://test.pypi.org/simple/ 
-#XbitOps
