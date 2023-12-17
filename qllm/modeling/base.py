@@ -96,8 +96,8 @@ class AutoQuantizedModelForCausalLM:
         with transformers.utils.generic.ContextManagers(init_contexts):
             model = AutoModelForCausalLM.from_config(
                 transformers.AutoConfig.from_pretrained(
-                    model_name_or_path,trust_remote_code=True, dtype=torch_dtype),
-                trust_remote_code=True)
+                    model_name_or_path,trust_remote_code=trust_remote_code, dtype=torch_dtype),
+                trust_remote_code=trust_remote_code)
 
         if quant_config is None:
             quant_config = BaseQuantizeConfig.from_pretrained(model_name_or_path, args)
