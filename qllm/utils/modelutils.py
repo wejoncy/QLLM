@@ -147,7 +147,7 @@ def append_str_prefix(x, prefix):
         return x
 
 
-def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='', target_layer=None):
+def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='', target_layer=None, device:str="cuda"):
     for module_name, sub_module in tqdm.tqdm(module.named_modules(), total=len(list(module.named_modules())),
                     desc="Replacing linear layers..."):
         if module_name in replaced_names:
@@ -156,7 +156,7 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
                 bits, groupsize = quant_info['wbits'], quant_info['groupsize']
             else:
                 bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
-            new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None)
+            new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None).to(device)
             set_op_by_name(module, module_name, new_module)
     return        
     #if isinstance(module, target_layer):

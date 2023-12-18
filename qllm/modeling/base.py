@@ -10,6 +10,7 @@ import torch
 import accelerate
 from typing import Dict, List, Optional, Union
 from transformers.utils.hub import cached_file
+import safetensors
 
 
 from .. import utils
@@ -70,8 +71,8 @@ class AutoQuantizedModelForCausalLM:
         model_name_or_path: Optional[str],
         device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "balanced",
         max_memory: Optional[dict] = None,
-        device: Optional[Union[str, int]] = None,
-        low_cpu_mem_usage: bool = False,
+        device: Optional[Union[str, int]] = "cuda",
+        low_cpu_mem_usage: bool = True,
         use_triton: bool = False,
         torch_dtype: Optional[torch.dtype] = torch.float16,
         quant_config: Optional[BaseQuantizeConfig] = None,
@@ -125,7 +126,8 @@ class AutoQuantizedModelForCausalLM:
             from ..quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
-        
+        if low_cpu_mem_usage:
+            model = model.cuda()
         model.tie_weights()
         try:
             accelerate.big_modeling.load_checkpoint_and_dispatch(
@@ -137,18 +139,17 @@ class AutoQuantizedModelForCausalLM:
                 dtype=torch_dtype,
             )
         except Exception as e:
-            import safetensors
             if Path(model_name_or_path).exists():  # local
                 while True:
                     weight_bins = glob.glob(
                         str(Path(model_name_or_path).absolute()/'pytorch_model*.bin'))
                     if len(weight_bins) > 0:
                         for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
-                            model.load_state_dict(torch.load(weight_bins[i]), strict=False)
+                            model.load_state_dict(torch.load(weight_bins[i], map_location="cpu"), strict=False)
                         break
                     weight_bins = glob.glob(str(Path(model_name_or_path).absolute()/'*.safetensors'))
                     if len(weight_bins) > 0:                        
-                        for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
+                        for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights from safetensors"):
                             model.load_state_dict(safetensors.torch.load_file(
                                 weight_bins[i], device="cpu"), strict=False)
                         break
@@ -157,7 +158,7 @@ class AutoQuantizedModelForCausalLM:
                 index_config_file = quant_config.get_resolved_base_dir(model_name_or_path, "model.safetensors.index.json")
                 if index_config_file:
                     index_files = set(json.load(open(index_config_file))["weight_map"].values())
-                    for index_file in tqdm.tqdm(index_files, desc="loading weights"):
+                    for index_file in tqdm.tqdm(index_files, desc="loading weights from safetensors"):
                         weight_file = cached_file(model_name_or_path, index_file)
                         model.load_state_dict(safetensors.torch.load_file(
                             weight_file, device="cpu"), strict=False)
