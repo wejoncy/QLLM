@@ -7,7 +7,7 @@ import importlib
 
 def has_awq_inference_engine():
     return (importlib.util.find_spec("awq_inference_engine") is not None and
-            torch.cuda.get_device_properties(0).major >= 8)
+            torch.cuda.get_device_properties(0).major * 10+ torch.cuda.get_device_properties(0).minor>=75)
 
 
 def is_the_machine_support_awq_engine(nbits):
