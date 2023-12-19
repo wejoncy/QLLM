@@ -156,7 +156,7 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
                 bits, groupsize = quant_info['wbits'], quant_info['groupsize']
             else:
                 bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
-            new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None).to(device)
+            new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None).to(device).half()
             set_op_by_name(module, module_name, new_module)
     return        
     #if isinstance(module, target_layer):
