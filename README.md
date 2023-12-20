@@ -147,6 +147,7 @@ outputs = session(None, inputs)
 ```bash
 python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --eval
 python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --eval
+python -m qllm --load TheBloke/Mixtral-8x7B-v0.1-GPTQ  --use_plugin
 ```
 
 ## start a chatbot
