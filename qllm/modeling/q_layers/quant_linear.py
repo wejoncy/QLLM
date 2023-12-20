@@ -26,7 +26,7 @@ class DequantAndUnpack(torch.autograd.Function):
             # expand is removed as torch will auto broadcast to relavant dimension
             zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)
                                               ).to(torch.int16 if bits == 8 else torch.int8)
-            zeros = zeros + compatible_with_autogptq
+            zeros = zeros + COMPATIBLE_WITH_AUTOGPTQ
             zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
             zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
             # expand is removed as torch will auto broadcast to relavant dimension
@@ -39,7 +39,7 @@ class DequantAndUnpack(torch.autograd.Function):
             zeros = torch.zeros((qzeros.shape[0], qweight.shape[1]), dtype=torch.int32, device=qweight.device)
             general_unpack_on_row(qzeros, zeros, bits)
             zeros = zeros.reshape(-1, 1, zeros.shape[1])
-            zeros = zeros + compatible_with_autogptq
+            zeros = zeros + COMPATIBLE_WITH_AUTOGPTQ
             zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
 
         if g_idx is not None:

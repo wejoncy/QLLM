@@ -88,7 +88,7 @@ python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7
 ## Quantize model for vLLM 
 Due to the zereos diff, we need to set a env variable if you set pack_mode to GPTQ whenver the method is awq or gptq
 ```bash
-compatible_with_autogptq=1 python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --pack_mode=GPTQ
+COMPATIBLE_WITH_AUTOGPTQ=1 python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --pack_mode=GPTQ
 ```
 If you use GEMM pack_mode, then you don't have to set the var
 ```bash

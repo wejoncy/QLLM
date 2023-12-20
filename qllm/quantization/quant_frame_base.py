@@ -103,8 +103,8 @@ class QuantFrameBase:
         return inps, outs, attention_layers, layer_input_args
 
     def hook_before_qlayer(self, layer_id, args):
-        if str(layer_id+1) in args.mix_qlayer_conf:
-            layer_key = str(layer_id+1)
+        if str(layer_id + 1) in args.mix_qlayer_conf:
+            layer_key = str(layer_id + 1)
             args.wbits = args.mix_qlayer_conf[layer_key].get('wbits', args.wbits)
             args.groupsize = args.mix_qlayer_conf[layer_key].get('groupsize', args.groupsize)
 

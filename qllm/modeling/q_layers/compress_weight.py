@@ -194,8 +194,8 @@ class CompressWeight(object):
 
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
-        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-        zeros_cuda = (intzeros - compatible_with_autogptq)
+        COMPATIBLE_WITH_AUTOGPTQ = int(os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
+        zeros_cuda = (intzeros - COMPATIBLE_WITH_AUTOGPTQ)
         max_num_in_bits = 2**self.bits - 1
         zeros_cuda = (zeros_cuda.byte() & max_num_in_bits).int()
         qzeros_cuda = torch.zeros(
@@ -237,8 +237,8 @@ class CompressWeight(object):
         s = time.time()
         # why -1?
         # zeros_cuda = (zeros - 1).to(device).int()
-        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-        zeros_cuda = (intzeros - compatible_with_autogptq)
+        COMPATIBLE_WITH_AUTOGPTQ = int(os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
+        zeros_cuda = (intzeros - COMPATIBLE_WITH_AUTOGPTQ)
         max_num_in_bits = 2**self.bits - 1
         zeros_cuda = (zeros_cuda.byte() & max_num_in_bits).int()
         qzeros_cuda = torch.zeros((intzeros.shape[0], intzeros.shape[1] //
