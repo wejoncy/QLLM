@@ -48,7 +48,7 @@ __global__ void gemv(scalar_t* out, const scalar_t* inA, const uint32_t* inB, co
   int start_group_id = (y_start / groupsize);
   int compressed_idx = threadIdx.x % 4;
   VEC2 scale = ((VEC2*)(scales + start_group_id * size_n + n_offset_x))[0];
-  int32_t qzero_p = ((int32_t*)(qzeros + n_offset_x / 8 +
+  int32_t qzero_p = qzeros==nullptr?0x88888888:((int32_t*)(qzeros + n_offset_x / 8 +
                                 start_group_id * ((size_n + 7) / 8)))[0];
   uint8_t zero_1 =(qzero_p >> (8 * (compressed_idx))) & 0xf;
   uint8_t zero_2 = ((qzero_p) >> (8 * (compressed_idx) + 4)) & 0xf;
@@ -179,7 +179,7 @@ namespace cuda_quant {
 
 
 template <typename scalar_t, int WBITS>
-__global__ void DequantizeAndUnpackWeight248(scalar_t* out, uint32_t* qweight, scalar_t* scale, uint32_t* zeros, 
+__global__ void DequantizeAndUnpackWeight248(scalar_t* out, uint32_t* qweight, scalar_t* scale, uint32_t* qzeros, 
 int group_size, const int in_features, const int n, uint8_t add_zero_bias) {
   int bid = blockIdx.x;
   int tid = (bid * kBlockSize + threadIdx.x);
@@ -191,7 +191,7 @@ int group_size, const int in_features, const int n, uint8_t add_zero_bias) {
   int col_ind = (tid % half_n)*2;
   int weight_in_row = tid / half_n * compress_group_size;
   VEC2 scale_v = FETCH_VEC2(scale[weight_in_row / group_size * n + col_ind]);
-  uint32_t zero_v = zeros[weight_in_row / group_size * (n / compress_group_size) + (col_ind) / compress_group_size];
+  uint32_t zero_v = qzeros==nullptr?0x88888888:qzeros[weight_in_row / group_size * (n / compress_group_size) + (col_ind) / compress_group_size];
   int zero_ind = col_ind % compress_group_size;
   uint8_t zv1 = (zero_v >> (zero_ind * WBITS)) & max_num_in_bits;
   uint8_t zv2 = (zero_v >> (zero_ind * WBITS + WBITS)) & max_num_in_bits;
@@ -247,7 +247,7 @@ __device__ __forceinline__ uchar2 iterator_qweight_v2(const scalar_t* ptr, int i
 }
 
 template <typename scalar_t, int WBITS>
-__global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* qweight, const scalar_t* scale, const uint32_t* zeros, int group_size, const int in_features, const int row_n, uint8_t add_zero_bias) {
+__global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* qweight, const scalar_t* scale, const uint32_t* qzeros, int group_size, const int in_features, const int row_n, uint8_t add_zero_bias) {
   int bid = blockIdx.x;
   int tid = (bid * kBlockSize + threadIdx.x);
   const int qweight_rows = (in_features * WBITS + 31) / 32;
@@ -282,7 +282,7 @@ __global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* 
     scale_v[i] = (scale2[scale_zero_from_i * half_n + col_ind]);
   }
 
-  // decompress zeros
+  // decompress qzeros
   uchar2 zv1[4];
   int half_col_ind = col_ind * 2;
   const int zero_col_from = half_col_ind * WBITS / 32;
@@ -290,12 +290,12 @@ __global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* 
   const int zero_col_to_2 = ((half_col_ind + 2) * WBITS - 1) / 32;
   const int qzero_width = (row_n * WBITS + 32 - 1) / 32;
   for (int i = 0, scale_zero_from_i = scale_zero_from; scale_zero_from_i <= scale_zero_to; scale_zero_from_i++, i++) {
-    uint32_t zero_v = zeros[scale_zero_from_i * qzero_width + zero_col_from];
+    uint32_t zero_v = qzeros==nullptr?0x88888888:qzeros[scale_zero_from_i * qzero_width + zero_col_from];
     const int zero_bits_last = (((half_col_ind)*WBITS) % 32);
     zv1[i].x = (zero_v >> zero_bits_last) & max_num_in_bits;
     if (zero_col_from != zero_col_to) {
       const int zero_bits_first = ((half_col_ind + 1) * WBITS) % 32;
-      uint32_t zero_v1 = zeros[scale_zero_from * qzero_width + zero_col_to];
+      uint32_t zero_v1 = qzeros==nullptr?0x88888888:qzeros[scale_zero_from * qzero_width + zero_col_to];
       zv1[i].x |= (zero_v1 & ((1 << zero_bits_first) - 1)) << (32-zero_bits_last);
 
       zv1[i].y = (zero_v1 >> zero_bits_first) & max_num_in_bits;
@@ -305,7 +305,7 @@ __global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* 
 
     if (zero_col_to != zero_col_to_2) {
       const int zero_bits_first = ((half_col_ind + 2) * WBITS) % 32;
-      uint32_t zero_v1 = zeros[scale_zero_from * qzero_width + zero_col_to_2];
+      uint32_t zero_v1 = qzeros==nullptr?0x88888888:qzeros[scale_zero_from * qzero_width + zero_col_to_2];
       zv1[i].y |= (zero_v1 & ((1 << zero_bits_first) - 1)) << (32 - zero_bits_last - WBITS);
     }
   }
