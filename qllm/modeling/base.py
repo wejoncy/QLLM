@@ -223,7 +223,7 @@ class AutoQuantizedModelForCausalLM:
             all_missing_keys, all_unexpected_keys = _load_check_point(model, model_name_or_path, quant_config)
             all_unexpected_keys = [i for i in all_unexpected_keys if not i.endswith('.bias')]
             if len(all_unexpected_keys) != 0:
-                raise ValueError(f"Unexpected keys in checkpoint: {all_unexpected_keys}")
+                logger.warn(f"Unexpected keys in checkpoint: {all_unexpected_keys}")
             # weight_dict = torch.load(weight_bins[0])
             # for i in range(1, len(weight_bins)):
             #    weight_dict.update(torch.load(weight_bins[i]))

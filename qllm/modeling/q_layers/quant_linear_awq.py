@@ -15,7 +15,7 @@ def is_the_machine_support_awq_engine(nbits):
 
 
 if not has_awq_inference_engine():
-    print("awq_inference_engine not found, please compile it first.")
+    print("awq_inference_engine not found, will skip it.")
 else:
     import awq_inference_engine
 
