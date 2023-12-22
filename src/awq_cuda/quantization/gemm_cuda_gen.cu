@@ -14,6 +14,7 @@ Shang and Dang, Xingyu and Han, Song}, journal={arXiv}, year={2023}
 #include <c10/cuda/CUDAGuard.h>
 #include <cuda_fp16.h>
 #include <torch/extension.h>
+#include <stdint.h>
 
 // Pack two half values.
 static inline __device__ __host__ unsigned __pack_half2(const half x,
