@@ -116,7 +116,7 @@ class AutoModelQuantization(object):
 
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, args=None):
-        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK") != "1":
+        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK") != "1" and args.wbits < 16:
             model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
