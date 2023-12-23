@@ -2,10 +2,13 @@ import torch
 import math
 import os
 
-def lcm(a, b): 
+def lcm(a:int, b:int): 
     return int(a*b/math.gcd(a, b))
 
 def pack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
+    if pack_tensor.shape[0] == ori_int_tensor.shape[0]:
+        ori_int_tensor = ori_int_tensor.T
+        pack_tensor = pack_tensor.T
     compress_ratio = (32 // bits)
     i = 0
     row = 0
@@ -17,84 +20,72 @@ def pack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
             break
         else:
             raise NotImplementedError("Only 2,4,8 bits are supported.")
+        
+def pack_on_row_fast_anybit(pack_tensor, ori_int_tensor, bits):
+    need_transpose = False
+    if pack_tensor.shape[0] != ori_int_tensor.shape[0]:
+        need_transpose = True
+        ori_int_tensor = ori_int_tensor.T
+    pack_tensor.mul_(0)
+    wf = torch.arange(0, bits).to(pack_tensor.device).view(1,1, -1)
+    out = torch.bitwise_right_shift(ori_int_tensor.unsqueeze(-1), wf)
+    torch.bitwise_and(out, 1, out=out)
+    out = out.reshape(pack_tensor.shape[0], -1, 32)
+    wf1 = torch.arange(0, 32, 1).to(pack_tensor.device).view(1, 1, -1)
+    out = torch.bitwise_left_shift(out,wf1)
+    out = out.sum(dim=-1).int()
 
+    if need_transpose:
+        out = out.T.contiguous()
+    pack_tensor.copy_(out)
+
+        
 def general_pack_on_row(pack_tensor, ori_int32_tensor, bits):
+    assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[0], ''
     pack_tensor.mul_(0)
     if bits in [2, 4, 8]:
         return pack_on_row_fast_248bit(pack_tensor, ori_int32_tensor, bits)
-    row = 0
-    fp16_row = 0
-    last_bits = 0
-    last_row = 0
-    rounds = lcm(bits, 32)//32  # int32
-    while row < pack_tensor.shape[0]:
-        last_bits = 0
-        last_row = 0
-        for round_i in range(rounds):
-            pack_tensor[row] |= last_row
-            nums_of_rows = min((32-last_bits)//bits, ori_int32_tensor.shape[0]-fp16_row)
-            for j in range(nums_of_rows):
-                pack_tensor[row] |= ori_int32_tensor[fp16_row+j] << (last_bits+bits * j)
-            fp16_row += nums_of_rows
-            if fp16_row >= ori_int32_tensor.shape[0]:
-                row += 1
-                assert row == pack_tensor.shape[0]
-                break
-            rest_bits = 32-last_bits-nums_of_rows*bits
-            if rest_bits > 0:
-                last_bits = bits - rest_bits
-                last_row = ori_int32_tensor[fp16_row]
-                pack_tensor[row] |= (last_row & ((1 << rest_bits)-1)) << (32-rest_bits)
-                last_row = last_row >> rest_bits
-            else:
-                last_row = 0
-                last_bits = 0
-                fp16_row -= 1
-
-            row += 1
-            fp16_row += 1
+    return pack_on_row_fast_anybit(pack_tensor, ori_int32_tensor, bits)
 
 def unpack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
+    need_transpose = False
+    if pack_tensor.shape[0] != ori_int_tensor.shape[0]:
+        need_transpose = True
+        pack_tensor = pack_tensor.T
     wf = torch.arange(0, 32, bits).to(pack_tensor.device).unsqueeze(0)
     out = torch.bitwise_right_shift(torch.unsqueeze(pack_tensor, 2), wf.unsqueeze(0))
-    out = out.view(ori_int_tensor.shape)
-    torch.bitwise_and(out, (2 ** bits) - 1, out=ori_int_tensor)
+    out = out.reshape(pack_tensor.shape[0], -1)
+    torch.bitwise_and(out, (2 ** bits) - 1, out=out).int()
+    if need_transpose:
+        out = out.T.contiguous()
 
-def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits):
+    ori_int_tensor.copy_(out)
+
+#@torch.jit.script
+def unpack_on_row_fast_any_bit(pack_tensor: torch.Tensor, ori_int_tensor: torch.Tensor, bits: int):
+    need_transpose = False
+    if pack_tensor.shape[0] != ori_int_tensor.shape[0]:
+        need_transpose = True
+        pack_tensor = pack_tensor.T
+    wf = torch.arange(0, 32, 1).to(pack_tensor.device).unsqueeze(0).unsqueeze(0)
+    out = torch.bitwise_right_shift(torch.unsqueeze(pack_tensor, 2), wf).char()
+    torch.bitwise_and(out, 1, out=out)
+
+    out = out.reshape(pack_tensor.shape[0], -1, bits)
+    wf1 = torch.arange(0, bits, 1).to(pack_tensor.device).unsqueeze(0).unsqueeze(0)
+
+    out = torch.bitwise_left_shift(out, wf1).sum(dim=-1)
+    if need_transpose:
+        out = out.T.contiguous()
+    ori_int_tensor.copy_(out)
+
+#@torch.jit.script
+def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits:int):
+    assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[0], ''
     ori_int32_tensor.mul_(0)
     if bits in [2, 4, 8]:
         return unpack_on_row_fast_248bit(pack_tensor, ori_int32_tensor, bits)
-    row = 0
-    fp16_row = 0
-    last_bits = 0
-    last_row = 0
-    def lcm(a, b): return int(a*b/math.gcd(a, b))
-    rounds = int(lcm(bits, 32)//32)  # int32
-    while row < pack_tensor.shape[0]:
-        last_bits = 0
-        last_row = 0
-        for round_i in range(rounds):
-            ori_int32_tensor[last_row] |= (pack_tensor[row] & ((1 << last_bits)-1)) << (bits-last_bits)
-            nums_of_rows = min((32-last_bits)//bits, ori_int32_tensor.shape[0]-fp16_row)
-            for j in range(nums_of_rows):
-                ori_int32_tensor[fp16_row] |= (pack_tensor[row] >> (last_bits+bits * j)) & ((1 << bits)-1)
-                fp16_row += 1
-            if fp16_row >= ori_int32_tensor.shape[0]:
-                row += 1
-                assert row == pack_tensor.shape[0]
-                break
-            rest_bits = 32-last_bits-nums_of_rows*bits
-            if rest_bits > 0:
-                last_bits = bits - rest_bits
-                last_row = fp16_row
-                ori_int32_tensor[fp16_row] |= (pack_tensor[row] >> (32-rest_bits)) & ((1 << rest_bits)-1)
-            else:
-                last_row = 0
-                last_bits = 0
-                fp16_row -= 1
-
-            row += 1
-            fp16_row += 1
+    return unpack_on_row_fast_any_bit(pack_tensor, ori_int32_tensor, bits)
 
 
 class CompressWeight(object):
@@ -167,32 +158,10 @@ class CompressWeight(object):
         
         compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
 
-        if self.bits in [2, 4, 8]:
-            wf = torch.tensor(list(range(0, 32, self.bits)), dtype=torch.int32, device=qzeros.device).unsqueeze(0)
-            zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)).to(
-                torch.int16 if self.bits == 8 else torch.int8)
-
-            zeros = zeros + compatible_with_autogptq
-            torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
-            zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
-
-            weight = torch.bitwise_right_shift(torch.unsqueeze(
-                qweight, 1), wf.unsqueeze(-1)).to(torch.int16 if self.bits == 8 else torch.int8)
-            torch.bitwise_and(weight, (2 ** self.bits) - 1, out=weight)
-            weight = weight.reshape(-1, self.groupsize, weight.shape[2])
-
-            weight = weight.view(-1, weight.shape[-1])
-            zeros = zeros.view(-1, zeros.shape[-1])
-        else:
-            weight = torch.zeros((self.infeatures, qweight.shape[1]), dtype=torch.int8, device=qweight.device)
-            general_unpack_on_row(qweight, weight, self.bits)
-            zeros = torch.zeros((self.infeatures//self.groupsize,
-                                qweight.shape[1]), dtype=torch.int8, device=qweight.device)
-            zeros = zeros.T
-            general_unpack_on_row(qzeros.T, zeros, self.bits)
-            zeros = zeros.T
-            zeros = zeros + compatible_with_autogptq
-            torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
+        weight = torch.zeros((self.outfeatures, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
+        zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
+        general_unpack_on_row(qweight, weight, self.bits)
+        general_unpack_on_row(qzeros, zeros, self.bits)
 
         if "GEMM" in self._get_name():
             zeros = zeros.T.contiguous()
@@ -200,6 +169,7 @@ class CompressWeight(object):
         weight = self.reverse_reorder_int_tensor(weight)
 
         fp16_weight = self.dequant_weight(weight.T, zeros.T)
+        weight = weight.cpu()
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
         return fp16_weight, self.scales, zeros.cpu()
