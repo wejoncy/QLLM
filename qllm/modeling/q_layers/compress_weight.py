@@ -41,7 +41,7 @@ def pack_on_row_fast_anybit(pack_tensor, ori_int_tensor, bits):
 
         
 def general_pack_on_row(pack_tensor, ori_int32_tensor, bits):
-    assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[0], ''
+    assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[1], ''
     pack_tensor.mul_(0)
     if bits in [2, 4, 8]:
         return pack_on_row_fast_248bit(pack_tensor, ori_int32_tensor, bits)
@@ -81,7 +81,7 @@ def unpack_on_row_fast_any_bit(pack_tensor: torch.Tensor, ori_int_tensor: torch.
 
 #@torch.jit.script
 def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits:int):
-    assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[0], ''
+    assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[1], ''
     ori_int32_tensor.mul_(0)
     if bits in [2, 4, 8]:
         return unpack_on_row_fast_248bit(pack_tensor, ori_int32_tensor, bits)
