@@ -177,7 +177,62 @@ namespace cuda_quant {
 #define FETCH_HALF2(pointer) (reinterpret_cast<half2*>(&(pointer))[0])
 #define FETCH_VEC2(pointer) (reinterpret_cast<VEC2*>(&(pointer))[0])
 
+template <typename scalar_t, int WBITS>
+__global__ void DequantizeAndUnpackWeight357_g(
+    scalar_t *out, uint32_t *qweight, scalar_t *scale, uint32_t *qzeros,
+    int32_t *g_idx, int group_size, const int in_features, const int n,
+    uint8_t add_zero_bias) {
+  int bid = blockIdx.x;
+  int tid = (bid * kBlockSize + threadIdx.x);
+  int out_x = tid % n;
+  int out_y = tid / n;
+  int scale_row = g_idx[out_y];
 
+  const int max_num_in_bits = (1 << WBITS) - 1;
+
+  const int qzero_width = (n * WBITS + 32 - 1) / 32;
+  scalar_t scale_v = scale[scale_row * n + out_x];
+  uint32_t zero_v1 =0x88888888;
+  uint8_t zv1 = 0;
+  if (qzeros != nullptr){
+    int start_bits = out_x * WBITS;
+    int first = start_bits / 32;
+    int end_bits = (start_bits + WBITS);
+    int second = end_bits / 32;
+    start_bits = start_bits % 32;
+    end_bits = end_bits % 32;
+
+    zero_v1 = qzeros[scale_row * qzero_width + first];
+    zv1 = (zero_v1 >> start_bits) & max_num_in_bits;
+    if (first != second) {
+      zero_v1 = qzeros[scale_row * qzero_width + second];
+      zv1 |= (zero_v1 & ((1 << end_bits) - 1)) << (32 - start_bits);
+    }
+  }
+
+  scalar_t scale_zeros = __hmul(scale_v, __ushort2half_rn(zv1 + add_zero_bias));
+
+  uint32_t weight_int = 0;
+  uint8_t wv1 = 0;
+  {
+    int start_bits = out_y * WBITS;
+    int first = start_bits / 32;
+    int end_bits = (start_bits + WBITS);
+    int second = end_bits / 32;
+    start_bits = start_bits % 32;
+    end_bits = end_bits % 32;
+
+    weight_int = qweight[first * n + out_x];
+    wv1 = (weight_int >> start_bits) & ((1<<start_bits) - 1);
+    if (first != second) {
+      weight_int = qweight[second * n + out_x];
+      wv1 |= (weight_int & ((1 << end_bits) - 1)) << (32 - start_bits);
+    }
+  }
+
+  scalar_t wv = __ushort2half_rn(wv1);
+  out[tid] = __hfma(wv, scale_v, -scale_zeros);
+}
 
 template <typename scalar_t, int WBITS>
 __global__ void DequantizeAndUnpackWeight248_g(scalar_t* out, uint32_t* qweight, scalar_t* scale, uint32_t* qzeros, int32_t* g_idx, 
@@ -398,7 +453,7 @@ __global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* 
 #endif
 
 template <typename scalar_t>
-void lauch_dq_248_g(scalar_t* b_fp16, int32_t* qweight_i32_i, scalar_t* scale_fp16, 
+void lauch_dq_general_g(scalar_t* b_fp16, int32_t* qweight_i32_i, scalar_t* scale_fp16, 
                   int32_t* qzeros_i32_i, int32_t *g_dix, int bits,
                   int groupsize, uint32_t mat_k, uint32_t mat_n, uint8_t add_zero_bias=0) {
   if constexpr (std::is_same<scalar_t, double>::value) {
@@ -414,25 +469,27 @@ void lauch_dq_248_g(scalar_t* b_fp16, int32_t* qweight_i32_i, scalar_t* scale_fp
   uint32_t *qweight_i32 = reinterpret_cast<uint32_t *>(qweight_i32_i);
   uint32_t *qzeros_i32 = reinterpret_cast<uint32_t *>(qzeros_i32_i);
   using cuda_quant::DequantizeAndUnpackWeight248_g;
+  using cuda_quant::DequantizeAndUnpackWeight357_g;
+  #define CASE_EVEN(WBITS) \
+    case WBITS:       \
+      DequantizeAndUnpackWeight248_g<scalar_t, WBITS> \
+          <<<gridDim, blockDim, 0, stream>>>( \
+              (scalar_t *)b_fp16, qweight_i32, (scalar_t *)scale_fp16, qzeros_i32, g_dix, groupsize, mat_k, mat_n, add_zero_bias); \
+      break;
+  #define CASE_ODD(WBITS) \
+    case WBITS:       \
+      DequantizeAndUnpackWeight357_g<scalar_t, WBITS> \
+          <<<gridDim, blockDim, 0, stream>>>( \
+              (scalar_t *)b_fp16, qweight_i32, (scalar_t *)scale_fp16, qzeros_i32, g_dix, groupsize, mat_k, mat_n, add_zero_bias); \
+      break;
   switch (bits) {
-  case 2:
-    DequantizeAndUnpackWeight248_g<scalar_t, 2>
-        <<<gridDim, blockDim, 0, stream>>>(
-            (scalar_t *)b_fp16, qweight_i32, (scalar_t *)scale_fp16, qzeros_i32,
-            g_dix, groupsize, mat_k, mat_n, add_zero_bias);
-    break;
-  case 4:
-    DequantizeAndUnpackWeight248_g<scalar_t, 4>
-        <<<gridDim, blockDim, 0, stream>>>(
-            (scalar_t *)b_fp16, qweight_i32, (scalar_t *)scale_fp16, qzeros_i32,
-            g_dix, groupsize, mat_k, mat_n, add_zero_bias);
-    break;
-  case 8:
-    DequantizeAndUnpackWeight248_g<scalar_t, 8>
-        <<<gridDim, blockDim, 0, stream>>>(
-            (scalar_t *)b_fp16, qweight_i32, (scalar_t *)scale_fp16, qzeros_i32,
-            g_dix, groupsize, mat_k, mat_n, add_zero_bias);
-    break;
+    CASE_EVEN(2);
+    CASE_EVEN(4);
+    CASE_EVEN(8);
+    CASE_ODD(3);
+    CASE_ODD(5);
+    CASE_ODD(6);
+    CASE_ODD(7);
   default:
     printf("error bits\n");
     assert(false);
@@ -512,21 +569,18 @@ void lauch_deqantize_cuda_pt_kernel(torch::Tensor& b_fp16, const torch::Tensor& 
                                     int bits, int groupsize, uint32_t mat_k, uint32_t mat_n, uint8_t add_zero_bias) {
 
   using scalar_t_map = half;
-
-  if (bits == 2 || bits == 4 || bits == 8) {
-    if (g_idx.has_value()) {
-    lauch_dq_248_g<scalar_t_map>(
+  if (g_idx.has_value()) {
+    lauch_dq_general_g<scalar_t_map>(
         b_fp16.data_ptr<scalar_t_map>(), qweight_i32.data_ptr<int32_t>(),
         scale_fp16.data_ptr<scalar_t_map>(), qzeros_i32.data_ptr<int32_t>(),g_idx.value().data_ptr<int32_t>(), 
         bits, groupsize, mat_k, mat_n, add_zero_bias);
-    } else {
+
+  } else if (bits == 2 || bits == 4 || bits == 8) {
     lauch_dq_248<scalar_t_map>(
         b_fp16.data_ptr<scalar_t_map>(), qweight_i32.data_ptr<int32_t>(),
         scale_fp16.data_ptr<scalar_t_map>(), qzeros_i32.data_ptr<int32_t>(),
         bits, groupsize, mat_k, mat_n, add_zero_bias);
-    }
   } else {
-    TORCH_CHECK(!g_idx.has_value(), "g_idx for 3/5/6/7 bit quantization is not supported");
     lauch_dq_3567<scalar_t_map>(
         b_fp16.data_ptr<scalar_t_map>(), qweight_i32.data_ptr<int32_t>(),
         scale_fp16.data_ptr<scalar_t_map>(), qzeros_i32.data_ptr<int32_t>(),
