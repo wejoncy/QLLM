@@ -38,9 +38,7 @@ class DequantAndUnpack(torch.autograd.Function):
             weight = torch.zeros((in_features, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
             general_unpack_on_row(qweight, weight, bits)
             zeros = torch.zeros((qzeros.shape[0], qweight.shape[1]), dtype=torch.int32, device=qweight.device)
-            zeros = zeros.T
-            general_unpack_on_row(qzeros.T, zeros, bits)
-            zeros = zeros.T
+            general_unpack_on_row(qzeros, zeros, bits)
             zeros = zeros.reshape(-1, 1, zeros.shape[1])
             zeros = zeros + compatible_with_autogptq
             zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
@@ -137,18 +135,14 @@ class QuantLinear(nn.Module, CompressWeight):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         qzeros = self.qzeros.to(device)
         zeros = torch.zeros((self.outfeatures, self.infeatures//self.groupsize),
-                            dtype=torch.int32, device=qzeros.device)
+                            dtype=torch.int32, device=qzeros.device).T.contiguous()
 
-        zeros_t = zeros.T.contiguous()
-        general_unpack_on_row(qzeros, zeros_t, self.bits)
-        zeros = zeros_t.T.contiguous()
+        general_unpack_on_row(qzeros, zeros, self.bits)
 
         zeros += 1
         torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
 
-        qzeros = qzeros.T.contiguous()
         general_pack_on_row(qzeros, zeros, self.bits)
-        qzeros = qzeros.T.contiguous()
 
         self.qzeros = qzeros.cpu()
 
