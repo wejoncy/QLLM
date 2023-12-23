@@ -223,7 +223,7 @@ __global__ void DequantizeAndUnpackWeight357_g(
     end_bits = end_bits % 32;
 
     weight_int = qweight[first * n + out_x];
-    wv1 = (weight_int >> start_bits) & ((1<<start_bits) - 1);
+    wv1 = (weight_int >> start_bits) & max_num_in_bits;
     if (first != second) {
       weight_int = qweight[second * n + out_x];
       wv1 |= (weight_int & ((1 << end_bits) - 1)) << (32 - start_bits);
