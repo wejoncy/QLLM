@@ -151,15 +151,17 @@ class CompressWeight(object):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         qzeros = self.qzeros.to(device)
         qweight = self.qweight.to(device)
+        weight_dim0 = self.infeatures
         if "GEMM" in self._get_name():
             qweight = qweight.T.contiguous()
+            weight_dim0 = self.outfeatures
+
+        weight = torch.zeros((weight_dim0, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
+        zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
+
         scales = self.scales
         scales = scales.reshape(-1, 1, scales.shape[-1])
         
-        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-
-        weight = torch.zeros((self.outfeatures, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
-        zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
         general_unpack_on_row(qweight, weight, self.bits)
         general_unpack_on_row(qzeros, zeros, self.bits)
 
