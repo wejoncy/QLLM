@@ -155,13 +155,11 @@ class CompressWeight(object):
         if "GEMM" in self._get_name():
             qweight = qweight.T.contiguous()
             weight_dim0 = self.outfeatures
-
-        weight = torch.zeros((weight_dim0, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
-        zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
-
         scales = self.scales
         scales = scales.reshape(-1, 1, scales.shape[-1])
         
+        weight = torch.zeros((weight_dim0, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
+        zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
         general_unpack_on_row(qweight, weight, self.bits)
         general_unpack_on_row(qzeros, zeros, self.bits)
 
