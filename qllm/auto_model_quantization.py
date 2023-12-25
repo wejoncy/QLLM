@@ -124,20 +124,8 @@ class AutoModelQuantization(object):
         self.tokenizer is not None and self.tokenizer.save_pretrained(onnx_path_str)
 
         #verify correctness
-        import onnxruntime
-        session = onnxruntime.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'])
-        mask = np.ones(sample_inputs[0].shape, dtype=np.int64) if sample_inputs[1] is None else sample_inputs[1].cpu().numpy()
-        num_layers = model.config.num_hidden_layers
-        inputs = {'input_ids': sample_inputs[0].cpu().numpy(), 'attention_mask': mask, 'use_cache_branch': np.array([0], dtype=np.bool_)}
-        for i in range(num_layers):
-            inputs[f'present_key.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
-            inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
-        outputs = session.run(None, inputs)
-        sample_inputs = (i.cuda() for i in sample_inputs)
-        ref = model(*sample_inputs)
-        err = ref.logits.cpu().numpy()-outputs[0]
-        print("max abs err:", np.abs(err).max(), "correctness check ",
-              "" if np.abs(err).max() < 1e-2 else "not", " passed")
+        exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
+        
 
 
     def run(self, args):
