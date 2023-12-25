@@ -61,7 +61,7 @@ class AutoModelQuantization(object):
 
         inputs = self.tokenizer("compared with awq, gptq is", return_tensors="pt").to(model.device)
         out = model.generate(**inputs, max_length=50)
-        
+
         model.to('cpu')
         print(self.tokenizer.decode(out[0]))
 
@@ -134,7 +134,7 @@ class AutoModelQuantization(object):
             inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
         outputs = session.run(None, inputs)
         sample_inputs = (i.cuda() for i in sample_inputs)
-        ref = model(**sample_inputs)
+        ref = model(*sample_inputs)
         err = ref.logits.cpu().numpy()-outputs[0]
         print("max abs err:", np.abs(err).max(), "correctness check ",
               "" if np.abs(err).max() < 1e-2 else "not", " passed")
