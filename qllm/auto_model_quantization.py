@@ -116,7 +116,7 @@ class AutoModelQuantization(object):
 
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, args=None):
-        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK") != "1" and args.wbits < 16:
+        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK", "0") != "1" and args.wbits < 16:
             model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
@@ -133,7 +133,8 @@ class AutoModelQuantization(object):
             inputs[f'present_key.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
             inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
         outputs = session.run(None, inputs)
-        ref = model(sample_inputs[0].cuda())
+        sample_inputs = (i.cuda() for i in sample_inputs)
+        ref = model(**sample_inputs)
         err = ref.logits.cpu().numpy()-outputs[0]
         print("max abs err:", np.abs(err).max(), "correctness check ",
               "" if np.abs(err).max() < 1e-2 else "not", " passed")
