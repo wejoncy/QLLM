@@ -13,7 +13,8 @@ from .compress_weight import (CompressWeight, general_pack_on_row,
 class DequantAndUnpack(torch.autograd.Function):
     @staticmethod
     def symbolic(g, qself_qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
-        return g.op("com.microsoft::DequantizeAndUnpackWeight", qself_qweight, scales, qzeros,
+        g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
+        return g.op("com.microsoft::DequantizeAndUnpackWeight", qself_qweight, scales, qzeros, g_idx,
                     outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)
 
     @staticmethod
@@ -64,13 +65,13 @@ class QuantLinearTorchFunction(torch.autograd.Function):
     @staticmethod
     def symbolic(g, inputs, qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
         bias = g.op("Constant", value_t=torch.tensor([], dtype=torch.float16))
+        g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
         use_gemm_op = False
         if use_gemm_op:
-            g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
             return g.op("com.microsoft::QuantNbitsGemm", inputs, qweight, scales, qzeros, bias, g_idx,
                         outputs=1, in_features_i=in_features, bits_i=bits, groupsize_i=groupsize)
         else:
-            fp_weight = g.op("com.microsoft::DequantizeAndUnpackWeight", qweight, scales, qzeros,
+            fp_weight = g.op("com.microsoft::DequantizeAndUnpackWeight", qweight, scales, qzeros,g_idx,
                         outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)
             return g.op("MatMul", inputs, fp_weight)
 

@@ -61,7 +61,7 @@ class AutoModelQuantization(object):
 
         inputs = self.tokenizer("compared with awq, gptq is", return_tensors="pt").to(model.device)
         out = model.generate(**inputs, max_length=50)
-        
+
         model.to('cpu')
         print(self.tokenizer.decode(out[0]))
 
@@ -116,7 +116,7 @@ class AutoModelQuantization(object):
 
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, args=None):
-        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK") != "1" and args.wbits < 16:
+        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK", "0") != "1" and args.wbits < 16:
             model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
@@ -124,19 +124,8 @@ class AutoModelQuantization(object):
         self.tokenizer is not None and self.tokenizer.save_pretrained(onnx_path_str)
 
         #verify correctness
-        import onnxruntime
-        session = onnxruntime.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'])
-        mask = np.ones(sample_inputs[0].shape, dtype=np.int64) if sample_inputs[1] is None else sample_inputs[1].cpu().numpy()
-        num_layers = model.config.num_hidden_layers
-        inputs = {'input_ids': sample_inputs[0].cpu().numpy(), 'attention_mask': mask, 'use_cache_branch': np.array([0], dtype=np.bool_)}
-        for i in range(num_layers):
-            inputs[f'present_key.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
-            inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
-        outputs = session.run(None, inputs)
-        ref = model(sample_inputs[0].cuda())
-        err = ref.logits.cpu().numpy()-outputs[0]
-        print("max abs err:", np.abs(err).max(), "correctness check ",
-              "" if np.abs(err).max() < 1e-2 else "not", " passed")
+        exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
+        
 
 
     def run(self, args):
