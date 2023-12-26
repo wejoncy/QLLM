@@ -1,12 +1,14 @@
 from pathlib import Path
 import tempfile
+import re
 import torch
 from .. import utils
 
 
 def get_sample_datas_for_quantization(args, seqlen=2048):
     logger = utils.logger.get_logger()
-    named_hash = f"{args.tokenizer.replace(' ', '_')}_{args.dataset}_{args.nsamples}_{seqlen}_{args.seed}"
+    normlized_tokenizer = re.sub(r'[^0-9a-zA-Z_-]', '_', args.tokenizer)
+    named_hash = f"{normlized_tokenizer}_{args.dataset}_{args.nsamples}_{seqlen}_{args.seed}"
     cache_dir = Path(f"{tempfile.gettempdir()}/qllm_v1/_{named_hash}_dataloader.pt")
     cache_dir.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"loading dataset from {args.dataset}")
