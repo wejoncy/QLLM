@@ -6,10 +6,19 @@
 #include "common.cuh"
 
 #include <torch/extension.h>
+#include <type_traits>
 #include "ATen/ATen.h"
 #include "ATen/AccumulateType.h"
 #include "ATen/cuda/CUDAContext.h"
+#include "ATen/cuda/Atomic.cuh"
 #define half at::Half
+
+#define QLLM_DISPATCH_CASE_FLOATING_TYPES(...)                                 \
+  AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)                         \
+  AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)
+
+#define QLLM_DISPATCH_FLOATING_TYPES(TYPE, NAME, ...)                          \
+  AT_DISPATCH_SWITCH(TYPE, NAME, QLLM_DISPATCH_CASE_FLOATING_TYPES(__VA_ARGS__))
 
 namespace onnxruntime_gptq {
 const int width_element_per_block = 32 * 2;
@@ -144,7 +153,7 @@ __global__ void gemv(scalar_t* out, const scalar_t* inA, const uint32_t* inB, co
 void lauch_Gemv_kernel(torch::Tensor& out_fp16, const torch::Tensor& a_fp16, const torch::Tensor& qweight_i32,
                        const torch::Tensor& scale_fp16, const torch::Tensor& qzeros_i32,
                        int bits, int groupsize, uint32_t mat_m, uint32_t mat_k, uint32_t mat_n, uint8_t add_zero_bias) {
-  if (bits != 4 || groupsize != 128) {
+  if (bits != 4 ) {
     printf("only support 4bit quantization, and groupsize must be 128\n");
     abort();
   }
@@ -169,7 +178,7 @@ void lauch_Gemv_kernel(torch::Tensor& out_fp16, const torch::Tensor& a_fp16, con
 
 
 constexpr int kBlockSize = 256;
-//constexpr int kNumWaves = 32;
+constexpr int kNumWaves = 32;
 
 namespace cuda_quant {
 
@@ -444,7 +453,128 @@ __global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* 
   }
 }
 
-}  // namespace cuda_quant
+constexpr int kBlockOutput = 32;
+constexpr int kMaxInputBatchInThread = 1;
+
+template <typename scalar_t, int WBITS>
+__global__ void Gemv_g(const scalar_t *__restrict__ input,
+                       const int *__restrict__ qweight, scalar_t *__restrict__ output,
+                       const scalar_t *__restrict__ scales,
+                       const int *__restrict__ qzeros,
+                       const int *__restrict__ g_idx, int mat_m,
+                       int mat_k, int mat_n, int zero_width) {
+  const int num_thread_group = kBlockSize / kNumWaves;
+  const int thread_num_k = (mat_k + num_thread_group - 1) / num_thread_group;
+  const int thread_idx_group = threadIdx.y;
+  const int thread_group_start = thread_idx_group * thread_num_k;
+
+  const int compress_group_size = 32 / WBITS;
+  const int max_num_in_bits = (1 << WBITS) - 1;
+
+  const int weight_x = blockIdx.x * kBlockOutput + threadIdx.x;
+
+  __shared__ float blocksum[kMaxInputBatchInThread][num_thread_group]
+                           [kBlockOutput];
+  float sum[kMaxInputBatchInThread];
+#pragma unroll
+  for (int bid = 0; bid < kMaxInputBatchInThread; bid++) {
+    sum[bid] = 0;
+  }
+  const int end_k = min(mat_k, thread_group_start + thread_num_k);
+  int input_start_y = blockIdx.y * kMaxInputBatchInThread;
+  int input_end_y = min(mat_m, input_start_y + kMaxInputBatchInThread);
+  int len_input_y = input_end_y - input_start_y;
+  for (int weight_y = thread_group_start; weight_y < end_k; weight_y++) {
+    scalar_t input_vec[kMaxInputBatchInThread];
+    for (int bid = 0; bid < len_input_y; bid++) {
+      input_vec[bid] = input[(input_start_y + bid) * mat_k + weight_y];
+    }
+    int scale_row = g_idx[weight_y];
+
+    scalar_t scale_v = scales[scale_row * mat_n + weight_x];
+    uint32_t zero_v =
+        qzeros == nullptr
+            ? 0x88888888
+            : qzeros[scale_row * zero_width + (weight_x / compress_group_size)];
+    int zero_ind = weight_x % compress_group_size;
+    uint8_t zv1 = (zero_v >> (zero_ind * WBITS)) & max_num_in_bits;
+
+    scalar_t scale_zeros = __hmul(scale_v, __ushort2half_rn(zv1));
+
+    uint32_t weight_int = qweight[(weight_y / compress_group_size) * mat_n + weight_x];
+    int weight_ind = (weight_y) % compress_group_size;
+    uint8_t wv1 = (weight_int >> (weight_ind * WBITS)) & max_num_in_bits;
+    scalar_t wv = __ushort2half_rn(wv1);
+    scalar_t weight = __hfma(wv, scale_v, -scale_zeros);
+    // sum = __hfma(weight, input_v, sum);
+    for (int bid = 0; bid < len_input_y;bid++) {
+      sum[bid] += __half2float(weight * input_vec[bid]);
+    }
+  }
+  for (int bid = 0; bid < len_input_y; bid++) {
+    if constexpr (!std::is_same<scalar_t, float>::value) {
+      blocksum[bid][thread_idx_group][threadIdx.x] = sum[bid]; //__half2float(sum);
+    } else {
+      blocksum[bid][thread_idx_group][threadIdx.x] = sum[bid];
+    }
+  }
+  for (unsigned int s = 1; s < num_thread_group; s *= 2) {
+    __syncthreads();
+    int index = 2 * s * thread_idx_group;
+    if (index < num_thread_group) {
+      for (int bid = 0; bid < len_input_y; bid++) {
+        blocksum[bid][index][threadIdx.x] +=
+            blocksum[bid][index + s][threadIdx.x];
+      }
+    }
+  }
+  for (int bid = 0; bid < len_input_y; bid++) {
+    if (thread_idx_group == 0) {
+      if constexpr (!std::is_same<scalar_t, float>::value) {
+        output[(input_start_y + bid) * mat_n + blockIdx.x * kBlockOutput +
+               threadIdx.x] = __float2half_rn(blocksum[bid][0][threadIdx.x]);
+      } else {
+        output[(input_start_y+bid)*mat_n + blockIdx.x * kBlockOutput +
+               threadIdx.x] = blocksum[bid][0][threadIdx.x];
+      }
+    }
+  }
+}
+
+} // namespace cuda_quant
+
+template <typename T> __forceinline__ T ceil_div(T a, T b) {
+  return (a + b - 1) / b;
+}
+
+void Launch_gemv_g(const torch::Tensor& input, const torch::Tensor& qweight,
+                          torch::Tensor& output, const torch::Tensor& scales,
+                          const torch::Tensor& qzeros, const torch::Tensor& g_idx, int bits) {
+  int batch = input.size(0);
+  batch = input.dim() == 3 ? batch * input.size(1) : batch;
+  int mat_k = input.dim() == 3 ? input.size(2) : input.size(1);
+  int mat_n = qweight.size(1);
+  int zero_width = qzeros.size(1);
+
+  dim3 blocks(ceil_div(mat_n, cuda_quant::kBlockOutput),
+              ceil_div(batch, cuda_quant::kMaxInputBatchInThread));
+  dim3 threads(cuda_quant::kBlockOutput, kBlockSize / cuda_quant::kBlockOutput);
+
+  using scalar_t = half;
+  cuda_quant::Gemv_g<scalar_t, 4><<<blocks, threads>>>(
+      input.data<scalar_t>(), qweight.data<int>(), output.data<scalar_t>(),
+      scales.data<scalar_t>(), qzeros.data<int>(), g_idx.data<int>(),
+      batch, mat_k, mat_n, zero_width);
+  //
+  //QLLM_DISPATCH_FLOATING_TYPES(
+  //    input.type(), "Gemv_g", ([&] {
+  //      cuda_quant::Gemv_g<scalar_t, 4><<<blocks, threads>>>(
+  //          input.data<scalar_t>(), qweight.data<int>(),
+  //          output.data<scalar_t>(), scales.data<scalar_t>(),
+  //          qzeros.data<int>(), g_idx.data<int>(), mat_k, mat_n, zero_width);
+  //    }));
+}
+
 #ifndef assert
 #define assert(x) \
   if (!(x)) {     \
