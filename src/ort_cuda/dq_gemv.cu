@@ -454,15 +454,14 @@ __global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* 
 }
 
 constexpr int kBlockOutput = 32;
-constexpr int kMaxInputBatchInThread = 1;
+constexpr int kMaxInputBatchInThread = 4;
 
 template <typename scalar_t, int WBITS>
-__global__ void Gemv_g(const scalar_t *__restrict__ input,
-                       const int *__restrict__ qweight, scalar_t *__restrict__ output,
-                       const scalar_t *__restrict__ scales,
-                       const int *__restrict__ qzeros,
-                       const int *__restrict__ g_idx, int mat_m,
-                       int mat_k, int mat_n, int zero_width) {
+__global__ void
+Gemv_g(const scalar_t *__restrict__ input, const int *__restrict__ qweight,
+       scalar_t *__restrict__ output, const scalar_t *__restrict__ scales,
+       const int *__restrict__ qzeros, const int *__restrict__ g_idx, int mat_m,
+       uint32_t mat_k, uint32_t mat_n, uint32_t zero_width) {
   const int num_thread_group = kBlockSize / kNumWaves;
   const int thread_num_k = (mat_k + num_thread_group - 1) / num_thread_group;
   const int thread_idx_group = threadIdx.y;
