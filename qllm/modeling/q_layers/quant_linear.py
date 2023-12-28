@@ -66,7 +66,7 @@ class QuantLinearTorchFunction(torch.autograd.Function):
     def symbolic(g, inputs, qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
         bias = g.op("Constant", value_t=torch.tensor([], dtype=torch.float16))
         g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
-        use_gemm_op = False
+        use_gemm_op = True
         if use_gemm_op:
             return g.op("com.microsoft::QuantNbitsGemm", inputs, qweight, scales, qzeros, bias, g_idx,
                         outputs=1, in_features_i=in_features, bits_i=bits, groupsize_i=groupsize)
@@ -81,10 +81,10 @@ class QuantLinearTorchFunction(torch.autograd.Function):
             return torch.zeros(inputs.shape[:-1] + (qweight.size(1), ), dtype=inputs.dtype, device=inputs.device)
         
         compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-        if (g_idx is None and not torch.onnx.is_in_onnx_export()
-            and inputs.reshape(-1, inputs.shape[-1]).shape[0] <= 8
-            and bits == 4 and groupsize == 128):
-            return ort_ops.gemv(inputs, qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
+        if (not torch.onnx.is_in_onnx_export()
+            and inputs.numel()//inputs.shape[-1] <= 8
+            and bits == 4):
+            return ort_ops.gemv(inputs, qweight, scales, qzeros, g_idx, groupsize, bits, in_features, compatible_with_autogptq)
         if qweight.is_cuda:
             weight = ort_ops.dequant(qweight, scales, qzeros, g_idx, groupsize, bits, in_features, compatible_with_autogptq)
         else:
@@ -94,14 +94,6 @@ class QuantLinearTorchFunction(torch.autograd.Function):
 
 def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits, groupsize, in_features):
     return QuantLinearTorchFunction().apply(input, qweight, scales, qzeros, groupsize, bits, in_features, g_idx)
-    #if (g_idx is None and not torch.onnx.is_in_onnx_export() and
-    #    input.reshape(-1, input.shape[-1]).shape[0] <= 8 and
-    #    bits == 4 and groupsize==128):
-    #    compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-    #    return ort_ops.gemv(input, qweight, scales, qzeros, groupsize, bits, in_features, compatible_with_autogptq)
-    #weight = DequantAndUnpack().apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx)
-    #out = torch.matmul(input, weight.contiguous())
-    #return out
 
 
 class QuantLinear(nn.Module, CompressWeight):

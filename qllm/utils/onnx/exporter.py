@@ -48,7 +48,7 @@ def export_onnx(model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple
     return onnx_path_one_for_all
 
 
-def verify_correcness(model: torch.nn.Module, sample_inputs: tuple,onnx_model_path:str, with_past: bool,):
+def verify_correcness(model: torch.nn.Module, sample_inputs: tuple, onnx_model_path:str, with_past: bool,):
     import onnxruntime
     #import onnx_ops
     import numpy as np
@@ -65,10 +65,11 @@ def verify_correcness(model: torch.nn.Module, sample_inputs: tuple,onnx_model_pa
             inputs[f'present_values.{i}'] = np.zeros(ref.past_key_values[0][0].shape, dtype=np.float16)
     session_options = onnxruntime.SessionOptions()
     #session_options.register_custom_ops_library(onnx_ops.__file__)
+    #onnx_path_str = Path(onnx_model_path).parent.absolute()
     #session = onnxruntime.InferenceSession(f'{onnx_path_str}/model.onnx', providers=['CUDAExecutionProvider'], sess_options=session_options)
     session = onnxruntime.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'], sess_options=session_options)
     outputs = session.run(None, inputs)
-    err = ref.logits.cpu().numpy() - outputs[0]
+    err_1 = ref.logits.cpu().numpy() - outputs[0]
 
     if with_past:
         #session = onnxruntime.InferenceSession(f'{onnx_path_str}/model_with_past.onnx', providers=['CUDAExecutionProvider'], sess_options=session_options)
@@ -84,5 +85,5 @@ def verify_correcness(model: torch.nn.Module, sample_inputs: tuple,onnx_model_pa
         ref = model(torch.tensor([[3]],device="cuda"), torch.from_numpy(mask).cuda(), past_key_values=ref.past_key_values)
 
     err = ref.logits.cpu().numpy() - outputs[0]
-    print("max abs err:", np.abs(err).max(), "correctness check ",
+    print("max abs err:", np.abs(err).max(), np.abs(err_1).max(), "correctness check ",
             "" if np.abs(err).max() < 1e-2 else "not", " passed")

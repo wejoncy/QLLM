@@ -180,7 +180,7 @@ Please run with `-h` to refer the usage.")
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
             from .modeling.q_layers.quant_linear_awq import has_awq_inference_engine
-            if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
+            if args.wbits < 16 and not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
                 logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
                 model = self.repack_to_new_mode(model, args, "GPTQ")
             loop_in_chat_completion(self.tokenizer, model)
