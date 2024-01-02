@@ -2,12 +2,6 @@ import torch
 import torch.nn as nn
 
 true_sequential_layers_for_model = dict(
-    RWForCausalLM=[
-        ["self_attention.query_key_value"],
-        ["self_attention.dense"],
-        ["mlp.dense_h_to_4h"],
-        ["mlp.dense_4h_to_h"]
-    ],
     BaiChuanForCausalLM=[
         ["self_attn.W_pack"],
         ["self_attn.o_proj"],
@@ -25,62 +19,124 @@ true_sequential_layers_for_model = dict(
         ["attn.out_proj"],
         ["mlp.fc_in"],
         ["mlp.fc_out"]
-    ],    GPT2ForCausalLM=[
+    ],
+    DeciLMForCausalLM=[
+        ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
+        ["self_attn.o_proj"],
+        ["mlp.up_proj", "mlp.gate_proj"],
+        ["mlp.down_proj"]
+    ],
+    GPT2ForCausalLM=[
         ["attn.qkv_proj"],
         ["attn.out_proj"],
         ["mlp.fc_in"],
         ["mlp.fc_out"]
-    ],    GPTBigCodeForCausalLM=[
+    ],
+    GPTBigCodeForCausalLM=[
         ["attn.c_attn"],
         ["attn.c_proj"],
         ["mlp.c_fc"],
         ["mlp.c_proj"]
-    ],    GPTNeoXForCausalLM=[
+    ],
+    GPTNeoXForCausalLM=[
         ["attention.query_key_value"],
         ["attention.dense"],
         ["mlp.dense_h_to_4h"],
         ["mlp.dense_4h_to_h"]
-    ],    GPTJForCausalLM=[
+    ],
+    GPTJForCausalLM=[
         ["attn.k_proj", "attn.v_proj", "attn.q_proj"],
         ["attn.out_proj"],
         ["mlp.fc_in"],
         ["mlp.fc_out"]
-    ],    InternLMForCausalLM=[
+    ],
+    InternLMForCausalLM=[
         ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
         ["self_attn.o_proj"],
         ["mlp.up_proj", "mlp.gate_proj"],
         ["mlp.down_proj"],
-    ],    LlamaForCausalLM=[
+    ],
+    LlamaForCausalLM=[
         ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
         ["self_attn.o_proj"],
         ["mlp.up_proj", "mlp.gate_proj"],
         ["mlp.down_proj"]
-    ], MistralForCausalLM=[
+    ], 
+    MistralForCausalLM=[
         ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
         ["self_attn.o_proj"],
         ["mlp.up_proj", "mlp.gate_proj"],
         ["mlp.down_proj"],
-    ], MOSSForCausalLM=[
+    ], 
+    MixtralForCausalLM = [
+        ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
+        ["self_attn.o_proj"],
+        [
+            "block_sparse_moe.experts.0.w1",
+            "block_sparse_moe.experts.1.w1",
+            "block_sparse_moe.experts.2.w1",
+            "block_sparse_moe.experts.3.w1",
+            "block_sparse_moe.experts.4.w1",
+            "block_sparse_moe.experts.5.w1",
+            "block_sparse_moe.experts.6.w1",
+            "block_sparse_moe.experts.7.w1",
+            "block_sparse_moe.experts.0.w3",
+            "block_sparse_moe.experts.1.w3",
+            "block_sparse_moe.experts.2.w3",
+            "block_sparse_moe.experts.3.w3",
+            "block_sparse_moe.experts.4.w3",
+            "block_sparse_moe.experts.5.w3",
+            "block_sparse_moe.experts.6.w3",
+            "block_sparse_moe.experts.7.w3",
+         ],
+        [
+            "block_sparse_moe.experts.0.w2",
+            "block_sparse_moe.experts.1.w2",
+            "block_sparse_moe.experts.2.w2",
+            "block_sparse_moe.experts.3.w2",
+            "block_sparse_moe.experts.4.w2",
+            "block_sparse_moe.experts.5.w2",
+            "block_sparse_moe.experts.6.w2",
+            "block_sparse_moe.experts.7.w2",
+        ]
+    ],
+    MOSSForCausalLM=[
         ["attn.qkv_proj"],
         ["attn.out_proj"],
         ["mlp.fc_in"],
         ["mlp.fc_out"]
-    ], OPTForCausalLM=[
+    ], 
+    OPTForCausalLM=[
         ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
         ["self_attn.out_proj"],
         ["fc1"],
         ["fc2"]
-    ], QwenForCausalLM=[
+    ], 
+    QwenForCausalLM=[
         ["attn.c_attn"],
         ["attn.c_proj"],
         ["mlp.w1", "mlp.w2"],
         ["mlp.c_proj"]
-    ], XverseForCausalLM=[
+    ], 
+    RWForCausalLM=[
+        ["self_attention.query_key_value"],
+        ["self_attention.dense"],
+        ["mlp.dense_h_to_4h"],
+        ["mlp.dense_4h_to_h"]
+    ],
+    StableLMEpochForCausalLM=[
         ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
         ["self_attn.o_proj"],
         ["mlp.up_proj", "mlp.gate_proj"],
         ["mlp.down_proj"]
-    ], YiForCausalLM=[
+    ],
+    XverseForCausalLM=[
+        ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
+        ["self_attn.o_proj"],
+        ["mlp.up_proj", "mlp.gate_proj"],
+        ["mlp.down_proj"]
+    ], 
+    YiForCausalLM=[
         ["self_attn.k_proj", "self_attn.v_proj", "self_attn.q_proj"],
         ["self_attn.o_proj"],
         ["mlp.up_proj", "mlp.gate_proj"],

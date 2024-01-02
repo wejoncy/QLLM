@@ -38,6 +38,51 @@ def get_aquila_layers(module:nn.Module, input_feat, module_kwargs):
 
     return layers
 
+def get_baichuan_layers(module: nn.Module, input_feat, module_kwargs):
+    layers = []
+
+    # attention input
+    layers.append(dict(
+        prev_op=module.input_layernorm,
+        layers=[module.self_attn.W_pack],
+        inp=input_feat['self_attn.W_pack'],
+        module2inspect=module.self_attn, kwargs=module_kwargs,
+    ))
+
+    # # attention out
+    # # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
+    # if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
+    #     layers.append(dict(
+    #         prev_op=module.self_attn.v_proj,
+    #         layers=[module.self_attn.o_proj],
+    #         inp=input_feat['self_attn.o_proj'],
+    #     ))
+
+    # attention out
+    # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
+    layers.append(dict(
+        prev_op=module.self_attn.W_pack,
+        layers=[module.self_attn.o_proj],
+        inp=input_feat['self_attn.o_proj'],
+    ))
+
+    # linear 1
+    layers.append(dict(
+        prev_op=module.post_attention_layernorm,
+        layers=[module.mlp.gate_proj, module.mlp.up_proj],
+        inp=input_feat['mlp.gate_proj'],
+        module2inspect=module.mlp,
+    ))
+
+    # linear 2
+    layers.append(dict(
+        prev_op=module.mlp.up_proj,
+        layers=[module.mlp.down_proj],
+        inp=input_feat['mlp.down_proj'],
+    ))
+
+    return layers
+
 def get_bloom_layer(module: nn.Module, input_feat, module_kwargs):
         layers = []
 
@@ -202,7 +247,84 @@ def get_gptj_layers(module: nn.Module, input_feat, module_kwargs):
 
         return layers
 
-def get_mistray_layers(module: nn.Module, input_feat, module_kwargs):
+
+def get_llama_layers(module: nn.Module, input_feat, module_kwargs):
+    layers = []
+
+    # attention input
+    layers.append(dict(
+        prev_op=module.input_layernorm,
+        layers=[module.self_attn.q_proj,
+                module.self_attn.k_proj, module.self_attn.v_proj],
+        inp=input_feat['self_attn.q_proj'],
+        module2inspect=module.self_attn, kwargs=module_kwargs,
+        ))
+
+    # attention out
+    # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
+    if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
+        layers.append(dict(
+            prev_op=module.self_attn.v_proj,
+            layers=[module.self_attn.o_proj],
+            inp=input_feat['self_attn.o_proj'],
+        ))
+
+    # linear 1
+    layers.append(dict(
+        prev_op=module.post_attention_layernorm,
+        layers=[module.mlp.gate_proj, module.mlp.up_proj],
+        inp=input_feat['mlp.gate_proj'],
+        module2inspect=module.mlp,
+    ))
+
+    # linear 2
+    layers.append(dict(
+        prev_op=module.mlp.up_proj,
+        layers=[module.mlp.down_proj],
+        inp=input_feat['mlp.down_proj'],
+    ))
+
+    return layers
+
+def get_llava_layers(module: nn.Module, input_feat, module_kwargs):
+    layers = []
+
+    # attention input
+    layers.append(dict(
+        prev_op=module.input_layernorm,
+        layers=[module.self_attn.q_proj,
+                module.self_attn.k_proj, module.self_attn.v_proj],
+        inp=input_feat['self_attn.q_proj'],
+        module2inspect=module.self_attn, kwargs=module_kwargs,
+        ))
+
+    # attention out
+    # Please refer to https://github.com/mit-han-lab/llm-awq/pull/67#issue-1850622696
+    if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
+        layers.append(dict(
+            prev_op=module.self_attn.v_proj,
+            layers=[module.self_attn.o_proj],
+            inp=input_feat['self_attn.o_proj'],
+        ))
+
+    # linear 1
+    layers.append(dict(
+        prev_op=module.post_attention_layernorm,
+        layers=[module.mlp.gate_proj, module.mlp.up_proj],
+        inp=input_feat['mlp.gate_proj'],
+        module2inspect=module.mlp,
+    ))
+
+    # linear 2
+    layers.append(dict(
+        prev_op=module.mlp.up_proj,
+        layers=[module.mlp.down_proj],
+        inp=input_feat['mlp.down_proj'],
+    ))
+
+    return layers
+
+def get_mistral_layers(module: nn.Module, input_feat, module_kwargs):
         layers = []
 
         # attention input
@@ -239,6 +361,126 @@ def get_mistray_layers(module: nn.Module, input_feat, module_kwargs):
         ))
 
         return layers
+
+def get_mixtral_layers(module: nn.Module, input_feat, module_kwargs):
+    #Workaround for Mixtral, exclude layers which are not quantized
+    input_feat.pop('block_sparse_moe.gate', None)
+    layers = []
+
+    # attention input
+    layers.append(dict(
+        prev_op=module.input_layernorm,
+        layers=[module.self_attn.q_proj,
+                module.self_attn.k_proj, module.self_attn.v_proj],
+        inp=input_feat['self_attn.q_proj'],
+        module2inspect=module.self_attn, kwargs=module_kwargs,
+        ))
+
+    # attention out
+    if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
+        layers.append(dict(
+            prev_op=module.self_attn.v_proj,
+            layers=[module.self_attn.o_proj],
+            inp=input_feat['self_attn.o_proj'],
+        ))
+
+    # linear in
+    layers.append(dict(
+        prev_op=module.post_attention_layernorm,
+        layers=[
+            w for expert in module.block_sparse_moe.experts
+            for w in [expert.w1, expert.w3]
+        ],
+        inp=input_feat['block_sparse_moe'],
+        module2inspect=module.block_sparse_moe,
+    ))
+
+    # linear out
+    for i, expert in enumerate(module.block_sparse_moe.experts):
+        layers.append(dict(
+            prev_op=expert.w3,
+            layers=[expert.w2],
+            inp=input_feat[f'block_sparse_moe.experts.{i}.w2'],
+        ))
+
+    return layers
+
+def get_mpt_layers(module: nn.Module, input_feat, module_kwargs):
+    layers = []
+
+    if module_kwargs.get("output_attentions") is not None:
+        module_kwargs.pop("output_attentions")
+
+    # attention input
+    layers.append(dict(
+        prev_op=module.norm_1,
+        layers=[module.attn.Wqkv],
+        inp=input_feat['attn.Wqkv'],
+        module2inspect=module.attn,
+        kwargs=module_kwargs
+    ))
+
+    # attention output
+    layers.append(dict(
+        prev_op=module.attn.Wqkv,
+        layers=[module.attn.out_proj],
+        inp=input_feat['attn.out_proj']
+    ))
+
+    # linear 1
+    layers.append(dict(
+        prev_op=module.norm_2,
+        layers=[module.ffn.up_proj],
+        inp=input_feat['ffn.up_proj'],
+        module2inspect=module.ffn
+    ))
+
+    # linear 2
+    layers.append(dict(
+        prev_op=module.ffn.act,
+        layers=[module.ffn.down_proj],
+        inp=input_feat['ffn.down_proj']
+    ))
+
+    return layers
+
+def get_opt_layers(module: nn.Module, input_feat, module_kwargs):
+    layers = []
+
+    # attention input
+    layers.append(dict(
+        prev_op=module.self_attn_layer_norm,
+        layers=[
+            module.self_attn.q_proj,
+            module.self_attn.k_proj, module.self_attn.v_proj],
+        inp=input_feat['self_attn.q_proj'],
+        module2inspect=module.self_attn,
+        kwargs=module_kwargs,
+    ))
+
+    # attention out
+    layers.append(dict(
+        prev_op=module.self_attn.v_proj,
+        layers=[module.self_attn.out_proj],
+        inp=input_feat['self_attn.out_proj'],
+    ))
+
+    # linear 1
+    layers.append(dict(
+        prev_op=module.final_layer_norm,
+        layers=[module.fc1],
+        inp=input_feat['fc1'],
+    ))
+
+    # linear 2
+    layers.append(dict(
+        prev_op=module.fc1,
+        layers=[module.fc2],
+        inp=input_feat['fc2'],
+    ))
+
+    return layers
+
 def get_qwen_layers(module: nn.Module, input_feat, module_kwargs):
         layers = []
 
@@ -312,14 +554,21 @@ def get_yi_layers(module: nn.Module, input_feat, module_kwargs):
 
         return layers
 
+
 true_sequential_layers_for_model = dict(
     AquilaForCausalLM=get_aquila_layers,
+    BaichuanForCausalLM=get_baichuan_layers,
     BloomForCausalLM=get_bloom_layer,
     FalconForCausalLM=get_falcon_layers,
     GptBigCodeForCausalLM=get_bigcode_layers,
     GPTNeoXForCausalLM=get_neox_layers,
     GPTJForCausalLM=get_gptj_layers,
-    MistralForCausalLM=get_mistray_layers,
+    LlamaForCausalLM=get_llama_layers,
+    LlavaForCausalLM =get_llava_layers,
+    MistralForCausalLM=get_mistral_layers,
+    MixtralForCausalLM =get_mixtral_layers,
+    MptForCausalLM =get_mpt_layers,
+    OptForCausalLM =get_opt_layers,
     QwenForCausalLM=get_qwen_layers,
     YiForCausalLM=get_yi_layers,
 )
@@ -332,19 +581,19 @@ def get_bloom_scaling(module: nn.Module):
             scale_shape=module.mlp.dense_h_to_4h.out_features
     )
 def get_falcon_scaling(module: nn.Module):
-        return dict(
-            is_scalable=True,
-            scale_name="mlp.act",
-            scale_layer=module.mlp.act,
-            scale_shape=module.mlp.dense_h_to_4h.out_features
-        )
+    return dict(
+        is_scalable=True,
+        scale_name="mlp.act",
+        scale_layer=module.mlp.act,
+        scale_shape=module.mlp.dense_h_to_4h.out_features
+    )
 def get_bigcode_scaling(module: nn.Module):
-        return dict(
-            is_scalable=True,
-            scale_name="mlp.act",
-            scale_layer=module.mlp.act,
-            scale_shape=module.mlp.c_fc.out_features
-        )
+    return dict(
+        is_scalable=True,
+        scale_name="mlp.act",
+        scale_layer=module.mlp.act,
+        scale_shape=module.mlp.c_fc.out_features
+    )
 def get_neox_scaling(module: nn.Module):
     return dict(
         is_scalable=True,
@@ -353,19 +602,20 @@ def get_neox_scaling(module: nn.Module):
         scale_shape=module.mlp.dense_h_to_4h.out_features,
     )
 def get_gptj_scaling(module: nn.Module):
-        return dict(
-            is_scalable=True,
-            scale_name="mlp.act",
-            scale_layer=module.mlp.act,
-            scale_shape=module.mlp.fc_in.out_features
-        )
+    return dict(
+        is_scalable=True,
+        scale_name="mlp.act",
+        scale_layer=module.mlp.act,
+        scale_shape=module.mlp.fc_in.out_features
+    )
 def get_mpt_scaling(module: nn.Module):
-        return dict(
-            is_scalable=True,
-            scale_name="ffn.act",
-            scale_layer=module.ffn.act,
-            scale_shape=module.ffn.up_proj.out_features
-        )
+    return dict(
+        is_scalable=True,
+        scale_name="ffn.act",
+        scale_layer=module.ffn.act,
+        scale_shape=module.ffn.up_proj.out_features
+    )
+
 _act_scales_map = dict(
       BloomForCausalLM=get_bloom_scaling,
       FalconForCausalLM=get_falcon_scaling,
@@ -380,5 +630,5 @@ def auto_detect_sequential_layers(module: nn.Module, input_feat, model_type, mod
     return true_sequential_layers_for_model[model_type](module, input_feat, module_kwargs)
 
 def auto_detect_scaling(module: nn.Module, model_type)->dict:
-    if model_type not in _act_scales_map:return {}
+    if model_type not in _act_scales_map: return dict(is_scalable=False)
     return _act_scales_map[model_type](module)
