@@ -142,7 +142,7 @@ class QuantLinear(nn.Module, CompressWeight):
 
     def forward(self, x):
         if self.act_order is None:
-            self.act_order = not (self.g_idx[:self.groupsize//self.bits].sum() == 0)
+            self.act_order = not (self.g_idx[:self.groupsize].sum() == 0)
         g_idx = self.g_idx if self.act_order else None
         out = QuantLinearTorchFunction_forward(x, self.qweight, self.scales,
                                                self.qzeros, g_idx, self.bits, self.groupsize, self.infeatures)
