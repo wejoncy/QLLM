@@ -68,7 +68,7 @@ class AutoModelQuantization(object):
         quant_config_by_layer = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_config_by_layer["method"] = args.method
         
-        target_layer = select_quant_linear(args.pack_mode, args.wbits)
+        target_layer = select_quant_linear(args.pack_mode, args.wbits, args.method)
 
         make_mixbits_quant_linear(
             model, quantizers, quant_config_by_layer, target_layer=target_layer, device="cpu")
@@ -93,8 +93,8 @@ class AutoModelQuantization(object):
         old_pack_mode = model.quant_config["version"]
         model.quant_config["version"] = new_pack_mode
         bits, groupsize = args.wbits, args.groupsize
-        source_layer = select_quant_linear(old_pack_mode, args.wbits)
-        target_layer = select_quant_linear(new_pack_mode, args.wbits)
+        source_layer = select_quant_linear(old_pack_mode, args.wbits, args.method)
+        target_layer = select_quant_linear(new_pack_mode, args.wbits, args.method)
         qlayers = find_layers(model, [source_layer])
         for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc=f"replacing model packed-weight from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
             fp16_weight, scales, zeros = qlayer.unpack()
@@ -119,6 +119,9 @@ class AutoModelQuantization(object):
         self.tokenizer is not None and self.tokenizer.save_pretrained(onnx_path_str)
 
         #verify correctness
+        if self.tokenizer:
+            sample_inputs = self.tokenizer("Hello world", return_tensors="pt")
+            sample_inputs = (sample_inputs.input_ids, sample_inputs.attention_mask)
         exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
         
 
@@ -158,8 +161,7 @@ Please run with `-h` to refer the usage.")
                 args.mix_qlayer_conf = {}
             tick = time.time()
             quantizers = self.__quant_by_sequential(model, inputs_dataloader, args, DEV)
-            model = self.pack_model(
-                model, quantizers, args)
+            model = self.pack_model(model, quantizers, args)
             logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
         if args.save:

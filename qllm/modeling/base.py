@@ -201,7 +201,7 @@ class AutoQuantizedModelForCausalLM:
                         del layers[layer_name]
 
         target_layer = utils.modelutils.select_quant_linear(
-            quant_config.quant_config["version"], quant_config.wbits())
+            quant_config.quant_config["version"], quant_config.wbits(), quant_config.method)
         utils.modelutils.make_mixbits_quant_linear(
             model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
         if quant_config.method == "awq":
