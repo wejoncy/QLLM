@@ -30,7 +30,7 @@ def pack_on_row_fast_anybit(pack_tensor, ori_int_tensor, bits):
     wf = torch.arange(0, bits).to(pack_tensor.device).view(1,1, -1)
     out = torch.bitwise_right_shift(ori_int_tensor.unsqueeze(-1), wf)
     torch.bitwise_and(out, 1, out=out)
-    out = out.reshape(pack_tensor.shape[0], -1, 32)
+    out = out.reshape(ori_int_tensor.shape[0], -1, 32)
     wf1 = torch.arange(0, 32, 1).to(pack_tensor.device).view(1, 1, -1)
     out = torch.bitwise_left_shift(out,wf1)
     out = out.sum(dim=-1).int()

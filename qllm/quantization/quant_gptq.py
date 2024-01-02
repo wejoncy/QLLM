@@ -98,11 +98,15 @@ class GPTQQuant(QuantFrameBase):
             block_layer = attention_layers[i].to(dev)
             named_linear_layers = find_layers(block_layer, self.quant_layers)
 
-            # [ TODO ] how to filter out the layers, which won't be quantized or harness the quality
             sequential = [list(named_linear_layers.keys())]
-            if args.true_sequential:
-                sequential = sequential_layes_gptq_config.auto_detect_sequential_layers(
-                    sequential, model.__class__.__name__)
+            # filter out the layers that shouldnt be quantized
+            true_sequential = sequential_layes_gptq_config.auto_detect_sequential_layers(
+                sequential, model.__class__.__name__)
+            if not args.true_sequential:
+                sequential_tmp = [sum(true_sequential, [])]
+                if len(sequential_tmp[0]) != len(sequential[0]):
+                    # if true_sequential is not the same as sequential, we need to re-order the layers
+                    sequential[0] = sorted(sequential_tmp[0], key=lambda x: sequential[0].index(x))
             for names in sequential:
                 subset = {n: named_linear_layers[n] for n in names}
                 gptq = {}

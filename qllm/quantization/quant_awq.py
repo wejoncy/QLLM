@@ -50,7 +50,9 @@ class AWQQuant(QuantFrameBase):
     def hijack_internal_block(self, named_linears, layer_block, inps, layer_kwargs):
         dev = next(layer_block.parameters()).device
         # firstly, get input features of all linear layers
-
+        if "mixtral" in (layer_block).__class__.__name__.lower():
+            named_linears.pop("block_sparse_moe.gate", None)
+            named_linears = {**named_linears, "block_sparse_moe": layer_block.block_sparse_moe}
         def cache_input_hook(m, x, y, name, feat_dict):
             x = x[0]
             x = x.detach().cpu()
