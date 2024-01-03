@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 from .compress_weight import CompressWeight

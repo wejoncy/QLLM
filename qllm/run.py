@@ -1,5 +1,4 @@
 import argparse
-import sys
 
 from .auto_model_quantization import AutoModelQuantization
 

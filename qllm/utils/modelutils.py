@@ -104,7 +104,7 @@ def torch_snr_error(y_pred: torch.Tensor, y_real: torch.Tensor, reduction: str =
     elif reduction == 'none':
         return snr
     else:
-        raise ValueError(f'Unsupported reduction method.')
+        raise ValueError(f'Unsupported reduction method: {reduction}.')
 
 def get_op_by_name(module, op_name):
     # get the op by its name relative to the module

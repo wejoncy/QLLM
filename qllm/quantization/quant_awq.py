@@ -1,13 +1,10 @@
 import torch
-import torch.nn as nn
 import tqdm
 import functools
 from collections import defaultdict
 
-from texttable import Texttable
-
 from ..utils.comm_utils import clear_memory
-from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name
+from ..utils.modelutils import set_op_by_name
 
 from .quant_frame_base import QuantFrameBase
 from ..utils import find_layers

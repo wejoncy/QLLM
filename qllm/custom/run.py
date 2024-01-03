@@ -1,10 +1,8 @@
-from texttable import Texttable
 import os
 if "CUDA_VISIBLE_DEVICES" not in os.environ:  # NOQA
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # NOQA
 
 import warnings
-import torch.nn as nn
 import torch
 from pathlib import Path
 

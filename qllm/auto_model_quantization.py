@@ -1,10 +1,8 @@
 import os
-# if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
-#    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
 
 import torch
-import numpy as np
 import time
+import json
 import tqdm
 
 from .auto_datasets import get_sample_datas_for_quantization
@@ -154,7 +152,8 @@ Please run with `-h` to refer the usage.")
 
         if not args.load and args.wbits < 16:
             if args.mix_qlayer_conf:
-                args.mix_qlayer_conf = json.load(open(args.mix_qlayer_conf))
+                with open(args.mix_qlayer_conf) as fp:
+                    args.mix_qlayer_conf = json.load(fp)
             else:
                 args.mix_qlayer_conf = {}
             tick = time.time()

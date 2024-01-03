@@ -1,5 +1,4 @@
-import torch
-import torch.nn as nn
+# Description: This file contains the sequential layers for each model.
 
 true_sequential_layers_for_model = dict(
     BaiChuanForCausalLM=[

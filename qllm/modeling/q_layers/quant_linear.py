@@ -19,7 +19,7 @@ class DequantAndUnpack(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
-        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
+        COMPATIBLE_WITH_AUTOGPTQ = int(os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
         scales = scales.reshape(-1, 1, scales.shape[-1])
         if bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
@@ -78,13 +78,13 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         if torch.onnx.is_in_onnx_export():
             return torch.zeros(inputs.shape[:-1] + (qweight.size(1), ), dtype=inputs.dtype, device=inputs.device)
         
-        compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
+        COMPATIBLE_WITH_AUTOGPTQ = int(os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
         if (not torch.onnx.is_in_onnx_export()
             and inputs.numel()//inputs.shape[-1] <= 8
             and bits == 4):
-            return ort_ops.gemv(inputs, qweight, scales, qzeros, g_idx, groupsize, bits, in_features, compatible_with_autogptq)
+            return ort_ops.gemv(inputs, qweight, scales, qzeros, g_idx, groupsize, bits, in_features, COMPATIBLE_WITH_AUTOGPTQ)
         if qweight.is_cuda:
-            weight = ort_ops.dequant(qweight, scales, qzeros, g_idx, groupsize, bits, in_features, compatible_with_autogptq)
+            weight = ort_ops.dequant(qweight, scales, qzeros, g_idx, groupsize, bits, in_features, COMPATIBLE_WITH_AUTOGPTQ)
         else:
             weight = DequantAndUnpack.apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx)
         return torch.matmul(inputs, weight)

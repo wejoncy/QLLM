@@ -206,9 +206,8 @@ class CompressWeight(object):
         general_pack_on_row(qzeros_cuda, zeros_cuda, self.bits)
 
         self.qzeros = qzeros_cuda.T.contiguous().cpu()
-        e2 = time.time()-s
 
-        if self.orig_fp_weight != None:
+        if self.orig_fp_weight is not None:
             fw, _, iz = self.unpack()
             assert (fw == self.orig_fp_weight.to(device)).all()
 

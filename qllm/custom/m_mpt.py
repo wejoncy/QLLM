@@ -8,7 +8,6 @@ if "CUDA_VISIBLE_DEVICES" not in os.environ:  # NOQA
 
 import torch.nn as nn
 import torch
-import numpy as np
 
 import argparse
 import time
@@ -33,7 +32,6 @@ def get_mpt(model, argv_user, nsamples):
     import examples_ads
     from examples_ads import run_mpt_prompt
     argv_user.insert(0, run_mpt_prompt.__file__)
-    argv_back = sys.argv
     sys.argv = argv_user
 
     os.environ['init_device'] = "cpu"

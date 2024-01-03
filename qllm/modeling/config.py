@@ -70,7 +70,8 @@ class BaseQuantizeConfig:
             config_file = self.get_resolved_base_dir(model_name_or_path, "quantize_config.json")
 
         assert config_file is not None, ("quant_config.json/quantize_config.json not found in checkpoint directory")
-        quant_config = json.load(open(config_file))
+        with open(config_file) as fp:
+            quant_config = json.load(fp)
         args.wbits = quant_config.get("w_bit", quant_config.get("bits", None))
         args.groupsize = quant_config.get("q_group_size", quant_config.get("group_size", None))
         assert args.wbits is not None and args.groupsize is not None
