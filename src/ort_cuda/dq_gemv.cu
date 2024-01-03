@@ -368,7 +368,7 @@ __global__ void DequantizeAndUnpackWeight3567_v2(scalar_t* out, const uint32_t* 
   const int fp16_weight_in_row = tid / half_n * compress_group_size;
   VEC2 scale_v[4];
   const int scale_zero_from = fp16_weight_in_row / group_size;
-  const int scale_zero_to = (fp16_weight_in_row + compress_group_size) / group_size;
+  const int scale_zero_to = min(in_features/group_size-1,(fp16_weight_in_row + compress_group_size) / group_size);
 
   // decompress scales
   const VEC2 *scale2 = reinterpret_cast<const VEC2*>(scale);
@@ -717,8 +717,10 @@ void lauch_deqantize_cuda_pt_kernel(torch::Tensor& b_fp16, const torch::Tensor& 
   }
   cudaError_t err = cudaGetLastError();
   if (cudaSuccess != err) {
-    fprintf(stderr, "cudaCheckError() failed : %s\n", cudaGetErrorString(err));
-    exit(-1);
+    char buf[512];
+    sprintf(buf, "%d:cudaCheckError() failed : %s\n", __LINE__,
+            cudaGetErrorString(err));
+    TORCH_CHECK(0, buf);
   }
 }
 }

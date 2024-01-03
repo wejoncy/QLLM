@@ -38,6 +38,10 @@ torch::Tensor dequant_any_bit(const torch::Tensor &qweight,
   TORCH_CHECK(groupsize >= 16, "groupsize must be >= 16");
   TORCH_CHECK(bits >= 1 && bits <= 8, "bits must be >= 1 and <= 8");
   TORCH_CHECK((in_features * bits + 31) / 32 == qweight.size(0), "in_features must be >= 1");
+  TORCH_CHECK(qweight.device().index() == scales.device().index() ||
+                  qweight.device().index() == qzeros.device().index(),
+              "input and weight/qzeros must be on the same device");
+
   cudaSetDevice(qweight.device().index());
   auto f16_scale = scales;
   auto ori_dtype = scales.scalar_type();

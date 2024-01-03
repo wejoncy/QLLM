@@ -139,7 +139,7 @@ class AutoQuantizedModelForCausalLM:
     def from_quantized(
         cls, 
         model_name_or_path: Optional[str],
-        device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "balanced",
+        device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "sequential",
         max_memory: Optional[dict] = None,
         device: Optional[Union[str, int]] = "cuda",
         low_cpu_mem_usage: bool = True,

@@ -20,8 +20,6 @@ class DequantAndUnpack(torch.autograd.Function):
     @staticmethod
     def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
         compatible_with_autogptq = int(os.environ.get("compatible_with_autogptq", "0"))
-        if qweight.is_cuda:
-            return ort_ops.dequant(qweight, scales, qzeros, g_idx, groupsize, bits, in_features, compatible_with_autogptq)
         scales = scales.reshape(-1, 1, scales.shape[-1])
         if bits in [2, 4, 8]:
             wf = torch.tensor(list(range(0, 32, bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
