@@ -1,6 +1,9 @@
 [build-system]
 requires = ["setuptools>=40.8.0", "wheel", "packaging", "ninja>=1.11.1", "torch==2.1.0"]
 
+build-backend = "setuptools.build_meta"
+
+
 [tool.yapf]
 based_on_style = "pep8"
 column_limit = 120
@@ -15,6 +18,7 @@ ignore_patterns = [
 
 [tool.ruff]
 line-length = 120
+src = ["qllm"]
 
 [tool.ruff.lint]
 ignore = ["E501", "E701", "E731", "E741",]
@@ -33,4 +37,3 @@ select = [
     # "I",
     ]
 
-build-backend = "setuptools.build_meta"

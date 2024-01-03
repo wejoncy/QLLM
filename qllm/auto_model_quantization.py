@@ -1,12 +1,7 @@
 import os
-# if "CUDA_VISIBLE_DEVICES" not in os.environ: # NOQA
-#    os.environ["CUDA_VISIBLE_DEVICES"] = "1" # NOQA
 
-import torch.nn as nn
 import torch
-import numpy as np
 import time
-from pathlib import Path
 import json
 import tqdm
 
@@ -134,7 +129,7 @@ class AutoModelQuantization(object):
             args.pack_mode = "GPTQ"
         if args.allow_mix_bits and args.pack_mode != "GPTQ":
             raise ValueError("allow_mix_bits only support GPTQ packing mode")
-        if type(args.load) is not str:
+        if not isinstance(args.load,  str):
             args.load = args.load.as_posix()
 
         if args.tokenizer == "":
@@ -157,7 +152,8 @@ Please run with `-h` to refer the usage.")
 
         if not args.load and args.wbits < 16:
             if args.mix_qlayer_conf:
-                args.mix_qlayer_conf = json.load(open(args.mix_qlayer_conf))
+                with open(args.mix_qlayer_conf) as fp:
+                    args.mix_qlayer_conf = json.load(fp)
             else:
                 args.mix_qlayer_conf = {}
             tick = time.time()

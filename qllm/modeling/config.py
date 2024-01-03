@@ -13,7 +13,7 @@ class BaseQuantizeConfig:
         self.quant_config = {}
         self.quant_config_by_op = {}
         self.method = None
-        self.compatible_with_autogptq = False
+        self.COMPATIBLE_WITH_AUTOGPTQ = False
 
     
     def groupsize(self, layer_name: str = None):
@@ -70,7 +70,8 @@ class BaseQuantizeConfig:
             config_file = self.get_resolved_base_dir(model_name_or_path, "quantize_config.json")
 
         assert config_file is not None, ("quant_config.json/quantize_config.json not found in checkpoint directory")
-        quant_config = json.load(open(config_file))
+        with open(config_file) as fp:
+            quant_config = json.load(fp)
         args.wbits = quant_config.get("w_bit", quant_config.get("bits", None))
         args.groupsize = quant_config.get("q_group_size", quant_config.get("group_size", None))
         assert args.wbits is not None and args.groupsize is not None
@@ -78,9 +79,9 @@ class BaseQuantizeConfig:
         if "version" not in quant_config:
             self.method = "GPTQ"
             quant_config["version"] = "GPTQ"
-            self.compatible_with_autogptq = True
+            self.COMPATIBLE_WITH_AUTOGPTQ = True
             import os
-            os.environ["compatible_with_autogptq"] = '1' # FixMe: hacky
+            os.environ["COMPATIBLE_WITH_AUTOGPTQ"] = '1' # FixMe: hacky
         else: #FIXME is it correct?
             self.method = quant_config.get("method", "awq")
         self.quant_config = quant_config

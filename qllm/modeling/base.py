@@ -6,9 +6,8 @@ import tqdm
 import glob
 import json
 import contextlib
-import torch
 import accelerate
-from typing import Dict, List, Optional, Union
+from typing import Dict, Optional, Union
 from transformers.utils.hub import cached_file
 import safetensors
 
@@ -28,14 +27,15 @@ def replace_default_dtype(dtype):
         torch.set_default_dtype(old_dtype)
 
 @contextlib.contextmanager
-def no_init_weights(attrs: list=['normal_', 'uniform_', 'kaiming_uniform_', 'kaiming_normal_']):
+def no_init_weights(attrs: list= None):
+    attrs = attrs if attrs is not None else ['normal_', 'uniform_', 'kaiming_uniform_', 'kaiming_normal_']
     old_attr = []
     new_method = lambda x, *args, **kwargs: x
     for attr in attrs:
         try:
             old_attr.append(getattr(torch.Tensor, attr))
             setattr(torch.Tensor, attr, new_method)
-        except:
+        except:  # noqa: E722
             old_attr.append(None)
     yield
     for idx, attr in enumerate(attrs):
@@ -80,7 +80,8 @@ def _load_check_point(model, model_name_or_path, quant_config, get_keys_only:boo
     else:
         index_config_file = quant_config.get_resolved_base_dir(model_name_or_path, "model.safetensors.index.json")
         if index_config_file:
-            index_files = set(json.load(open(index_config_file))["weight_map"].values())
+            with open(index_config_file) as fp:
+                index_files = set(json.load(fp)["weight_map"].values())
             for index_file in tqdm.tqdm(index_files, desc="loading weights from safetensors"):
                 weight_file = cached_file(model_name_or_path, index_file)
                 weights = safetensors.torch.load_file(weight_file, device="cpu")
@@ -96,7 +97,7 @@ def _load_check_point(model, model_name_or_path, quant_config, get_keys_only:boo
             if get_keys_only:
                 all_keys.update(weights.keys())
             else:
-                ret = load_res = model.load_state_dict(weights, strict=False)
+                ret = model.load_state_dict(weights, strict=False)
                 all_missing_keys.extend(ret.missing_keys)
                 all_unexpected_keys.extend(ret.unexpected_keys)
     if get_keys_only:
@@ -219,7 +220,7 @@ class AutoQuantizedModelForCausalLM:
                 offload_folder=None,
                 dtype=torch_dtype,
             )
-        except Exception as e:
+        except Exception:
             all_missing_keys, all_unexpected_keys = _load_check_point(model, model_name_or_path, quant_config)
             all_unexpected_keys = [i for i in all_unexpected_keys if not i.endswith('.bias')]
             if len(all_unexpected_keys) != 0:
@@ -231,13 +232,13 @@ class AutoQuantizedModelForCausalLM:
             # layers.autotune_warmup_linear(model, transpose=False)
 
         # autogptq has extra -1 in qzeros but we don't have it.
-        if quant_config.compatible_with_autogptq:
+        if quant_config.COMPATIBLE_WITH_AUTOGPTQ:
             qlayers = utils.find_layers(model, [target_layer])
-            for module_name, qlayer in tqdm.tqdm(qlayers.items(), desc="Repacking AutoGPTQ qzeros..."):
+            for _, qlayer in tqdm.tqdm(qlayers.items(), desc="Repacking AutoGPTQ qzeros..."):
                 qlayer.handle_qzeros_for_autogptq()
             import os
-            os.environ["compatible_with_autogptq"] = '0'
-            # The kernel with compatible_with_autogptq has some bugs now in XbitOps, let's always replace qzeros
+            os.environ["COMPATIBLE_WITH_AUTOGPTQ"] = '0'
+            # The kernel with COMPATIBLE_WITH_AUTOGPTQ has some bugs now in XbitOps, let's always replace qzeros
 
         return model
 
@@ -250,6 +251,7 @@ class AutoQuantizedModelForCausalLM:
         model.save_pretrained(save_directory, save_serialization=save_serialization)
         tokenizer is not None and tokenizer.save_pretrained(save_directory)
 
-        open(save_directory+"/quant_config_by_layer.json",
-                'w').write(json.dumps(quant_config_by_layer))
-        open(save_directory+"/quantize_config.json", 'w').write(json.dumps(quant_config))
+        with open(save_directory+"/quant_config_by_layer.json",'w') as fp:
+            fp.write(json.dumps(quant_config_by_layer))
+        with open(save_directory+"/quantize_config.json", 'w') as fp:
+            fp.write(json.dumps(quant_config))

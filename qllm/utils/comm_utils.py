@@ -39,7 +39,7 @@ def retrieve_onnx_inputs(model, sample_inputs):
     hook_handle.remove()
     user_inputs = user_inputs[0]
     onnx_inputs = default_values
-    for idx, val in enumerate(user_inputs[0]):
+    for idx, _ in enumerate(user_inputs[0]):
         onnx_inputs[idx] = user_inputs[0][idx]
     for key, value in user_inputs[1].items():
         idx = input_keys.index(key)

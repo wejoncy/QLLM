@@ -1,7 +1,5 @@
-import numpy as np
 import torch
 import torch.nn as nn
-import math
 from ..utils.comm_utils import clear_memory
 from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name, ScaledLinear
 from .sequential_layes_awq_config import auto_detect_scaling,auto_detect_sequential_layers

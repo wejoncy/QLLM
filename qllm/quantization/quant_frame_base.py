@@ -37,7 +37,7 @@ class QuantFrameBase:
 
         state_dict_prefix = None
         prefix_list = [] #encoder/decoder
-        for name in model.state_dict().keys():
+        for name in model.state_dict():
             if '.0.' not in name:
                 continue
             state_dict_prefix = name.split('.0.')[0]
@@ -58,7 +58,7 @@ class QuantFrameBase:
         pre_layers_of_attention = []  # enmbedding layer, norm layer
         # find the attention layers, and the pre layers of attention layers
         transformer_model = get_op_by_name(model, '.'.join(model_prefix.split('.')[:-1]))
-        for name, layer in transformer_model.named_children():
+        for _, layer in transformer_model.named_children():
             if type(layer) in [torch.nn.ModuleList]:
                 attention_layers = layer
                 break
@@ -103,8 +103,8 @@ class QuantFrameBase:
         return inps, outs, attention_layers, layer_input_args
 
     def hook_before_qlayer(self, layer_id, args):
-        if str(layer_id+1) in args.mix_qlayer_conf:
-            layer_key = str(layer_id+1)
+        if str(layer_id + 1) in args.mix_qlayer_conf:
+            layer_key = str(layer_id + 1)
             args.wbits = args.mix_qlayer_conf[layer_key].get('wbits', args.wbits)
             args.groupsize = args.mix_qlayer_conf[layer_key].get('groupsize', args.groupsize)
 
