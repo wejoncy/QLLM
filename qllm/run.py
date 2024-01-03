@@ -32,6 +32,8 @@ A typical usage is:
     parser.add_argument('--wbits', type=int, default=4,
                         choices=[2, 3, 4, 5, 6, 7, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
+    parser.add_argument('--mix_qlayer_conf', type=str, default=None,
+                        help='Mix quantization layer configuration.(groupsize,wbits)')
     parser.add_argument('--groupsize', type=int, default=128,
                         help='Groupsize to use for quantization; -1 uses full row.')
     parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
