@@ -115,13 +115,13 @@ class AutoModelQuantization(object):
             model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
+        if self.tokenizer:
+            sample_inputs = self.tokenizer("Hello world", return_tensors="pt")
+            sample_inputs = (sample_inputs.input_ids, sample_inputs.attention_mask)
         onnx_model_path = exporter.export_onnx(model, onnx_path_str, sample_inputs, with_past, opset)
         self.tokenizer is not None and self.tokenizer.save_pretrained(onnx_path_str)
 
         #verify correctness
-        if self.tokenizer:
-            sample_inputs = self.tokenizer("Hello world", return_tensors="pt")
-            sample_inputs = (sample_inputs.input_ids, sample_inputs.attention_mask)
         exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
         
 
