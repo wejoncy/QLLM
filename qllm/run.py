@@ -19,7 +19,7 @@ A typical usage is:
                                      formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('--method', type=str, default="gptq",
-                        choices=["gptq", "awq"], help='the quantization method')
+                        choices=["gptq", "awq", "hqq"], help='the quantization method')
     parser.add_argument('--model', type=str, default="",
                         help='float/float16 model to load, such as [mosaicml/mpt-7b]')
     parser.add_argument('--tokenizer', type=str, default="", help='default same as [model]')

@@ -10,31 +10,30 @@
         <img alt="GitHub - Releases" src="https://img.shields.io/github/v/release/wejoncy/QLLM.svg">
     </a>
     <a href="https://pypi.org/project/qllm/">
-        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/qllm/week">
+        <img alt="PyPI - Downloads" src="https://static.pepy.tech/badge/qllm/month">
     </a>
 </p>
 
 <font size=5>
-<center>Supports any LLMs in HuggingFace/Transformers, mixed bits(2-8bit), GPTQ/AWQ, ONNX export</center>
+<center>Supports any LLMs in HuggingFace/Transformers, mixed bits(2-8bit), GPTQ/AWQ/HQQ, ONNX export</center>
 </font>
 <br><br>
 QLLM is a out-of-box quantization toolbox for large language models, It didn't limit to a specific model, and designed to be auto-quantization layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
-Besides, model quantized by different quantization method (GPTQ/AWQ) can be loaded from huggingface/transformers and transfor to each other without extra effort. 
+Besides, model quantized by different quantization method (GPTQ/AWQ/HQQ) can be loaded from huggingface/transformers and transfor to each other without extra effort. 
 
 We alread supported 
 - [x] GPTQ quantization 
 - [x] AWQ quantization
+- [x] HQQ quantization
 
 
 Features:
 - [x] GPTQ supports all LLM models in huggingface/transformers, it will automatically detect the model type and quantize it.
-- [x] for GPTQ, we support to quantize model by 2-8 bits, and support to quantize model with different quantization bits for different layers.
-- [x] for AWQ, we support only those models in llm-awq/auto-awq for now.
-- [x] we support to load  model which quantized by AutoGPTQ and AutoAWQ.
-- [x] we only support **Nvidia-GPU** platform for now,
-- [ ] we will consider support **AMD-GPU**.
+- [x] We support to quantize model by 2-8 bits, and support to quantize model with different quantization bits for different layers.
+- [x] Auto promoting bits/group-size for better accuracy
 
 *Latest News* 🔥
+- [2024/01] Support [HQQ](https://github.com/mobiusml/hqq) algorithm
 - [2023/12] The first PyPi package released 
 
 ## Installation
@@ -51,26 +50,19 @@ If you are using CUDA-121
 ```
 pip install git+https://github.com/wejoncy/QLLM.git
 ```
-OR CUDA-118
+OR CUDA-118/117
 ```
 git clone https://github.com/wejoncy/QLLM.git
 cd QLLM
 python setup.py install
 ```
-## Dependencies
-
-* `torch`: >=v2.0.0 and cu118
-* `transformers`: tested on v4.28.0.dev0
-* `onnxruntime`: tested on v1.16.3
-* `onnx`
-
 
 # How to use it
 
 ## Quantize llama2
 ```bash
-#  Quantize and Save compressed model
-python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit
+#  Quantize and Save compressed model, method can be one of [gptq/awq/hqq]
+python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --nsamples=64 --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
 ```
 
 ## (NEW) Quantize model with mix bits/groupsize for higher precision (PPL)
@@ -186,3 +178,5 @@ windows cmd
 [llm-awq](https://github.com/mit-han-lab/llm-awq)
 
 [AutoAWQ](https://github.com/casper-hansen/AutoAWQ).
+
+[HQQ](https://github.com/mobiusml/hqq)

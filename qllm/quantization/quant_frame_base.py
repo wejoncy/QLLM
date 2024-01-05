@@ -98,7 +98,8 @@ class QuantFrameBase:
             layer = layer.cpu()
         comm_utils.clear_memory()
 
-        inps = torch.cat(inps, dim=0)
+        # allow dataloader is None
+        inps = torch.cat(inps, dim=0) if inps else torch.tensor([])
         outs = torch.zeros_like(inps)
         return inps, outs, attention_layers, layer_input_args
 
