@@ -1,18 +1,7 @@
 import torch
 import torch.nn as nn
 from .compress_weight import CompressWeight
-import importlib
-
-
-def has_awq_inference_engine():
-    return (importlib.util.find_spec("awq_inference_engine") is not None and
-            torch.cuda.get_device_properties(0).major * 10+ torch.cuda.get_device_properties(0).minor>=75)
-
-
-def is_the_machine_support_awq_engine(nbits):
-    return has_awq_inference_engine() and nbits == 4
-
-
+from .ext_package_checker import has_awq_inference_engine, is_the_machine_support_awq_engine
 if not has_awq_inference_engine():
     print("awq_inference_engine not found, will skip it.")
 else:

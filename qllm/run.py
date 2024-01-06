@@ -5,7 +5,7 @@ from .auto_model_quantization import AutoModelQuantization
 
 def define_basic_args():
     parser = argparse.ArgumentParser(description="""
-A general tool to quantize LLMs with the GPTQ/AWQ method.
+A general tool to quantize LLMs with the GPTQ/AWQ/HQQ method.
 you can easily quantize your model and save to checkpoint, which is compatiable with \
 [vLLM](https://github.com/vllm-project/vllm).
 You can also test the quantized model with a conversation plugin.
@@ -15,7 +15,7 @@ A typical usage is:
 --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
 --export_onnx ./onnx_models/
 
-    method can be 'awq' or 'gptq'""",
+    method can be 'awq' or 'gptq', 'hqq' """,
                                      formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('--method', type=str, default="gptq",
@@ -53,7 +53,7 @@ When this feature enabled, `--save` or `--save_safetensors` would be disable.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--use_plugin', action='store_true', help='test with plugin, such as fastchat conversation')
     parser.add_argument('--pack_mode', type=str, default='AUTO',
-                        choices=["AUTO", "GEMM", "GPTQ", "ORT"], help="""the quantization pack mode, 
+                        choices=["AUTO", "GEMM", "GPTQ", "ORT", "HQQ"], help="""the quantization pack mode, 
 `GEMM` represents to use AWQ GEMM engine, same as what AutoAWQ used, 
 `AUTO` represents that it is selected by the GPU arch, as awq GEMM needs SM75+ 
 `GPTQ` represent using old GPTQ style DQ+GEMM, it is not fused but more general than AWQ-GEMM, 

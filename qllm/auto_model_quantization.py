@@ -85,6 +85,8 @@ class AutoModelQuantization(object):
             qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
         model.quant_config["version"] = qlayers[name].pack_mode
+        if os.getenv('COMPATIBLE_WITH_AUTOGPTQ', None) == "1" and args.pack_mode == "GPTQ":
+            model.quant_config["COMPATIBLE_WITH_AUTOGPTQ"] = 1
         model.quant_config_by_layer = quant_config_by_layer
 
         return model

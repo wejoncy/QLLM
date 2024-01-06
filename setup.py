@@ -127,8 +127,8 @@ def get_generator_flag():
 extensions = []
 
 def build_cuda_extensions():
-    if CUDA_HOME is None:
-        print("No cuda environment is detected, we are ignoring all cuda related extensions")
+    if CUDA_HOME is None or os.getenv("EXCLUDE_EXTENTION_FOR_FAST_BUILD"):
+        print("we are ignoring all cuda related extensions")
         return []
     else:
         print(f"detect cuda home: {CUDA_HOME}")

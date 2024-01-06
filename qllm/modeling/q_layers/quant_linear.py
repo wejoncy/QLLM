@@ -4,10 +4,13 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-import ort_ops
-
+from .ext_package_checker import has_ort_ops
 from .compress_weight import (CompressWeight, general_pack_on_row,
-                              general_unpack_on_row)      
+                              general_unpack_on_row)     
+if has_ort_ops():
+    import ort_ops
+
+ 
 
 
 class DequantAndUnpack(torch.autograd.Function):
@@ -81,9 +84,10 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         COMPATIBLE_WITH_AUTOGPTQ = int(os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
         if (not torch.onnx.is_in_onnx_export()
             and inputs.numel()//inputs.shape[-1] <= 8
-            and bits == 4):
+            and bits == 4
+            and has_ort_ops()):
             return ort_ops.gemv(inputs, qweight, scales, qzeros, g_idx, groupsize, bits, in_features, COMPATIBLE_WITH_AUTOGPTQ)
-        if qweight.is_cuda:
+        if qweight.is_cuda and has_ort_ops():
             weight = ort_ops.dequant(qweight, scales, qzeros, g_idx, groupsize, bits, in_features, COMPATIBLE_WITH_AUTOGPTQ)
         else:
             weight = DequantAndUnpack.apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx)
