@@ -46,6 +46,9 @@ Install from release package, CUDA-118/121 is supported.
 [py38, py39, py310] https://github.com/wejoncy/QLLM/releases
 
 Build from Source
+
+**Please set ENV EXCLUDE_EXTENTION_FOR_FAST_BUILD=1 for fast build**
+
 If you are using CUDA-121
 ```
 pip install git+https://github.com/wejoncy/QLLM.git

@@ -76,8 +76,10 @@ class BaseQuantizeConfig:
         args.groupsize = quant_config.get("q_group_size", quant_config.get("group_size", None))
         assert args.wbits is not None and args.groupsize is not None
 
+        if quant_config.get('COMPATIBLE_WITH_AUTOGPTQ', None):
+            self.COMPATIBLE_WITH_AUTOGPTQ = True
         if "version" not in quant_config:
-            self.method = "GPTQ"
+            self.method = "gptq"
             quant_config["version"] = "GPTQ"
             self.COMPATIBLE_WITH_AUTOGPTQ = True
             import os
