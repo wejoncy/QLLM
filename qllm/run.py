@@ -29,6 +29,10 @@ A typical usage is:
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration data samples.')
     parser.add_argument('--percdamp', type=float, default=.01,
                         help='Percent of the average Hessian diagonal to use for dampening.')
+    parser.add_argument(
+            '--static-groups', action='store_true',
+            help='(gptq only.) Whether to use static groups; recommended when using `--actorder` for more efficient inference.'
+        )
     parser.add_argument('--wbits', type=int, default=4,
                         choices=[2, 3, 4, 5, 6, 7, 8, 16], help='#bits to use for quantization; use 16 for evaluating base model.')
     parser.add_argument('--trits', action='store_true', help='Whether to use trits for quantization.')
