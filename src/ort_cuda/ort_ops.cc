@@ -42,7 +42,7 @@ torch::Tensor dequant_any_bit(const torch::Tensor &qweight,
                   qweight.device().index() == qzeros.device().index(),
               "input and weight/qzeros must be on the same device");
 
-  cudaSetDevice(qweight.device().index());
+  at::cuda::CUDADeviceGuard guard(qweight.device());
   auto f16_scale = scales;
   auto ori_dtype = scales.scalar_type();
   if (ori_dtype == torch::kBFloat16) {
@@ -72,7 +72,7 @@ torch::Tensor op_gemv(const torch::Tensor &input_a,
   TORCH_CHECK(bits >= 1 && bits <= 8, "bits must be >= 1 and <= 8");
   TORCH_CHECK((in_features * bits + 31) / 32 == qweight.size(0), "in_features must be >= 1");
   TORCH_CHECK(qweight.device().index() == input_a.device().index(), "input and weight must be on the same device");
-  cudaSetDevice(qweight.device().index());
+  at::cuda::CUDADeviceGuard guard(qweight.device());
   std::vector<int64_t> outputshape ={input_a.size(0), qweight.size(1)};
   uint32_t mat_m = input_a.size(0);
   if (input_a.dim() > 2) {
@@ -125,6 +125,7 @@ torch::Tensor Dequantize4Bits(torch::Tensor &qweight, torch::Tensor &qzeros,
   TORCH_CHECK(qweight.device().type() == torch::kCUDA, "qweight must be a CUDA tensor");
   TORCH_CHECK(qzeros.device().type() == torch::kCUDA, "qzeros must be a CUDA tensor");
   TORCH_CHECK(scales.device().type() == torch::kCUDA, "scales must be a CUDA tensor");
+  at::cuda::CUDADeviceGuard guard(qweight.device());
 
   torch::Tensor out = torch::empty({out_features, in_features}, scales.options());
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
