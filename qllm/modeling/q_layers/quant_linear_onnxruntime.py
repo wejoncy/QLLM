@@ -8,6 +8,8 @@ from .ext_package_checker import has_ort_ops
 
 if has_ort_ops():
     import ort_ops
+else:
+    print("ort_ops is not installed. Will fallback to Torch Backend")
 
 DEBUG_ = False
 class QuantLinearTorchFunction(torch.autograd.Function):
