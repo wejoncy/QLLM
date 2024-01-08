@@ -183,6 +183,4 @@ Please run with `-h` to refer the usage.")
             if args.wbits < 16 and not is_the_machine_support_awq_engine(args.wbits) and model.quant_config["version"] == "GEMM":
                 logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
                 model = self.repack_to_new_mode(model, args, "GPTQ")
-            if not has_ort_ops() or args.method == "hqq":
-                model = torch.compile(model)
             loop_in_chat_completion(self.tokenizer, model)
