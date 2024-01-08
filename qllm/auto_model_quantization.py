@@ -180,7 +180,7 @@ Please run with `-h` to refer the usage.")
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
             from .modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine, has_ort_ops
-            if args.wbits < 16 and not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
+            if args.wbits < 16 and not is_the_machine_support_awq_engine(args.wbits) and model.quant_config["version"] == "GEMM":
                 logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
                 model = self.repack_to_new_mode(model, args, "GPTQ")
             if not has_ort_ops() or args.method == "hqq":
