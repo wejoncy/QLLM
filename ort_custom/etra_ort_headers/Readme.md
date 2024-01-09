@@ -1,1 +1,0 @@
-Once those files are released in the onnxruntime package, we can remove them from here.
