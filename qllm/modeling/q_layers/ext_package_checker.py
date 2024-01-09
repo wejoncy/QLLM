@@ -11,9 +11,10 @@ def has_package(package_name):
         pass
     return False
 
+
 def has_awq_inference_engine():
-    return (torch.cuda.get_device_properties(0).major * 10 + torch.cuda.get_device_properties(0).minor>=75
-    and has_package("awq_inference_engine"))
+    return (torch.cuda.get_device_properties(0).major * 10 + torch.cuda.get_device_properties(0).minor >= 75
+            and has_package("awq_inference_engine"))
 
 
 def is_the_machine_support_awq_engine(nbits):

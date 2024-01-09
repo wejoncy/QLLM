@@ -49,8 +49,8 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
 
         self.g_idx = torch.tensor([i // group_size for i in range(in_features)], dtype=torch.int32)
         dev = torch.device('cpu')
-        self.register_buffer('qweight', torch.zeros((in_features, out_features //
-                             (32 // self.w_bit)), dtype=torch.int32, device=dev))
+        self.register_buffer('qweight', torch.zeros((in_features, out_features
+                             // (32 // self.w_bit)), dtype=torch.int32, device=dev))
         self.register_buffer('qzeros', torch.zeros((in_features // self.group_size,
                              out_features // (32 // self.w_bit)), dtype=torch.int32, device=dev))
         self.register_buffer('scales', torch.zeros(
@@ -70,14 +70,14 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         order_tensor = torch.tensor(
             order_map, dtype=torch.int32, device=int_tensor.device).reshape(1, -1)
         order_tensor = order_tensor.repeat(
-            int_tensor.shape[1]//compress_ratio, 1)
+            int_tensor.shape[1] // compress_ratio, 1)
         order_tensor = order_tensor + torch.arange(0, int_tensor.shape[1],
                                                    compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
         order_tensor = order_tensor.reshape(-1)
         int_tensor = int_tensor[:, order_tensor]
         int_tensor = int_tensor.T.contiguous()
         return int_tensor
-        
+
     def reverse_reorder_int_tensor(self, int_tensor):
         int_tensor = int_tensor.T.contiguous()
         compress_ratio = (32 // self.bits)
@@ -89,7 +89,7 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         order_tensor = torch.tensor(
             order_map, dtype=torch.int32, device=int_tensor.device).reshape(1, -1)
         order_tensor = order_tensor.repeat(
-            int_tensor.shape[1]//compress_ratio, 1)
+            int_tensor.shape[1] // compress_ratio, 1)
         order_tensor = order_tensor + torch.arange(0, int_tensor.shape[1],
                                                    compress_ratio, dtype=torch.int32, device=int_tensor.device).reshape(-1, 1)
         order_tensor = order_tensor.reshape(-1)
@@ -142,6 +142,7 @@ class WQLinear_GEMV(nn.Module):
         else:
             self.bias = None
 
+    # noqa : C901
     def accelerate_pack_on_device(cls, linear, w_bit, group_size, init_only=False, scales=None, zeros=None):
         awq_linear = cls(w_bit, group_size, linear.in_features, linear.out_features,
                          linear.bias is not None, linear.weight.device)
@@ -169,8 +170,8 @@ class WQLinear_GEMV(nn.Module):
                 (linear.weight.data[:, idx] + scale_zeros[:, idx // group_size]) / awq_linear.scales[:, idx // group_size]).to(torch.int)[:, None])
         intweight = torch.cat(intweight, dim=1)
         intweight = intweight.to(dtype=torch.int32)
-        qweight = torch.zeros((intweight.shape[0], intweight.shape[1] // 32 *
-                              awq_linear.w_bit), dtype=torch.int32, device=intweight.device)
+        qweight = torch.zeros((intweight.shape[0], intweight.shape[1] // 32
+                              * awq_linear.w_bit), dtype=torch.int32, device=intweight.device)
 
         for col in range(intweight.shape[1] // pack_num):
             if awq_linear.w_bit == 4:

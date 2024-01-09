@@ -2,8 +2,10 @@ import torch
 import math
 import os
 
-def lcm(a:int, b:int): 
-    return int(a*b/math.gcd(a, b))
+
+def lcm(a: int, b: int):
+    return int(a * b / math.gcd(a, b))
+
 
 def pack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
     if pack_tensor.shape[0] == ori_int_tensor.shape[0]:
@@ -20,32 +22,34 @@ def pack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
             break
         else:
             raise NotImplementedError("Only 2,4,8 bits are supported.")
-        
+
+
 def pack_on_row_fast_anybit(pack_tensor, ori_int_tensor, bits):
     need_transpose = False
     if pack_tensor.shape[0] != ori_int_tensor.shape[0]:
         need_transpose = True
         ori_int_tensor = ori_int_tensor.T
     pack_tensor.mul_(0)
-    wf = torch.arange(0, bits).to(pack_tensor.device).view(1,1, -1)
+    wf = torch.arange(0, bits).to(pack_tensor.device).view(1, 1, -1)
     out = torch.bitwise_right_shift(ori_int_tensor.unsqueeze(-1), wf)
     torch.bitwise_and(out, 1, out=out)
     out = out.reshape(ori_int_tensor.shape[0], -1, 32)
     wf1 = torch.arange(0, 32, 1).to(pack_tensor.device).view(1, 1, -1)
-    out = torch.bitwise_left_shift(out,wf1)
+    out = torch.bitwise_left_shift(out, wf1)
     out = out.sum(dim=-1).int()
 
     if need_transpose:
         out = out.T.contiguous()
     pack_tensor.copy_(out)
 
-        
+
 def general_pack_on_row(pack_tensor, ori_int32_tensor, bits):
     assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[1], ''
     pack_tensor.mul_(0)
     if bits in [2, 4, 8]:
         return pack_on_row_fast_248bit(pack_tensor, ori_int32_tensor, bits)
     return pack_on_row_fast_anybit(pack_tensor, ori_int32_tensor, bits)
+
 
 def unpack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
     need_transpose = False
@@ -61,7 +65,7 @@ def unpack_on_row_fast_248bit(pack_tensor, ori_int_tensor, bits):
 
     ori_int_tensor.copy_(out)
 
-#@torch.jit.script
+
 def unpack_on_row_fast_any_bit(pack_tensor: torch.Tensor, ori_int_tensor: torch.Tensor, bits: int):
     need_transpose = False
     if pack_tensor.shape[0] != ori_int_tensor.shape[0]:
@@ -79,8 +83,8 @@ def unpack_on_row_fast_any_bit(pack_tensor: torch.Tensor, ori_int_tensor: torch.
         out = out.T.contiguous()
     ori_int_tensor.copy_(out)
 
-#@torch.jit.script
-def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits:int):
+
+def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits: int):
     assert pack_tensor.shape[0] == ori_int32_tensor.shape[0] or pack_tensor.shape[1] == ori_int32_tensor.shape[1], ''
     ori_int32_tensor.mul_(0)
     if bits in [2, 4, 8]:
@@ -130,7 +134,7 @@ class CompressWeight(object):
 
         scale_mat = scales[g_idx]
         scale_zeros_mat = scale_zeros[g_idx].half()
-        qdq_weight_T = intweight.T*scale_mat-scale_zeros_mat.half()
+        qdq_weight_T = intweight.T * scale_mat - scale_zeros_mat.half()
 
         # when shouldn't use scale_zeros_mat
         # zeros=zeros.to(device)
@@ -157,7 +161,7 @@ class CompressWeight(object):
             weight_dim0 = self.outfeatures
         scales = self.scales
         scales = scales.reshape(-1, 1, scales.shape[-1])
-        
+
         weight = torch.zeros((weight_dim0, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
         zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
         general_unpack_on_row(qweight, weight, self.bits)
@@ -173,7 +177,6 @@ class CompressWeight(object):
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
         return fp16_weight, self.scales, zeros.cpu()
-
 
     def reorder_int_tensor(self, int_tensor):
         return int_tensor
@@ -201,7 +204,7 @@ class CompressWeight(object):
     def pack_on_device_for_odd_bits(self, intweight_gpu, intzeros):
         device = intweight_gpu.device
         qweight_gpu = torch.zeros(
-            ((intweight_gpu.shape[0] * self.bits+31) // 32, intweight_gpu.shape[1]), dtype=torch.int32, device=device)
+            ((intweight_gpu.shape[0] * self.bits + 31) // 32, intweight_gpu.shape[1]), dtype=torch.int32, device=device)
 
         general_pack_on_row(qweight_gpu, intweight_gpu, self.bits)
         self.qweight = qweight_gpu.cpu()
@@ -220,8 +223,8 @@ class CompressWeight(object):
         zeros_cuda = (intzeros - COMPATIBLE_WITH_AUTOGPTQ)
         max_num_in_bits = 2**self.bits - 1
         zeros_cuda = (zeros_cuda.byte() & max_num_in_bits).int()
-        qzeros_cuda = torch.zeros((intzeros.shape[0], intzeros.shape[1] //
-                                  32 * self.bits), dtype=torch.int32, device=device)
+        qzeros_cuda = torch.zeros((intzeros.shape[0], intzeros.shape[1]
+                                  // 32 * self.bits), dtype=torch.int32, device=device)
         qzeros_cuda = qzeros_cuda.T.contiguous()
         zeros_cuda = zeros_cuda.T.contiguous()
         pack_on_row_fast_248bit(qzeros_cuda, zeros_cuda, self.bits)
@@ -234,12 +237,10 @@ class CompressWeight(object):
         if "GEMM" in self._get_name():
             qzeros = qzeros.T.contiguous()
         assert intweight_gpu.shape[0] // 32 * self.bits == int(round(intweight_gpu.shape[0] * self.bits / 32 + 0.5))
-        import time
-        s = time.time()
+
         qweight_gpu = torch.zeros(
             (intweight_gpu.shape[0] // 32 * self.bits, intweight_gpu.shape[1]), dtype=torch.int32, device=device)
 
-        
         pack_on_row_fast_248bit(qweight_gpu, intweight_gpu, self.bits)
         if "GEMM" in self._get_name():
             qweight_gpu = qweight_gpu.T.contiguous()
