@@ -2,8 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
-from .compress_weight import (CompressWeight, general_pack_on_row,
-                              general_unpack_on_row)      
+from .compress_weight import (CompressWeight, general_unpack_on_row)      
 
 
 class DequantAndUnpack(torch.autograd.Function):

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from .compress_weight import CompressWeight
-from .ext_package_checker import has_awq_inference_engine, is_the_machine_support_awq_engine
+from .ext_package_checker import has_awq_inference_engine
 if not has_awq_inference_engine():
     print("awq_inference_engine not found, will skip it.")
 else:

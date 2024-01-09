@@ -105,10 +105,7 @@ class AWQQuant(QuantFrameBase):
     def do_quantize(self, model, dataloader, model_prefix, dev):
         args = self.args
         inps, outs, attention_layers, layer_kwargs = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
-        if USE_ACCUMULATE_BATCH == -1:
-            run_batch = len(dataloader)
-        else:
-            run_batch = USE_ACCUMULATE_BATCH
+        run_batch = len(dataloader) if USE_ACCUMULATE_BATCH == -1 else USE_ACCUMULATE_BATCH
         if layer_kwargs.get('attention_mask', None) is not None:
             layer_kwargs['attention_mask'] = layer_kwargs['attention_mask'].expand(run_batch, -1, -1, -1)        
         print('Ready.')

@@ -42,7 +42,7 @@ class BaseQuantizeConfig:
                     user_agent=user_agent,
                 )
                 resolved_config_file = Path(resolved_config_file)
-            except :
+            except:  # noqa : E722
                 resolved_config_file = None
         return resolved_config_file
         

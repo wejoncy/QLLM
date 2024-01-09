@@ -90,7 +90,7 @@ class InternalGPTQQuantizer(nn.Module):
                     self.scale[tmp] = scale1[tmp]
                     self.zero[tmp] = zero1[tmp]
         if not self.perchannel:
-            if weight:
+            if weight:  # noqa:SIM108
                 tmp = shape[0]
             else:
                 tmp = shape[1] if len(shape) != 3 else shape[2]

@@ -155,7 +155,7 @@ def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):
     from transformers import AutoTokenizer
     try:
         tokenizer = AutoTokenizer.from_pretrained(model, use_fast=False)
-    except:
+    except: # noqa: E722
         tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True)
 
     if 'wikitext2' in name:

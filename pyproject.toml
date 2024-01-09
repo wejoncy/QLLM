@@ -19,6 +19,13 @@ ignore_patterns = [
 [tool.ruff]
 line-length = 120
 src = ["qllm"]
+exclude = ["qllm/utils/onnx/merge_encoder_decoder.py",
+"qllm/plugin",
+"qllm/modeling/q_layers/fused_mlp.py",
+"qllm/modeling/q_layers/fused_attn.py",
+"qllm/modeling/q_layers/quant_linear_triton.py",
+"qllm/custom",
+]
 
 [tool.ruff.lint]
 ignore = ["E501", "E701", "E731", "E741",]

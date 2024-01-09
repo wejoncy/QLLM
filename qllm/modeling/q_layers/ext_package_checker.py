@@ -7,7 +7,7 @@ def has_package(package_name):
         if importlib.util.find_spec(package_name) is not None:
             importlib.import_module(package_name)
             return True
-    except:
+    except:  # noqa: E722
         pass
     return False
 

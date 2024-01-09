@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from ..utils.comm_utils import clear_memory
-from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name, ScaledLinear
-from .sequential_layes_awq_config import auto_detect_scaling,auto_detect_sequential_layers
+from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name
+from .sequential_layes_awq_config import auto_detect_sequential_layers
 USE_ACCUMULATE_BATCH = -1
 
 
@@ -79,7 +79,7 @@ def scale_fc_fc(fc1, fc2, scales):
 @torch.no_grad()
 def scale_gelu_fc(gelu, fc, scales):
     from transformers.models.bloom.modeling_bloom import BloomGelu
-    assert isinstance(gelu, nn.GELU) or isinstance(gelu, BloomGelu)
+    assert isinstance(gelu, [nn.GELU, BloomGelu])
     assert isinstance(fc, nn.Linear)
 
     fc.weight.mul_(scales.view(1, -1).to(fc.weight.device))
@@ -190,7 +190,6 @@ def auto_clip_layer(w, input_feat, n_bit, q_config,
                     max_shrink=0.5,
                     n_sample_token=512):
     assert w.dim() == 2
-    org_w_shape = w.shape
     # w           [co, ci]      -> [co, 1, n_group, group size]
     # input_feat  [n_token, ci] -> [1, n_token, n_group, group size]
     group_size = q_config["q_group_size"] if q_config["q_group_size"] > 0 else w.shape[1]
@@ -295,7 +294,7 @@ class InternalAWQuantizer(nn.Module):
             module_kwargs.pop("use_cache")
 
         # find the best scale ratio
-        def _search_module_scale(block, linears2scale: list, x, kwargs={}):
+        def _search_module_scale(block, linears2scale: list, x, kwargs={}):  # noqa: B006
             # w: co, ci
             # x: n, ci
             weight = torch.cat([_m.weight for _m in linears2scale], dim=0)
@@ -367,7 +366,7 @@ class InternalAWQuantizer(nn.Module):
             assert torch.isnan(best_scales).sum() == 0, best_scales
             return best_scales.detach()
 
-        def _auto_get_scale(prev_op, layers, inp, module2inspect=None, kwargs={}):
+        def _auto_get_scale(prev_op, layers, inp, module2inspect=None, kwargs={}):  # noqa: B006
             # module2inspect: if given, we will check the output diff of this module instead of layers
             if module2inspect is None:
                 assert len(layers) == 1

@@ -261,7 +261,7 @@ try:
         c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bk[None, :]
         c_mask = (offs_am[:, None] < M) & (offs_bk[None, :] < K)
         tl.store(c_ptrs, accumulator, mask=c_mask)
-except Exception as e:
+except Exception:
     print('triton not installed.')
 
 

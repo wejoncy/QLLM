@@ -26,7 +26,8 @@ class InternalHQQQuantizer(nn.Module):
     # Proximal solver || W - dequantize(quantize(W))||_p^p
 
     @torch.inference_mode()
-    def optimize_weights_proximal(self, tensor, scale, zero, min_max, axis=0, device='cuda', opt_params={'lp_norm': 0.7, 'beta': 1e1, 'kappa': 1.01, 'iters': 20}, verbose=False):
+    def optimize_weights_proximal(self, tensor, scale, zero, min_max, axis=0, device='cuda', 
+                                  opt_params={'lp_norm': 0.7, 'beta': 1e1, 'kappa': 1.01, 'iters': 20}, verbose=False):  # noqa:B006
         lp_norm, beta, kappa, iters = opt_params['lp_norm'], opt_params['beta'], opt_params['kappa'], opt_params['iters']
 
         dtype = torch.float16 if (device == 'cuda') else torch.float32
@@ -83,7 +84,7 @@ class InternalHQQQuantizer(nn.Module):
             W = W.reshape([-1, group_size]) if (axis == 1) else W.reshape([group_size, -1])
 
         # Get min/max values
-        if (channel_wise == False):
+        if (channel_wise is False):
             _min, _max = W.min(), W.max()
             optimize = False
         else:

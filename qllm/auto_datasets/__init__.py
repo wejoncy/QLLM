@@ -9,7 +9,7 @@ import os
 def cur_user():
     try:
         return os.getlogin()
-    except:
+    except:  # noqa: E722
         return "root"  # in docker
 
 
