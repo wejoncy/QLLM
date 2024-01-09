@@ -152,10 +152,8 @@ class AutoModelQuantization(object):
             raise ValueError("either --model or --load must be specified. \
 Please run with `-h` to refer the usage.")
 
-        if args.export_onnx or (not args.load and args.wbits < 16):
-            inputs_dataloader = self.get_datasets(args)
-
         if not args.load and args.wbits < 16:
+            inputs_dataloader = self.get_datasets(args)
             if args.mix_qlayer_conf:
                 with open(args.mix_qlayer_conf) as fp:
                     args.mix_qlayer_conf = json.load(fp)
@@ -175,6 +173,8 @@ Please run with `-h` to refer the usage.")
             self.eval_model(model, DEV, args)
 
         if args.export_onnx:
+            if self.tokenizer is None:
+                inputs_dataloader = self.get_datasets(args)
             self.export_onnx(model, args.export_onnx, inputs_dataloader[0], True, args=args)
 
         if args.use_plugin:

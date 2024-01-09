@@ -251,7 +251,7 @@ class CompressWeight(object):
             qweight_gpu = qweight_gpu.T.contiguous()
         self.qweight = qweight_gpu.cpu()
 
-        assert qzeros.shape[1] // 32 * self.bits == int(round(qzeros.shape[1] * self.bits / 32 + 0.5))
+        assert max(1, qzeros.shape[1] // 32 * self.bits) == int(round(qzeros.shape[1] * self.bits / 32 + 0.5))
         self.pack_qzeros_even(qzeros, device)
 
         if self.orig_fp_weight != None:
