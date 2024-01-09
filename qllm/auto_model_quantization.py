@@ -175,6 +175,8 @@ Please run with `-h` to refer the usage.")
         if args.export_onnx:
             if self.tokenizer is None:
                 inputs_dataloader = self.get_datasets(args)
+            else:
+                inputs_dataloader = [None]
             self.export_onnx(model, args.export_onnx, inputs_dataloader[0], True, args=args)
 
         if args.use_plugin:
