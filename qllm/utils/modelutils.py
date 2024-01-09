@@ -45,7 +45,8 @@ def gen_conditions(_wbits, _groupsize):
 
 def select_quant_linear(pack_mode: str, wbits:int, method:str):
     from ..modeling.q_layers import QuantLinear
-    from ..modeling.q_layers.quant_linear_awq import WQLinear_GEMM, is_the_machine_support_awq_engine
+    from ..modeling.q_layers.quant_linear_awq import WQLinear_GEMM
+    from ..modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
     from ..modeling.q_layers.quant_linear_onnxruntime import QuantLinearORT
     from ..modeling.q_layers.quant_linear_hqq import QuantLinearHQQ
 
