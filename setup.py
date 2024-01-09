@@ -169,7 +169,7 @@ def build_cuda_extensions():
         extra_compile_args_awq = get_extra_compile_args(arch_flags)
         extensions.append(
             CUDAExtension(
-                "awq_inference_engine",
+                "qllm.awq_inference_engine",
                 [
                     "src/awq_cuda/pybind_awq.cpp",
                     "src/awq_cuda/quantization/gemm_cuda_gen.cu",
@@ -181,7 +181,7 @@ def build_cuda_extensions():
         )
 
     extra_compile_args_ort = get_extra_compile_args()
-    extensions.append(CUDAExtension("ort_ops", [
+    extensions.append(CUDAExtension("qllm.ort_ops", [
         "src/ort_cuda/ort_ops.cc",
         "src/ort_cuda/dq.cu",
         "src/ort_cuda/dq_gemv.cu",

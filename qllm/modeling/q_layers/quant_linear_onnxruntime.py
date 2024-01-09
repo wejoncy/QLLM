@@ -7,7 +7,7 @@ from .compress_weight import CompressWeight
 from .ext_package_checker import has_ort_ops
 
 if has_ort_ops():
-    import ort_ops
+    from qllm import ort_ops
 else:
     print("ort_ops is not installed. Will fallback to Torch Backend")
 
