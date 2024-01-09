@@ -5,7 +5,7 @@ from .ext_package_checker import has_awq_inference_engine
 if not has_awq_inference_engine():
     print("awq_inference_engine not found, will skip it.")
 else:
-    import awq_inference_engine
+    from qllm import awq_inference_engine
 
 
 def make_divisible(c, divisor):

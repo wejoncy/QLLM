@@ -7,7 +7,7 @@ from .ext_package_checker import has_ort_ops
 from .compress_weight import (CompressWeight, general_pack_on_row,
                               general_unpack_on_row)
 if has_ort_ops():
-    import ort_ops
+    from qllm import ort_ops
 
 
 class DequantAndUnpack(torch.autograd.Function):
