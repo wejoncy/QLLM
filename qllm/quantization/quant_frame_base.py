@@ -88,7 +88,7 @@ class QuantFrameBase:
         attention_layers[0] = attention_layers[0].to(dev)
         attention_layers[0] = Catcher(attention_layers[0])
         for batch in dataloader:
-            try:
+            try:  # noqa:SIM105
                 model(batch[0].to(dev))
             except ValueError:
                 pass

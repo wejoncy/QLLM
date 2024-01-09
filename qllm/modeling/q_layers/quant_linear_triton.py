@@ -80,7 +80,7 @@ try:
         C is of shape (M, N) float16
         scales is of shape (G, N) float16
         zeros is of shape (G, N) float16
-        g_ptr is of shape (K) int32 
+        g_ptr is of shape (K) int32
         """
         infearure_per_bits = 32 // bits
 
@@ -101,8 +101,8 @@ try:
         a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)  # (BLOCK_SIZE_M, BLOCK_SIZE_K)
         a_mask = (offs_am[:, None] < M)
         # b_ptrs is set up such that it repeats elements along the K axis 8 times
-        b_ptrs = b_ptr + ((offs_k[:, None] // infearure_per_bits) * stride_bk +
-                          offs_bn[None, :] * stride_bn)  # (BLOCK_SIZE_K, BLOCK_SIZE_N)
+        b_ptrs = b_ptr + ((offs_k[:, None] // infearure_per_bits) * stride_bk
+                          + offs_bn[None, :] * stride_bn)  # (BLOCK_SIZE_K, BLOCK_SIZE_N)
         g_ptrs = g_ptr + offs_k
         # shifter is used to extract the N bits of each element in the 32-bit word from B
         scales_ptrs = scales_ptr + offs_bn[None, :]
@@ -129,7 +129,7 @@ try:
             b = (b >> shifter[:, None]) & maxq  # Extract the N-bit values
             # b = (b - zeros) * scales  # Scale and shift
 
-            b = b * scales - (scales*zeros).to(tl.float16)  # Scale and shift
+            b = b * scales - (scales * zeros).to(tl.float16)  # Scale and shift
 
             accumulator += tl.dot(a, b)
             a_ptrs += BLOCK_SIZE_K
@@ -202,7 +202,7 @@ try:
         C is of shape (M, K) float16
         scales is of shape (G, N) float16
         zeros is of shape (G, N) float16
-        g_ptr is of shape (K) int32 
+        g_ptr is of shape (K) int32
         """
         infearure_per_bits = 32 // bits
 
@@ -223,8 +223,8 @@ try:
         a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_n[None, :] * stride_ak)  # (BLOCK_SIZE_M, BLOCK_SIZE_N)
         a_mask = (offs_am[:, None] < M)
         # b_ptrs is set up such that it repeats elements along the K axis 8 times
-        b_ptrs = b_ptr + ((offs_bk[:, None] // infearure_per_bits) * stride_bk +
-                          offs_n[None, :] * stride_bn)  # (BLOCK_SIZE_K, BLOCK_SIZE_N)
+        b_ptrs = b_ptr + ((offs_bk[:, None] // infearure_per_bits) * stride_bk
+                          + offs_n[None, :] * stride_bn)  # (BLOCK_SIZE_K, BLOCK_SIZE_N)
         g_ptrs = g_ptr + offs_bk
         g_idx = tl.load(g_ptrs)
 
@@ -261,7 +261,7 @@ try:
         c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bk[None, :]
         c_mask = (offs_am[:, None] < M) & (offs_bk[None, :] < K)
         tl.store(c_ptrs, accumulator, mask=c_mask)
-except Exception as e:
+except Exception:
     print('triton not installed.')
 
 
@@ -269,8 +269,10 @@ def matmul248(input, qweight, scales, qzeros, g_idx, bits, maxq):
     os.environ['TOKENIZERS_PARALLELISM'] = "false"
     with torch.cuda.device(input.device):
         output = torch.empty((input.shape[0], qweight.shape[1]), device=input.device, dtype=torch.float16)
-        def grid(META): return (triton.cdiv(input.shape[0], META['BLOCK_SIZE_M'])
-                                * triton.cdiv(qweight.shape[1], META['BLOCK_SIZE_N']), )
+
+        def grid(META):
+            return (triton.cdiv(input.shape[0], META['BLOCK_SIZE_M'])
+                    * triton.cdiv(qweight.shape[1], META['BLOCK_SIZE_N']), )
         matmul_248_kernel[grid](input, qweight, output, scales, qzeros, g_idx, input.shape[0], qweight.shape[1], input.shape[1], bits, maxq, input.stride(0), input.stride(1), qweight.stride(0),
                                 qweight.stride(1), output.stride(0), output.stride(1), scales.stride(0), qzeros.stride(0))
         return output
@@ -280,11 +282,14 @@ def transpose_matmul248(input, qweight, scales, qzeros, g_idx, bits, maxq):
     with torch.cuda.device(input.device):
         output_dim = (qweight.shape[0] * 32) // bits
         output = torch.empty((input.shape[0], output_dim), device=input.device, dtype=torch.float16)
-        def grid(META): return (triton.cdiv(input.shape[0], META['BLOCK_SIZE_M'])
-                                * triton.cdiv(output_dim, META['BLOCK_SIZE_K']), )
+
+        def grid(META):
+            return (triton.cdiv(input.shape[0], META['BLOCK_SIZE_M'])
+                    * triton.cdiv(output_dim, META['BLOCK_SIZE_K']), )
         transpose_matmul_248_kernel[grid](input, qweight, output, scales, qzeros, g_idx, input.shape[0], qweight.shape[1], output_dim, bits, maxq, input.stride(0), input.stride(1), qweight.stride(0),
                                           qweight.stride(1), output.stride(0), output.stride(1), scales.stride(0), qzeros.stride(0))
         return output
+
 
 class QuantLinear(nn.Module, CompressWeight):
     def __init__(self, in_features, out_features, bias=True, bits=8, maxq=255, transpose=False):
@@ -306,6 +311,7 @@ class QuantLinear(nn.Module, CompressWeight):
     def forward(self, x):
         pass
 
+
 class QuantLinearFunction(torch.autograd.Function):
 
     @staticmethod
@@ -326,7 +332,8 @@ class QuantLinearFunction(torch.autograd.Function):
         if ctx.needs_input_grad[0]:
             grad_input = transpose_matmul248(grad_output, qweight, scales, qzeros, g_idx, bits, maxq)
         return grad_input, None, None, None, None, None, None
-        
+
+
 def autotune_warmup_linear(model, transpose=False):
     """
     Pre-tunes the quantized kernel

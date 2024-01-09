@@ -26,8 +26,9 @@ def replace_default_dtype(dtype):
     finally:
         torch.set_default_dtype(old_dtype)
 
+
 @contextlib.contextmanager
-def no_init_weights(attrs: list= None):
+def no_init_weights(attrs: list = None):
     attrs = attrs if attrs is not None else ['normal_', 'uniform_', 'kaiming_uniform_', 'kaiming_normal_']
     old_attr = []
     new_method = lambda x, *args, **kwargs: x
@@ -42,19 +43,20 @@ def no_init_weights(attrs: list= None):
         if old_attr[idx] is not None:
             setattr(torch.Tensor, attr, old_attr[idx])
 
-#def get_no_split_layer_type_name(model:torch.nn.Module):
+# def get_no_split_layer_type_name(model:torch.nn.Module):
 #    for name,mod in model.named_modules():
 #        if '.0' in name and name.count('.0') == 1:
 #            return mod.__class__.__name__
 #
 
-def _load_check_point(model, model_name_or_path, quant_config, get_keys_only:bool = False):
+
+def _load_check_point(model, model_name_or_path, quant_config, get_keys_only: bool = False):
     all_keys = set()
     all_missing_keys = []
     all_unexpected_keys = []
     if Path(model_name_or_path).exists():  # local
         while True:
-            weight_bins = glob.glob(str(Path(model_name_or_path).absolute()/'pytorch_model*.bin'))
+            weight_bins = glob.glob(str(Path(model_name_or_path).absolute() / 'pytorch_model*.bin'))
             if len(weight_bins) > 0:
                 for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
                     weights = torch.load(weight_bins[i], map_location="cpu")
@@ -65,8 +67,8 @@ def _load_check_point(model, model_name_or_path, quant_config, get_keys_only:boo
                         all_missing_keys.extend(ret.missing_keys)
                         all_unexpected_keys.extend(ret.unexpected_keys)
                 break
-            weight_bins = glob.glob(str(Path(model_name_or_path).absolute()/'*.safetensors'))
-            if len(weight_bins) > 0:                        
+            weight_bins = glob.glob(str(Path(model_name_or_path).absolute() / '*.safetensors'))
+            if len(weight_bins) > 0:
                 for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights from safetensors"):
                     weights = safetensors.torch.load_file(weight_bins[i], device="cpu")
                     if get_keys_only:
@@ -104,6 +106,7 @@ def _load_check_point(model, model_name_or_path, quant_config, get_keys_only:boo
         return all_keys
     return all_missing_keys, all_unexpected_keys
 
+
 class AutoQuantizedModelForCausalLM:
     def __init__(self):
         raise EnvironmentError(
@@ -116,7 +119,6 @@ class AutoQuantizedModelForCausalLM:
     def disable_double_init():
         # prevent double init of huggingface
         utils.comm_utils.disable_huggingface_init()
-
 
     @classmethod
     def from_pretrained(
@@ -135,44 +137,43 @@ class AutoQuantizedModelForCausalLM:
             pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
         return llm
 
-
     @classmethod
     def from_quantized(
-        cls, 
-        model_name_or_path: Optional[str],
-        device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "sequential",
-        max_memory: Optional[dict] = None,
-        device: Optional[Union[str, int]] = "cuda",
-        low_cpu_mem_usage: bool = True,
-        use_triton: bool = False,
-        torch_dtype: Optional[torch.dtype] = torch.float16,
-        quant_config: Optional[BaseQuantizeConfig] = None,
-        use_safetensors: bool = True,
-        trust_remote_code: bool = False,
-        warmup_triton: bool = False,
-        **kwargs) -> AutoModelForCausalLM:
+            cls,
+            model_name_or_path: Optional[str],
+            device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "sequential",
+            max_memory: Optional[dict] = None,
+            device: Optional[Union[str, int]] = "cuda",
+            low_cpu_mem_usage: bool = True,
+            use_triton: bool = False,
+            torch_dtype: Optional[torch.dtype] = torch.float16,
+            quant_config: Optional[BaseQuantizeConfig] = None,
+            use_safetensors: bool = True,
+            trust_remote_code: bool = False,
+            warmup_triton: bool = False,
+            **kwargs) -> AutoModelForCausalLM:
 
         args = kwargs.pop("args", None)
         cls.disable_double_init()
-        
+
         if isinstance(device_map, str):
             assert device_map in ["auto", "balanced", "balanced_low_0", "sequential"], \
-                  'device_map must be auto, balanced, balanced_low_0 or sequential'
+                'device_map must be auto, balanced, balanced_low_0 or sequential'
 
         if model_name_or_path is None:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading quantized model from {model_name_or_path}")
         init_contexts = [
             transformers.modeling_utils.no_init_weights(),
-            #no_init_weights(),
+            # no_init_weights(),
             replace_default_dtype(torch_dtype),
-            #accelerate.init_empty_weights(include_buffers=False)
+            # accelerate.init_empty_weights(include_buffers=False)
         ]
         auto_conf = transformers.AutoConfig.from_pretrained(
             model_name_or_path, trust_remote_code=trust_remote_code)
         with transformers.utils.generic.ContextManagers(init_contexts):
             model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code)
-        #device_map = accelerate.infer_auto_device_map(
+        # device_map = accelerate.infer_auto_device_map(
         #    model, dtype=torch_dtype, no_split_module_classes=get_no_split_layer_type_name(model))
 
         if quant_config is None:
@@ -188,7 +189,7 @@ class AutoQuantizedModelForCausalLM:
             for layer_name in list(layers.keys()):
                 if layer_name not in quant_config.quant_config_by_op:
                     del layers[layer_name]
-        else: # removed unquantized layer, TODO load layers from safetensors
+        else:  # removed unquantized layer, TODO load layers from safetensors
             use_heuristic = False
             if not use_heuristic:
                 all_keys = _load_check_point(None, model_name_or_path, quant_config, get_keys_only=True)
@@ -208,9 +209,9 @@ class AutoQuantizedModelForCausalLM:
             from ..quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
-        #if low_cpu_mem_usage:
+        # if low_cpu_mem_usage:
         #    model = model.cuda()
-        model.tie_weights() # works with init_empty_weights and load_checkpoint_and_dispatch
+        model.tie_weights()  # works with init_empty_weights and load_checkpoint_and_dispatch
         try:
             accelerate.big_modeling.load_checkpoint_and_dispatch(
                 model,
@@ -243,15 +244,15 @@ class AutoQuantizedModelForCausalLM:
         return model
 
     @staticmethod
-    def save_pretrained(model, tokenizer, save_directory: Union[str, Path], pack_mode:str, repack_func, save_serialization: bool = False):
-        quant_config_by_layer, quant_config = model.quant_config_by_layer,model.quant_config
+    def save_pretrained(model, tokenizer, save_directory: Union[str, Path], pack_mode: str, repack_func, save_serialization: bool = False):
+        quant_config_by_layer, quant_config = model.quant_config_by_layer, model.quant_config
         if pack_mode != quant_config["version"] and pack_mode != "AUTO":
             repack_func()
 
         model.save_pretrained(save_directory, save_serialization=save_serialization)
         tokenizer is not None and tokenizer.save_pretrained(save_directory)
 
-        with open(save_directory+"/quant_config_by_layer.json",'w') as fp:
+        with open(save_directory + "/quant_config_by_layer.json", 'w') as fp:
             fp.write(json.dumps(quant_config_by_layer))
-        with open(save_directory+"/quantize_config.json", 'w') as fp:
+        with open(save_directory + "/quantize_config.json", 'w') as fp:
             fp.write(json.dumps(quant_config))

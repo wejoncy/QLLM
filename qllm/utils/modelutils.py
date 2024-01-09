@@ -15,7 +15,8 @@ class ScaledLinear(nn.Linear):
         x = x.div_(self.scale)
         return nn.functional.linear(x, self.weight, self.bias)
 
-def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):
+
+def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):  # noqa:B006
     if type(module) in layers:
         return {name: module}
     res = {}
@@ -29,9 +30,8 @@ def gen_conditions(_wbits, _groupsize):
     groupsize = _groupsize
     conditions = []
     while True:
-        if wbits >= 8:
-            if groupsize == -1 or groupsize == 32:
-                break
+        if wbits >= 8 and (groupsize == -1 or groupsize == 32):
+            break
 
         if groupsize > 32:
             groupsize /= 2
@@ -45,7 +45,8 @@ def gen_conditions(_wbits, _groupsize):
 
 def select_quant_linear(pack_mode: str, wbits:int, method:str):
     from ..modeling.q_layers import QuantLinear
-    from ..modeling.q_layers.quant_linear_awq import WQLinear_GEMM, is_the_machine_support_awq_engine
+    from ..modeling.q_layers.quant_linear_awq import WQLinear_GEMM
+    from ..modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
     from ..modeling.q_layers.quant_linear_onnxruntime import QuantLinearORT
     from ..modeling.q_layers.quant_linear_hqq import QuantLinearHQQ
 
@@ -122,7 +123,7 @@ def set_op_by_name(layer, name, new_module):
     if len(levels) > 1:
         mod_ = layer
         for l_idx in range(len(levels)-1):
-            if levels[l_idx].isdigit():
+            if levels[l_idx].isdigit():  # noqa:SIM108
                 mod_ = mod_[int(levels[l_idx])]
             else:
                 mod_ = getattr(mod_, levels[l_idx])

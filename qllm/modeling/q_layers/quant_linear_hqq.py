@@ -2,8 +2,7 @@ import math
 import torch
 import torch.nn as nn
 
-from .compress_weight import (CompressWeight, general_pack_on_row,
-                              general_unpack_on_row)      
+from .compress_weight import (CompressWeight, general_unpack_on_row)
 
 
 class DequantAndUnpack(torch.autograd.Function):
@@ -34,7 +33,7 @@ class QuantLinearTorchFunction(torch.autograd.Function):
     def forward(ctx, inputs, qweight, scales, qzeros, groupsize, bits, in_features):
         if torch.onnx.is_in_onnx_export():
             return torch.zeros(inputs.shape[:-1] + (qweight.size(1), ), dtype=inputs.dtype, device=inputs.device)
-    
+
         weight = DequantAndUnpack.apply(qweight, scales, qzeros, groupsize, bits, in_features)
         return torch.matmul(inputs, weight)
 
@@ -68,9 +67,9 @@ class QuantLinearHQQ(nn.Module, CompressWeight):
 
     def pack_qzeros_odd(self, intzeros, device):
         self.qzeros = intzeros.contiguous().cpu()
-        
+
     def forward(self, x):
-        out = QuantLinearTorchFunction.apply(x, self.qweight, self.scales, self.qzeros, 
+        out = QuantLinearTorchFunction.apply(x, self.qweight, self.scales, self.qzeros,
                                              self.groupsize, self.bits, self.infeatures)
         out = out + self.bias if self.bias is not None else out
         return out

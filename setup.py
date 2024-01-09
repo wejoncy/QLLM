@@ -8,8 +8,9 @@ import torch
 
 from packaging.version import parse, Version
 import setuptools
-ROOT_DIR = os.path.dirname(__file__)
 from torch.utils.cpp_extension import BuildExtension, CUDA_HOME, CUDAExtension
+
+ROOT_DIR = os.path.dirname(__file__)
 
 
 def is_pypi_build():
@@ -71,9 +72,9 @@ def get_nvcc_cuda_version(cuda_dir: str = "") -> Version:
 def get_compute_capabilities(compute_capabilities: Set[int], lower: int = 70):
     # Collect the compute capabilities of all available GPUs.
     if len(compute_capabilities) == 0 and (is_pypi_build() or not torch.cuda.is_available()):
-        if 70 >= lower:
+        if lower <= 70:
             compute_capabilities.add(70)
-        if 75 >= lower:
+        if lower <= 75:
             compute_capabilities.add(75)
         compute_capabilities.add(80)
         compute_capabilities.add(86)

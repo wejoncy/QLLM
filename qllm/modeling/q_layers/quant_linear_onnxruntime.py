@@ -12,9 +12,11 @@ else:
     print("ort_ops is not installed. Will fallback to Torch Backend")
 
 DEBUG_ = False
+
+
 class QuantLinearTorchFunction(torch.autograd.Function):
     @staticmethod
-    def symbolic(g,  x, qself_qweight, qself_scales, qself_qzeros, bits, groupsize, in_features, out_features):
+    def symbolic(g, x, qself_qweight, qself_scales, qself_qzeros, bits, groupsize, in_features, out_features):
         return g.op("com.microsoft::MatMulNBits", x, qself_qweight, qself_scales, qself_qzeros,
                     outputs=1, K_i=in_features, N_i=out_features, bits_i=bits, block_size_i=groupsize)
 
@@ -30,9 +32,9 @@ class QuantLinearTorchFunction(torch.autograd.Function):
 
 
 def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, bits, groupsize, in_features, out_features):
-    assert bits==4, "Only 4 bits are supported."
+    assert bits == 4, "Only 4 bits are supported."
     out = QuantLinearTorchFunction().apply(
-        input, qweight, scales, qzeros, bits, groupsize,  in_features, out_features)
+        input, qweight, scales, qzeros, bits, groupsize, in_features, out_features)
     return out
 
 
@@ -50,6 +52,7 @@ def dequantize_blockwise_4bits(quant_values, scale, zero_point, rows, cols):
     float_values = float_values[:, :rows]
     return float_values, expand_zero_point, aligned_scale
 
+
 class QuantLinearORT(nn.Module, CompressWeight):
     def __init__(self, bits, groupsize, infeatures, outfeatures, bias):
         super().__init__()
@@ -65,8 +68,8 @@ class QuantLinearORT(nn.Module, CompressWeight):
         self.pack_mode = "ORT"
 
         self.register_buffer('qweight', torch.zeros(
-            (outfeatures, infeatures//self.groupsize, self.groupsize//(8//bits)), dtype=torch.uint8))
-        self.register_buffer('qzeros', torch.zeros((math.ceil(infeatures // self.groupsize)*(
+            (outfeatures, infeatures // self.groupsize, self.groupsize // (8 // bits)), dtype=torch.uint8))
+        self.register_buffer('qzeros', torch.zeros((math.ceil(infeatures // self.groupsize) * (
                              outfeatures // 8 * self.bits)), dtype=torch.uint8))
         self.register_buffer('scales', torch.zeros(
             (math.ceil(infeatures / self.groupsize) * outfeatures), dtype=torch.float16))
@@ -83,9 +86,9 @@ class QuantLinearORT(nn.Module, CompressWeight):
         matrix_int8 = intweight_gpu.cpu().numpy().astype(np.uint8)
         scales = self.scales.T.cpu().numpy()
         block_size = self.groupsize
-        
+
         # Reference dequant
-        #mm = ((matrix_int8.T.reshape(matrix_int8.shape[-1], -1, block_size).astype(np.int64) -
+        # mm = ((matrix_int8.T.reshape(matrix_int8.shape[-1], -1, block_size).astype(np.int64) -
         #      zero_point_unpacked[:, :, None].astype(np.int64))*scales[:, :, None]).astype(scales.dtype
         #      ).reshape(matrix_int8.shape[-1], -1)
 
@@ -119,13 +122,13 @@ class QuantLinearORT(nn.Module, CompressWeight):
         self.qzeros = torch.from_numpy(zero_point)
 
         if DEBUG_:
-            mat_float,_,_ = dequantize_blockwise_4bits(packed, scales, zero_point, rows, cols)
+            mat_float, _, _ = dequantize_blockwise_4bits(packed, scales, zero_point, rows, cols)
             print('mat_float', mat_float.shape, mat_float.dtype)
 
     def unpack(self):
         quant_values, scale, zero_point, rows, cols = (self.qweight.cpu().numpy(
         ), self.scales.cpu().numpy(), self.qzeros.cpu().numpy(), self.infeatures, self.outfeatures)
-        
+
         float_values, zero_point, scale = dequantize_blockwise_4bits(quant_values, scale, zero_point, rows, cols)
         float_values = torch.from_numpy(float_values.T)
         zero_point = torch.from_numpy(zero_point.T)
@@ -134,7 +137,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
 
     def forward(self, x):
         if self.act_order is None:
-            self.act_order = not (self.g_idx[:self.groupsize//self.bits].sum() == 0)
+            self.act_order = self.g_idx[:self.groupsize // self.bits].sum() != 0
             assert not self.act_order, "onnxruntime doesn't support g_idx for now."
         out = QuantLinearTorchFunction_forward(x, self.qweight, self.scales,
                                                self.qzeros, self.bits, self.groupsize, self.infeatures, self.outfeatures)

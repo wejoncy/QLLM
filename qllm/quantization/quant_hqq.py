@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import tqdm
 
 from .quant_frame_base import QuantFrameBase

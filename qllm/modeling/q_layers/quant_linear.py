@@ -1,16 +1,13 @@
 import math
 import os
 
-import numpy as np
 import torch
 import torch.nn as nn
 from .ext_package_checker import has_ort_ops
 from .compress_weight import (CompressWeight, general_pack_on_row,
-                              general_unpack_on_row)     
+                              general_unpack_on_row)
 if has_ort_ops():
     import ort_ops
-
- 
 
 
 class DequantAndUnpack(torch.autograd.Function):
@@ -72,20 +69,20 @@ class QuantLinearTorchFunction(torch.autograd.Function):
             return g.op("com.microsoft::QuantNbitsGemm", inputs, qweight, scales, qzeros, bias, g_idx,
                         outputs=1, in_features_i=in_features, bits_i=bits, groupsize_i=groupsize)
         else:
-            fp_weight = g.op("com.microsoft::DequantizeAndUnpackWeight", qweight, scales, qzeros,g_idx,
-                        outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)
+            fp_weight = g.op("com.microsoft::DequantizeAndUnpackWeight", qweight, scales, qzeros, g_idx,
+                             outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)
             return g.op("MatMul", inputs, fp_weight)
 
     @staticmethod
     def forward(ctx, inputs, qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
         if torch.onnx.is_in_onnx_export():
             return torch.zeros(inputs.shape[:-1] + (qweight.size(1), ), dtype=inputs.dtype, device=inputs.device)
-        
+
         COMPATIBLE_WITH_AUTOGPTQ = int(os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
         if (not torch.onnx.is_in_onnx_export()
-            and inputs.numel()//inputs.shape[-1] <= 8
+            and inputs.numel() // inputs.shape[-1] <= 8
             and bits == 4
-            and has_ort_ops()):
+                and has_ort_ops()):
             return ort_ops.gemv(inputs, qweight, scales, qzeros, g_idx, groupsize, bits, in_features, COMPATIBLE_WITH_AUTOGPTQ)
         if qweight.is_cuda and has_ort_ops():
             weight = ort_ops.dequant(qweight, scales, qzeros, g_idx, groupsize, bits, in_features, COMPATIBLE_WITH_AUTOGPTQ)
@@ -129,7 +126,7 @@ class QuantLinear(nn.Module, CompressWeight):
             return
         device = "cuda" if torch.cuda.is_available() else "cpu"
         qzeros = self.qzeros.to(device)
-        zeros = torch.zeros((self.outfeatures, self.infeatures//self.groupsize),
+        zeros = torch.zeros((self.outfeatures, self.infeatures // self.groupsize),
                             dtype=torch.int32, device=qzeros.device).T.contiguous()
 
         general_unpack_on_row(qzeros, zeros, self.bits)
@@ -141,10 +138,9 @@ class QuantLinear(nn.Module, CompressWeight):
 
         self.qzeros = qzeros.cpu()
 
-
     def forward(self, x):
         if self.act_order is None:
-            self.act_order = not (self.g_idx[:self.groupsize].sum() == 0)
+            self.act_order = self.g_idx[:self.groupsize].sum() != 0
         g_idx = self.g_idx if self.act_order else None
         out = QuantLinearTorchFunction_forward(x, self.qweight, self.scales,
                                                self.qzeros, g_idx, self.bits, self.groupsize, self.infeatures)
