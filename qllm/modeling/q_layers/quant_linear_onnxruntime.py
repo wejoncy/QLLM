@@ -24,10 +24,11 @@ class QuantLinearTorchFunction(torch.autograd.Function):
     def forward(ctx, x, qself_qweight, qself_scales, qself_qzeros, bits, groupsize, in_features, out_features):
         if torch.onnx.is_in_onnx_export():
             return torch.zeros(x.shape[:-1] + (out_features, ), dtype=x.dtype, device=x.device)
-        if not has_ort_ops():
-            raise Exception("ort_ops is not installed.")
-        fp_weight = ort_ops.Dequantize4Bits(
-            qself_qweight, qself_qzeros, qself_scales, groupsize, in_features, out_features)
+        #if not has_ort_ops():
+        #    raise Exception("ort_ops is not installed.")
+        fp_weight = torch.zeros((out_features, in_features), dtype=torch.float16, device=x.device)
+        #fp_weight = ort_ops.Dequantize4Bits(
+        #    qself_qweight, qself_qzeros, qself_scales, groupsize, in_features, out_features)
         return torch.matmul(x, fp_weight.T)
 
 

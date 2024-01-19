@@ -66,10 +66,10 @@ class InternalHQQQuantizer(nn.Module):
     def quantize(self):
         tensor = self.layer.weight
         nbits = self.bits
-        channel_wise = self.channel_wise,
+        channel_wise = self.channel_wise
         group_size = self.group_size
-        optimize = self.optimize,
-        round_zero = self.round_zero,
+        optimize = self.optimize
+        round_zero = self.round_zero
         axis = self.axis
 
         assert axis in [0, 1], "axis should be either 0 or 1"
@@ -103,8 +103,7 @@ class InternalHQQQuantizer(nn.Module):
 
         # Fine-tune weights
         if (optimize): 
-            scale, zero = self.optimize_weights_proximal(
-                tensor=W, scale=scale, zero=zero, min_max=min_max, axis=axis)
+            scale, zero = self.optimize_weights_proximal(tensor=W, scale=scale, zero=zero, min_max=min_max, axis=axis)
 		#Quantize
         W_q  = torch.round(W*scale + zero).clamp(min_max[0], min_max[1])
         self.layer.weight.data = ((W_q- zero)/scale).reshape(shape).type(tensor.dtype)

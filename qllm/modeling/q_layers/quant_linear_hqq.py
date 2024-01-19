@@ -37,6 +37,12 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         weight = DequantAndUnpack.apply(qweight, scales, qzeros, groupsize, bits, in_features)
         return torch.matmul(inputs, weight)
 
+    @staticmethod
+    def symbolic(g, inputs, qweight, scales, qzeros, groupsize, bits, in_features):
+        out_features = qweight.type().sizes()[-1]
+        return g.op("com.microsoft::MatMulNBits", inputs, qweight, scales, qzeros, 
+                    outputs=1, K_i=in_features, N_i=out_features, bits_i=bits, block_size_i=groupsize, packing_s="hqq")
+
 
 class QuantLinearHQQ(nn.Module, CompressWeight):
 

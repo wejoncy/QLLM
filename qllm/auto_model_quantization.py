@@ -125,14 +125,13 @@ class AutoModelQuantization(object):
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str,
                     sample_inputs: tuple, with_past: bool = False, args=None):
-        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK", "0") != "1" and args.wbits < 16:
+        if args.wbits < 16 and model.quant_config["version"] not in ["ORT", "GPTQ", "HQQ"]:
             model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
         if self.tokenizer:
             sample_inputs = self.tokenizer("Hello world", return_tensors="pt")
-            sample_inputs = (sample_inputs.input_ids,
-                             sample_inputs.attention_mask)
+            sample_inputs = (sample_inputs.input_ids, sample_inputs.attention_mask)
             self.tokenizer.save_pretrained(onnx_path_str)
         model.config.to_json_file(f"{onnx_path_str}/config.json")
         model.generation_config.to_json_file(f"{onnx_path_str}/generation_config.json")

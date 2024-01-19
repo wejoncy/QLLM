@@ -66,8 +66,11 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
         use_gemm_op = True
         if use_gemm_op:
-            return g.op("com.microsoft::QuantNbitsGemm", inputs, qweight, scales, qzeros, bias, g_idx,
-                        outputs=1, in_features_i=in_features, bits_i=bits, groupsize_i=groupsize)
+            #return g.op("com.microsoft::QuantNbitsGemm", inputs, qweight, scales, qzeros, bias, g_idx,
+            #            outputs=1, in_features_i=in_features, bits_i=bits, groupsize_i=groupsize)
+            out_features = qweight.type().sizes()[-1]
+            return g.op("com.microsoft::MatMulNBits", inputs, qweight, scales, qzeros, g_idx,
+                        outputs=1, K_i=in_features, N_i=out_features, bits_i=bits, block_size_i=groupsize, packing_s="gptq")
         else:
             fp_weight = g.op("com.microsoft::DequantizeAndUnpackWeight", qweight, scales, qzeros, g_idx,
                              outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)

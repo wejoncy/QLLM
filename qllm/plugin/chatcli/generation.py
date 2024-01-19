@@ -2,7 +2,7 @@ import time
 import torch
 
 
-def generate_stream(model, tokenizer, prompt: str, max_new_tokens:int, context_len: int, echo: bool=False, stream_interval=2):
+def generate_stream(model, tokenizer, prompt: str, device, max_new_tokens: int, context_len: int, echo: bool = False, stream_interval=2):
     stop_token_ids = [model.config.eos_token_id]
     device = model.device
 

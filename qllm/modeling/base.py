@@ -126,15 +126,19 @@ class AutoQuantizedModelForCausalLM:
         pretrained_model_name_or_path: str,
         max_memory: Optional[dict] = None,
         trust_remote_code: bool = False,
-        **model_init_kwargs
+        **kwargs
     ) -> AutoModelForCausalLM:
+        args = kwargs.pop("args", None)
+
         if pretrained_model_name_or_path is None:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading model from {pretrained_model_name_or_path}")
         cls.disable_double_init()
+        attn_implementation = 'eager' if args.export_onnx else None
 
         llm = AutoModelForCausalLM.from_pretrained(
-            pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
+            pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code, 
+            attn_implementation=attn_implementation)
         return llm
 
     @classmethod
@@ -172,7 +176,9 @@ class AutoQuantizedModelForCausalLM:
         auto_conf = transformers.AutoConfig.from_pretrained(
             model_name_or_path, trust_remote_code=trust_remote_code)
         with transformers.utils.generic.ContextManagers(init_contexts):
-            model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code)
+            attn_implementation = 'eager' if args.export_onnx else None
+            model = AutoModelForCausalLM.from_config(
+                auto_conf, trust_remote_code=trust_remote_code, attn_implementation=attn_implementation)
         # device_map = accelerate.infer_auto_device_map(
         #    model, dtype=torch_dtype, no_split_module_classes=get_no_split_layer_type_name(model))
 
