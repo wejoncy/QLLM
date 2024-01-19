@@ -61,8 +61,8 @@ def verify_correcness(model: torch.nn.Module, sample_inputs: tuple, onnx_model_p
     if with_past:
         inputs['use_cache_branch'] = np.array([0], dtype=np.bool_)
         for i in range(num_layers):
-            inputs[f'present_key.{i}'] = np.zeros(ref.past_key_values[0][0].shape, dtype=np.float16)
-            inputs[f'present_values.{i}'] = np.zeros(ref.past_key_values[0][0].shape, dtype=np.float16)
+            inputs[f'past_key_values.{i}.key'] = np.zeros(ref.past_key_values[0][0].shape, dtype=np.float16)
+            inputs[f'past_key_values.{i}.value'] = np.zeros(ref.past_key_values[0][0].shape, dtype=np.float16)
     session_options = onnxruntime.SessionOptions()
     #session_options.register_custom_ops_library(onnx_ops.__file__)
     #onnx_path_str = Path(onnx_model_path).parent.absolute()
@@ -78,8 +78,8 @@ def verify_correcness(model: torch.nn.Module, sample_inputs: tuple, onnx_model_p
         
         inputs['use_cache_branch'] = np.array([1], dtype=np.bool_)
         for i in range(num_layers):
-            inputs[f'present_key.{i}'] = ref.past_key_values[i][0].cpu().numpy()
-            inputs[f'present_values.{i}'] = ref.past_key_values[i][1].cpu().numpy()
+            inputs[f'past_key_values.{i}.key'] = ref.past_key_values[i][0].cpu().numpy()
+            inputs[f'past_key_values.{i}.value'] = ref.past_key_values[i][1].cpu().numpy()
         outputs = session.run(None, inputs)
 
         ref = model(torch.tensor([[3]],device="cuda"), torch.from_numpy(mask).cuda(), past_key_values=ref.past_key_values)
