@@ -27,7 +27,7 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         if not has_ort_ops():
             raise Exception("ort_ops is not installed.")
         fp_weight = ort_ops.Dequantize4Bits(
-            qself_qweight.contiguous(), qself_qzeros, qself_scales, groupsize, in_features, out_features)
+            qself_qweight, qself_qzeros, qself_scales, groupsize, in_features, out_features)
         return torch.matmul(x, fp_weight.T)
 
 
@@ -82,9 +82,13 @@ class QuantLinearORT(nn.Module, CompressWeight):
             self.bias = None
 
     def pack_on_device_for_even_bits(self, intweight_gpu, intzeros_T):
-        zero_point_unpacked = intzeros_T.T.cpu().numpy().astype(np.uint8)
-        matrix_int8 = intweight_gpu.cpu().numpy().astype(np.uint8)
-        scales = self.scales.T.cpu().numpy()
+        intzeros_pt = intzeros_T.T.byte()
+        scales_pt = self.scales.T
+        intweight_pt = intweight_gpu.byte()
+
+        #zero_point_unpacked = intzeros_T.T.cpu().numpy().astype(np.uint8)
+        #matrix_int8 = intweight_gpu.cpu().numpy().astype(np.uint8)
+        #scales = self.scales.T.cpu().numpy()
         block_size = self.groupsize
 
         # Reference dequant
@@ -92,37 +96,57 @@ class QuantLinearORT(nn.Module, CompressWeight):
         #      zero_point_unpacked[:, :, None].astype(np.int64))*scales[:, :, None]).astype(scales.dtype
         #      ).reshape(matrix_int8.shape[-1], -1)
 
-        rows, cols = matrix_int8.shape
+        rows, cols = intweight_pt.shape
         blob_size = block_size // 2
         k_blocks = (rows + block_size - 1) // block_size
         padded_rows = k_blocks * block_size
         pad_len = padded_rows - rows
-        matrix_int8_padded = matrix_int8
+        #matrix_int8_padded = matrix_int8
         if pad_len > 0:
-            matrix_int8_padded = np.pad(
-                matrix_int8, ((0, pad_len), (0, 0)), "constant")
+            #matrix_int8_padded = np.pad(
+            #    matrix_int8, ((0, pad_len), (0, 0)), "constant")
+            int_weight_pt = torch.nn.functional.pad(int_weight_pt, (0, 0, 0, pad_len), "constant", 0)
 
-        matrix_int8_padded = np.transpose(matrix_int8_padded)
-        int8_values = matrix_int8_padded
+        #int8_values = np.transpose(matrix_int8_padded)
+        intweight_pt_T = intweight_gpu.T
 
-        zero_point = zero_point_unpacked.reshape(-1)
-        zero_point = np.concatenate((zero_point, np.array([8], dtype=np.uint8))) if zero_point.shape[0] & 1 else zero_point
-        zero_point = zero_point[0::2] | (zero_point[1::2] << 4)
-        zero_point = zero_point.reshape(-1)
+        #zero_point = zero_point_unpacked.reshape(-1)
+        intzeros_pt = intzeros_pt.reshape(-1)
 
-        packed = (int8_values[:, 0::2]) | (int8_values[:, 1::2] << 4)
-        packed = packed.reshape(cols, k_blocks, blob_size)
-        scales = scales.reshape(-1)
+        #zero_point = np.concatenate((zero_point, np.array([8], dtype=np.uint8))) if zero_point.shape[0] & 1 else zero_point
+        intzeros_pt = torch.cat(
+            [intzeros_pt, torch.tensor([8], dtype=torch.byte, device=intzeros_pt.device)]
+        ) if intzeros_pt.shape[0] & 1 else intzeros_pt
 
-        assert self.qweight.shape == packed.shape
-        assert self.qzeros.shape == zero_point.shape
+        #zero_point = zero_point[0::2] | (zero_point[1::2] << 4)
+        #zero_point = zero_point.reshape(-1)
 
-        self.scales = torch.from_numpy(scales)
-        self.qweight = torch.from_numpy(packed)
-        self.qzeros = torch.from_numpy(zero_point)
+        intzeros_pt = (intzeros_pt[0::2]) | (intzeros_pt[1::2] << 4)
+        intzeros_pt = intzeros_pt.reshape(-1)
+
+        #packed = (int8_values[:, 0::2]) | (int8_values[:, 1::2] << 4)
+        #packed = packed.reshape(cols, k_blocks, blob_size)
+
+        intweight_pt_T = (intweight_pt_T[:, 0::2]) | (intweight_pt_T[:, 1::2] << 4)
+        intweight_pt_T = intweight_pt_T.reshape(cols, k_blocks, blob_size)
+
+        #scales = scales.reshape(-1)
+        scales_pt = scales_pt.reshape(-1)
+
+        assert self.qweight.shape == intweight_pt_T.shape
+        assert self.qzeros.shape == intzeros_pt.shape
+
+        #self.scales = torch.from_numpy(scales).contiguous()
+        #self.qweight = torch.from_numpy(packed).contiguous()
+        #self.qzeros = torch.from_numpy(zero_point).contiguous()
+
+        self.scales = scales_pt.contiguous()
+        self.qweight = intweight_pt_T.contiguous().byte()
+        self.qzeros = intzeros_pt.contiguous().byte()
 
         if DEBUG_:
-            mat_float, _, _ = dequantize_blockwise_4bits(packed, scales, zero_point, rows, cols)
+            mat_float, _, _ = dequantize_blockwise_4bits(
+                scales_pt.cpu().numpy(), scales_pt.cpu().numpy(), intzeros_pt.cpu().numpy(), rows, cols)
             print('mat_float', mat_float.shape, mat_float.dtype)
 
     def unpack(self):

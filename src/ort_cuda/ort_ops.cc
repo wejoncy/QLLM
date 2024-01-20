@@ -123,9 +123,9 @@ int Dequantize4Bits(T *output, const uint8_t *quant_data,
 torch::Tensor Dequantize4Bits(torch::Tensor &qweight, torch::Tensor &qzeros,
                               torch::Tensor &scales, int block_size,
                               int in_features, int out_features) {
-  TORCH_CHECK(qweight.device().type() == torch::kCUDA, "qweight must be a CUDA tensor");
-  TORCH_CHECK(qzeros.device().type() == torch::kCUDA, "qzeros must be a CUDA tensor");
-  TORCH_CHECK(scales.device().type() == torch::kCUDA, "scales must be a CUDA tensor");
+  CHECK_INPUT(qweight);
+  CHECK_INPUT(scales);
+  CHECK_INPUT(qzeros);
   at::cuda::OptionalCUDAGuard guard(qweight.device());
 
   torch::Tensor out = torch::empty({out_features, in_features}, scales.options());
