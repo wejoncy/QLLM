@@ -10,53 +10,46 @@ if has_ort_ops():
     from qllm import ort_ops
 
 
-class DequantAndUnpack(torch.autograd.Function):
-    @staticmethod
-    def symbolic(g, qself_qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
-        g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
-        return g.op("com.microsoft::DequantizeAndUnpackWeight", qself_qweight, scales, qzeros, g_idx,
-                    outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)
+def DequantizeLinearBlockWise(qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
+    COMPATIBLE_WITH_AUTOGPTQ = int(
+        os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
+    scales = scales.reshape(-1, 1, scales.shape[-1])
+    if bits in [2, 4, 8]:
+        wf = torch.tensor(list(range(0, 32, bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
+        # expand is removed as torch will auto broadcast to relavant dimension
+        zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)
+                                            ).to(torch.int16 if bits == 8 else torch.int8)
+        zeros = zeros + COMPATIBLE_WITH_AUTOGPTQ
+        zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
+        zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
+        # expand is removed as torch will auto broadcast to relavant dimension
+        weight = torch.bitwise_right_shift(torch.unsqueeze(
+            qweight, 1), wf.unsqueeze(-1)).to(torch.int16 if bits == 8 else torch.int8)
+        torch.bitwise_and(weight, (2 ** bits) - 1, out=weight)
+    else:
+        weight = torch.zeros((in_features, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
+        general_unpack_on_row(qweight, weight, bits)
+        zeros = torch.zeros((qzeros.shape[0], qweight.shape[1]), dtype=torch.int32, device=qweight.device)
+        general_unpack_on_row(qzeros, zeros, bits)
+        zeros = zeros.reshape(-1, 1, zeros.shape[1])
+        zeros = zeros + COMPATIBLE_WITH_AUTOGPTQ
+        zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
 
-    @staticmethod
-    def forward(ctx, qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
-        COMPATIBLE_WITH_AUTOGPTQ = int(os.environ.get("COMPATIBLE_WITH_AUTOGPTQ", "0"))
-        scales = scales.reshape(-1, 1, scales.shape[-1])
-        if bits in [2, 4, 8]:
-            wf = torch.tensor(list(range(0, 32, bits)), dtype=torch.int32, device=qweight.device).unsqueeze(0)
-            # expand is removed as torch will auto broadcast to relavant dimension
-            zeros = torch.bitwise_right_shift(torch.unsqueeze(qzeros, 2), wf.unsqueeze(0)
-                                              ).to(torch.int16 if bits == 8 else torch.int8)
-            zeros = zeros + COMPATIBLE_WITH_AUTOGPTQ
-            zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
-            zeros = zeros.reshape(-1, 1, zeros.shape[1] * zeros.shape[2])
-            # expand is removed as torch will auto broadcast to relavant dimension
-            weight = torch.bitwise_right_shift(torch.unsqueeze(
-                qweight, 1), wf.unsqueeze(-1)).to(torch.int16 if bits == 8 else torch.int8)
-            torch.bitwise_and(weight, (2 ** bits) - 1, out=weight)
-        else:
-            weight = torch.zeros((in_features, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
-            general_unpack_on_row(qweight, weight, bits)
-            zeros = torch.zeros((qzeros.shape[0], qweight.shape[1]), dtype=torch.int32, device=qweight.device)
-            general_unpack_on_row(qzeros, zeros, bits)
-            zeros = zeros.reshape(-1, 1, zeros.shape[1])
-            zeros = zeros + COMPATIBLE_WITH_AUTOGPTQ
-            zeros = torch.bitwise_and(zeros, (2 ** bits) - 1)
+    if g_idx is not None:
+        zeros.squeeze_(1)
+        scales.squeeze_(1)
+        weight = weight.view(-1, weight.shape[-1])
+        scale_zeros = zeros * scales
+        weight = (scales[g_idx] * weight - scale_zeros[g_idx])
+        weight = weight.view(-1, groupsize, weight.shape[-1])
+    else:
+        scale_zeros = zeros * scales
+        weight = weight.reshape(-1, groupsize, weight.shape[-1])
+        weight = (scales * weight - scale_zeros.half())
 
-        if g_idx is not None:
-            zeros.squeeze_(1)
-            scales.squeeze_(1)
-            weight = weight.view(-1, weight.shape[-1])
-            scale_zeros = zeros * scales
-            weight = (scales[g_idx] * weight - scale_zeros[g_idx])
-            weight = weight.view(-1, groupsize, weight.shape[-1])
-        else:
-            scale_zeros = zeros * scales
-            weight = weight.reshape(-1, groupsize, weight.shape[-1])
-            weight = (scales * weight - scale_zeros.half())
-
-        # weight = (scales * (weight - zeros))
-        weight = weight.reshape(-1, weight.shape[2])
-        return weight
+    # weight = (scales * (weight - zeros))
+    weight = weight.reshape(-1, weight.shape[2])
+    return weight
 
 
 class QuantLinearTorchFunction(torch.autograd.Function):
@@ -66,13 +59,11 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
         use_gemm_op = True
         if use_gemm_op:
-            #return g.op("com.microsoft::QuantNbitsGemm", inputs, qweight, scales, qzeros, bias, g_idx,
-            #            outputs=1, in_features_i=in_features, bits_i=bits, groupsize_i=groupsize)
             out_features = qweight.type().sizes()[-1]
             return g.op("com.microsoft::MatMulNBits", inputs, qweight, scales, qzeros, g_idx,
                         outputs=1, K_i=in_features, N_i=out_features, bits_i=bits, block_size_i=groupsize, packing_s="gptq")
         else:
-            fp_weight = g.op("com.microsoft::DequantizeAndUnpackWeight", qweight, scales, qzeros, g_idx,
+            fp_weight = g.op("com.microsoft::DequantizeLinearBlockWise", qweight, scales, qzeros, g_idx,
                              outputs=1, groupsize_i=groupsize, bits_i=bits, in_features_i=in_features)
             return g.op("MatMul", inputs, fp_weight)
 
@@ -90,7 +81,7 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         if qweight.is_cuda and has_ort_ops():
             weight = ort_ops.dequant(qweight, scales, qzeros, g_idx, groupsize, bits, in_features, COMPATIBLE_WITH_AUTOGPTQ)
         else:
-            weight = DequantAndUnpack.apply(qweight, scales, qzeros, groupsize, bits, in_features, g_idx)
+            weight = DequantizeLinearBlockWise(qweight, scales, qzeros, groupsize, bits, in_features, g_idx)
         return torch.matmul(inputs, weight)
 
 
