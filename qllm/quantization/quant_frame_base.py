@@ -43,10 +43,9 @@ class QuantFrameBase:
             state_dict_prefix = name.split('.0.')[0]
             prefix_list.append(state_dict_prefix)
 
-        if len(prefix_list) > 1: # encoder-decoder model
-            min_len = min([len(i) for i in prefix_list])
+        prefix_list = list(set(prefix_list))
+        min_len = min([len(i) for i in prefix_list])
         prefix_list = [i for i in prefix_list if len(i) == min_len]
-        prefix_list = set(prefix_list)
         if len(prefix_list) > 1:
             raise ValueError(f"Multiple prefix found: {prefix_list}, encoder-decoder model is not supported")
         assert prefix_list, "state_dict_prefix not found"

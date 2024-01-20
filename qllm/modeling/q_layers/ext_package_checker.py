@@ -1,7 +1,9 @@
 import importlib
 import torch
+import functools
 
 
+@functools.lru_cache()
 def has_package(package_name):
     try:
         if importlib.util.find_spec(package_name) is not None:

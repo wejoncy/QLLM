@@ -23,8 +23,8 @@ A typical usage is:
     parser.add_argument('--model', type=str, default="",
                         help='float/float16 model to load, such as [mosaicml/mpt-7b]')
     parser.add_argument('--tokenizer', type=str, default="", help='default same as [model]')
-    parser.add_argument('--dataset', type=str, default='c4',
-                        choices=['wikitext2', 'ptb', 'c4', "pileval"], help='Where to extract calibration data from.')
+    parser.add_argument('--dataset', type=str, default='wikitext2',
+                        choices=['wikitext2', 'ptb', 'c4', 'ptb-new', 'c4-new', "pileval"], help='Where to extract calibration data from.')
     parser.add_argument('--seed', type=int, default=0, help='Seed for sampling the calibration data.')
     parser.add_argument('--nsamples', type=int, default=128, help='Number of calibration data samples.')
     parser.add_argument('--percdamp', type=float, default=.01,
