@@ -105,7 +105,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
         if pad_len > 0:
             #matrix_int8_padded = np.pad(
             #    matrix_int8, ((0, pad_len), (0, 0)), "constant")
-            int_weight_pt = torch.nn.functional.pad(int_weight_pt, (0, 0, 0, pad_len), "constant", 0)
+            intweight_pt = torch.nn.functional.pad(intweight_pt, (0, 0, 0, pad_len), "constant", 0)
 
         #int8_values = np.transpose(matrix_int8_padded)
         intweight_pt_T = intweight_gpu.T
