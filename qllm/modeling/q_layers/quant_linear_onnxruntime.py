@@ -27,7 +27,7 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         if not has_ort_ops():
             raise Exception("ort_ops is not installed.")
         fp_weight = ort_ops.Dequantize4Bits(
-            qself_qweight, qself_qzeros, qself_scales, groupsize, in_features, out_features)
+            qself_qweight.contiguous(), qself_qzeros, qself_scales, groupsize, in_features, out_features)
         return torch.matmul(x, fp_weight.T)
 
 
