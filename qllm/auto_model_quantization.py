@@ -133,14 +133,13 @@ class AutoModelQuantization(object):
             sample_inputs = self.tokenizer("Hello world", return_tensors="pt")
             sample_inputs = (sample_inputs.input_ids,
                              sample_inputs.attention_mask)
-        onnx_model_path = exporter.export_onnx(
-            model, onnx_path_str, sample_inputs, with_past, opset)
-        self.tokenizer is not None and self.tokenizer.save_pretrained(
-            onnx_path_str)
+            self.tokenizer.save_pretrained(onnx_path_str)
+        model.config.to_json_file(f"{onnx_path_str}/config.json")
+        model.generation_config.to_json_file(f"{onnx_path_str}/generation_config.json")
+        onnx_model_path = exporter.export_onnx(model, onnx_path_str, sample_inputs, with_past, opset)
 
         # verify correctness
-        exporter.verify_correcness(
-            model, sample_inputs, onnx_model_path, with_past)
+        exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
 
     def run(self, args):
         if args.pack_mode == "AUTO" and args.allow_mix_bits:

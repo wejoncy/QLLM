@@ -13,7 +13,10 @@ def export_onnx(model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple
     sample_inputs_tp = list(sample_inputs)
     if sample_inputs_tp[1] is None:
         sample_inputs_tp[1] = torch.ones_like(sample_inputs_tp[0])
-    model = large_model_exporter.move_to_appropriate_device(model, sample_inputs_tp)
+    #FIXME: this is a workaround for the bug in onnxruntime 1.7
+    move_to_device = large_model_exporter.move_to_appropriate_device if hasattr(
+        large_model_exporter, "move_to_appropriate_device") else large_model_exporter.move_to_approprate_device
+    model = move_to_device(model, sample_inputs_tp)
 
     sample_inputs = large_model_exporter.adapt_inputs_to_device(
         sample_inputs_tp, next(model.parameters()).device)
