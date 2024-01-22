@@ -134,7 +134,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
     def forward(self, x):
         if self.act_order is None:
             self.act_order = self.g_idx[:self.groupsize // self.bits].sum() != 0
-            assert not self.act_order, "onnxruntime doesn't support g_idx for now."
+            assert not self.act_order, "please set the pack_model to others like [GPTQ, AUTO] and try again."
         out = QuantLinearTorchFunction_forward(x, self.qweight, self.scales,
                                                self.qzeros, self.bits, self.groupsize, self.infeatures, self.outfeatures)
         out = out + self.bias if self.bias is not None else out

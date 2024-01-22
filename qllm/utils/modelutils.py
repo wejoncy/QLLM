@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import tqdm
 
-DEV = torch.device('cuda:0')
-
 class ScaledLinear(nn.Linear):
     def __init__(self, linear_layer, scale=None):
         super().__init__(linear_layer.in_features, linear_layer.out_features)

@@ -6,7 +6,7 @@ import json
 import tqdm
 
 from .auto_datasets import get_sample_datas_for_quantization
-from .utils import find_layers, DEV
+from .utils import find_layers
 from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear, select_quant_linear, set_op_by_name
 from .utils.logger import get_logger
 from .modeling import AutoQuantizedModelForCausalLM
@@ -125,14 +125,16 @@ class AutoModelQuantization(object):
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str,
                     sample_inputs: tuple, with_past: bool = False, args=None):
-        if args.pack_mode != "ORT" and os.getenv("KEEP_GPTQ_PACK", "0") != "1" and args.wbits < 16:
-            model = self.repack_to_new_mode(model, args, "ORT")
+        if args.pack_mode == "ORT":
+            if args.wbits != 4:
+                logger.warn("ORT pack_mode only support 4bit quantization, will use the original pack mode")
+            else:
+                model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
         if self.tokenizer:
             sample_inputs = self.tokenizer("Hello world", return_tensors="pt")
-            sample_inputs = (sample_inputs.input_ids,
-                             sample_inputs.attention_mask)
+            sample_inputs = (sample_inputs.input_ids, sample_inputs.attention_mask)
             self.tokenizer.save_pretrained(onnx_path_str)
         model.config.to_json_file(f"{onnx_path_str}/config.json")
         model.generation_config.to_json_file(f"{onnx_path_str}/generation_config.json")
@@ -142,6 +144,9 @@ class AutoModelQuantization(object):
         exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
 
     def run(self, args):
+        from .utils.comm_utils import set_seed
+        set_seed(args.seed)
+
         if args.pack_mode == "AUTO" and args.allow_mix_bits:
             assert args.method == "gptq", "only gptq support allow_mix_bits mode"
             args.pack_mode = "GPTQ"
@@ -174,8 +179,7 @@ Please run with `-h` to refer the usage.")
             else:
                 args.mix_qlayer_conf = {}
             tick = time.time()
-            quantizers = self.__quant_by_sequential(
-                model, inputs_dataloader, args, DEV)
+            quantizers = self.__quant_by_sequential(model, inputs_dataloader, args, "cuda")
             model = self.pack_model(model, quantizers, args)
             logger.info(
                 f"Finished quantization and packing weight, time cost:{time.time() - tick}")
@@ -186,7 +190,7 @@ Please run with `-h` to refer the usage.")
                                                           args.pack_mode, repack_func, save_serialization=False)
 
         if args.eval:
-            self.eval_model(model, DEV, args)
+            self.eval_model(model, "cuda", args)
 
         if args.export_onnx:
             inputs_dataloader = self.get_datasets(

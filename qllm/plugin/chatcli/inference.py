@@ -31,7 +31,9 @@ def chat_loop(
     if _fastchat_available:
         return chat_loop_v2(model, tokenizer)
     model_type = str(type(model)).lower()
-    assert "llama" in model_type, 'only support llama model.'
+    #if "llama" not in model_type and hasattr(tokenizer, 'apply_chat_template'):
+    #    return chat_loop_v3(model, tokenizer)
+    assert "llama" in model_type, 'have you installed fschat? please run `pip install fschat` and try again.'
     assert generate_stream_func is not None or generate_func is not None, 'should set generate function.'
 
     # Set context length
@@ -75,6 +77,7 @@ def chat_loop(
                 model,
                 tokenizer,
                 prompt,
+                None,
                 max_new_tokens,
                 context_len=context_len,
             )
@@ -258,3 +261,78 @@ def chat_loop_v2(
                     conv.messages.pop()
 
                 reload_conv(conv)
+
+class V3Conversation:
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+        self.messages = [{"role":"system", "content":"You are a helpful, respectful and honest assistant. Always answer as helpfully as possible."}]
+        self.roles_ = ["user", "assistant"]
+    
+    @property
+    def roles(self):
+        return self.roles_
+
+    def append_message(self, role, content):
+        self.messages.append({"role": role, "content": content})
+    
+    def get_prompt(self):
+        return self.tokenizer.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True, return_tensors="pt")
+
+def chat_loop_v3(
+    model:torch.nn.Module,
+    tokenizer,
+    temperature: float = 0.7,
+    repetition_penalty: float=1.0,
+    max_new_tokens: int=512,
+    judge_sent_end: bool = True,
+    debug: bool = True,
+    history: bool = True,
+    conv_template:str = None,):
+    device = next(model.parameters()).device
+    chatio = SimpleChatIO_v2()
+    generate_stream_func = generate_stream
+    conv = V3Conversation(tokenizer)
+
+    while True:
+        try:
+            inp = chatio.prompt_for_input(conv.roles[0])
+        except EOFError:
+            inp = ""
+
+        if inp == "!!exit" or not inp:
+            print("exit...")
+            break
+
+        conv.append_message(conv.roles[0], inp)
+        #conv.append_message(conv.roles[1], "")
+        prompt = conv.get_prompt()
+
+        gen_params = {
+            "model": model.config.name_or_path,
+            "prompt": prompt,
+            "temperature": temperature,
+            "repetition_penalty": repetition_penalty,
+            "max_new_tokens": max_new_tokens,
+            "stop": "</s>",
+            "stop_token_ids": 2,
+            "echo": False,
+        }
+        context_len = model.config.max_position_embeddings
+
+        try:
+            chatio.prompt_for_output(conv.roles[1])
+            output_stream = generate_stream_func(
+                model,
+                tokenizer,
+                prompt,
+                device,
+                100,
+                context_len=context_len,
+            )
+            outputs = chatio.stream_output(output_stream)
+            conv.append_message(conv.roles[1], "")
+        except KeyboardInterrupt:
+            conv.messages = []
+            print("stopped generation.")
+            continue
+
