@@ -5,11 +5,6 @@ from typing import List, Union
 from datasets import load_dataset
 
 
-def set_seed(seed):
-    np.random.seed(seed)
-    torch.random.manual_seed(seed)
-
-
 def get_wikitext2(nsamples, seed, seqlen, tokenizer):
     traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
     testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')

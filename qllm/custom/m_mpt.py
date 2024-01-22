@@ -1,5 +1,5 @@
 from ..modeling.q_layers import make_mixbits_quant_linear, QuantLinear
-from ..utils import find_layers, DEV, gen_conditions
+from ..utils import find_layers, gen_conditions
 from ..quantization.gptq import GPTQ, Observer
 from texttable import Texttable
 import os
@@ -417,7 +417,7 @@ if __name__ == '__main__':
         else:
             args.mix_qlayer_conf = {}
         tick = time.time()
-        quantizers = mpt_sequential(model, dataloader, args.mix_qlayer_conf, DEV)
+        quantizers = mpt_sequential(model, dataloader, args.mix_qlayer_conf, "cuda")
         model, quant_info = mpt_pack(model, quantizers)
         print(time.time() - tick)
 
@@ -426,7 +426,7 @@ if __name__ == '__main__':
         open(args.save+"/quant_config_by_layer.json", 'w').write(json.dumps(quant_info))
 
     if args.eval:
-        mpt_eval(model, args.forward_args, DEV)
+        mpt_eval(model, args.forward_args, "cuda")
 
     if args.export_onnx:
         export_onnx(model, args.export_onnx, dataloader[0])

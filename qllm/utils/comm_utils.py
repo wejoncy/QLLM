@@ -2,6 +2,13 @@ import gc
 import torch
 
 
+def set_seed(seed):
+    import random
+    import numpy as np
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
 def clear_memory(*args):
     for weight in args:
         del weight
