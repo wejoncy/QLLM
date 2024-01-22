@@ -120,6 +120,7 @@ python -m qllm --load ./Llama-2-7b-4bit --eval
 ```
 
 ## model inference with ORT
+you may want to use [genai](https://github.com/microsoft/onnxruntime-genai) to do generation with ORT.
 ```python
 import onnxruntime
 from transformers import AutoTokenizer
@@ -127,14 +128,17 @@ onnx_path_str = './Llama-2-7b-4bit-onnx'
 
 tokenizer = AutoTokenizer.from_pretrained(onnx_path_str, use_fast=True)
 sample_inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
-onnx_model_path = onnx_path_str+'/model_one_for_all.onnx'
+onnx_model_path = onnx_path_str+'/decoder_merged.onnx'
 session = onnxruntime.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'])
 mask = np.ones(sample_inputs[0].shape, dtype=np.int64) if sample_inputs[1] is None else sample_inputs[1].cpu().numpy()
 num_layers = model.config.num_hidden_layers
-inputs = {'input_ids': sample_inputs[0].cpu().numpy(), 'attention_mask': mask, 'use_cache_branch': np.array([0], dtype=np.bool_)}
+inputs = {'input_ids': sample_inputs[0].cpu().numpy(), 
+          'attention_mask': mask, 
+          'position_ids': np.arrange(0,sample_inputs[0], dtype=np.int64),
+          'use_cache_branch': np.array([0], dtype=np.bool_)}
 for i in range(num_layers):
-    inputs[f'present_key.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
-    inputs[f'present_values.{i}'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
+    inputs[f'past_key_values.{i}.key'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
+    inputs[f'past_key_values.{i}.value'] = np.zeros((1, 32, 32, 128), dtype=np.float16)
 outputs = session(None, inputs)
 ```
 
