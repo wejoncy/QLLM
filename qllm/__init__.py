@@ -4,4 +4,4 @@ if os.getenv("PROXY_PORT", None):
     os.environ["HTTP_PROXY"] = f"http://127.0.0.1:{proxy_port}"
     os.environ["HTTPS_PROXY"] = f"http://127.0.0.1:{proxy_port}"
 
-__version__ = '0.1.6.dev'
+__version__ = '0.1.6'
