@@ -10,7 +10,7 @@ import accelerate
 from typing import Dict, Optional, Union
 from transformers.utils.hub import cached_file
 import safetensors
-
+from packaging import version
 
 from .. import utils
 from .config import BaseQuantizeConfig
@@ -134,11 +134,13 @@ class AutoQuantizedModelForCausalLM:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading model from {pretrained_model_name_or_path}")
         cls.disable_double_init()
-        attn_implementation = 'eager' if args.export_onnx else None
+        versioned_args = {}
+        if version.parse(transformers.__version__) >= version.parse("4.36"):
+            versioned_args["attn_implementation"] =  'eager' if args.export_onnx else None
 
         llm = AutoModelForCausalLM.from_pretrained(
             pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code, 
-            attn_implementation=attn_implementation)
+            **versioned_args)
         return llm
 
     @classmethod
@@ -176,9 +178,10 @@ class AutoQuantizedModelForCausalLM:
         auto_conf = transformers.AutoConfig.from_pretrained(
             model_name_or_path, trust_remote_code=trust_remote_code)
         with transformers.utils.generic.ContextManagers(init_contexts):
-            attn_implementation = 'eager' if args.export_onnx else None
-            model = AutoModelForCausalLM.from_config(
-                auto_conf, trust_remote_code=trust_remote_code, attn_implementation=attn_implementation)
+            versioned_args = {}
+            if version.parse(transformers.__version__) >= version.parse("4.36"):
+                versioned_args["attn_implementation"] =  'eager' if args.export_onnx else None
+            model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code, **versioned_args)
         # device_map = accelerate.infer_auto_device_map(
         #    model, dtype=torch_dtype, no_split_module_classes=get_no_split_layer_type_name(model))
 
