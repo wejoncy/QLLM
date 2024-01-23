@@ -72,11 +72,9 @@ class AutoModelQuantization(object):
             "wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         quant_config_by_layer["method"] = args.method
 
-        target_layer = select_quant_linear(
-            args.pack_mode, args.wbits, args.method)
+        target_layer = select_quant_linear(args.pack_mode, args.wbits, args.method)
 
-        make_mixbits_quant_linear(
-            model, quantizers, quant_config_by_layer, target_layer=target_layer, device="cpu")
+        make_mixbits_quant_linear(model, quantizers, quant_config_by_layer, target_layer=target_layer, device="cpu")
         qlayers = find_layers(model, [target_layer])
         for name in tqdm.tqdm(qlayers, desc='Packing weights....'):
             quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]
@@ -99,21 +97,19 @@ class AutoModelQuantization(object):
 
     def repack_to_new_mode(self, model, args, new_pack_mode):
         old_pack_mode = model.quant_config["version"]
+        if old_pack_mode == new_pack_mode:
+            return model
         model.quant_config["version"] = new_pack_mode
         bits, groupsize = args.wbits, args.groupsize
-        source_layer = select_quant_linear(
-            old_pack_mode, args.wbits, args.method)
-        target_layer = select_quant_linear(
-            new_pack_mode, args.wbits, args.method)
+        source_layer = select_quant_linear(old_pack_mode, args.wbits, args.method)
+        target_layer = select_quant_linear(new_pack_mode, args.wbits, args.method)
         qlayers = find_layers(model, [source_layer])
-        for module_name, qlayer in tqdm.tqdm(
-                qlayers.items(),
+        for module_name, qlayer in tqdm.tqdm(qlayers.items(),
                 desc=f"replacing model packed-weight from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
             fp16_weight, scales, zeros = qlayer.unpack()
             qlayer.weight = fp16_weight
             tmp = qlayer
-            new_module = target_layer(
-                bits, groupsize, tmp.infeatures, tmp.outfeatures, tmp.bias is not None)
+            new_module = target_layer(bits, groupsize, tmp.infeatures, tmp.outfeatures, tmp.bias is not None)
             set_op_by_name(model, module_name, new_module)
             new_module.pack(tmp, scales.T, zeros.T, None)
             qlayer.to('cpu')
@@ -181,8 +177,7 @@ Please run with `-h` to refer the usage.")
             tick = time.time()
             quantizers = self.__quant_by_sequential(model, inputs_dataloader, args, "cuda")
             model = self.pack_model(model, quantizers, args)
-            logger.info(
-                f"Finished quantization and packing weight, time cost:{time.time() - tick}")
+            logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
         if args.save:
             def repack_func(): return self.repack_to_new_mode(model, args, args.pack_mode)
@@ -193,17 +188,14 @@ Please run with `-h` to refer the usage.")
             self.eval_model(model, "cuda", args)
 
         if args.export_onnx:
-            inputs_dataloader = self.get_datasets(
-                args) if self.tokenizer is None else [None]
-            self.export_onnx(model, args.export_onnx,
-                             inputs_dataloader[0], True, args=args)
+            inputs_dataloader = self.get_datasets(args) if self.tokenizer is None else [None]
+            self.export_onnx(model, args.export_onnx, inputs_dataloader[0], True, args=args)
 
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
             from .modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
             if args.wbits < 16 and not is_the_machine_support_awq_engine(args.wbits
                                                                          ) and model.quant_config["version"] == "GEMM":
-                logger.warning(
-                    "AWQ inference engine not found, will convert to GPTQ packing for inference.")
+                logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
                 model = self.repack_to_new_mode(model, args, "GPTQ")
             loop_in_chat_completion(self.tokenizer, model)

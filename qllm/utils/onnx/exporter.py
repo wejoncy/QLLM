@@ -31,7 +31,7 @@ def export_onnx(
     if "position_ids" in input_keys:
         onnx_inputs[input_keys.index("position_ids")] = torch.arange(
             0, onnx_inputs[0].shape[1], dtype=torch.int64, device=onnx_inputs[0].device
-        )
+        ).unsqueeze(0)
     onnx_io_tuple = large_model_exporter.fetch_onnx_inputs_outputs_name(
         model, onnx_inputs, input_keys, past_key_value, with_past, False
     )
@@ -56,7 +56,7 @@ def export_onnx(
     if "position_ids" in input_keys:
         onnx_inputs[input_keys.index("position_ids")] = torch.tensor(
             [onnx_inputs[0].shape[1]], dtype=torch.int64, device=onnx_inputs[0].device
-        )
+        ).unsqueeze(0)
     large_model_exporter.do_export_internal(model, onnx_io_tuple, onnx_inputs, onnx_path_dec, opset)
 
     onnx_path_one_for_all = onnx_path_enc.parent / "decoder_merged.onnx"
@@ -86,7 +86,7 @@ def verify_correcness(
     )
     inputs = {"input_ids": sample_inputs[0].cpu().numpy(), "attention_mask": mask}
     if "position_ids" in [i.name for i in session.get_inputs()]:
-        inputs["position_ids"] = np.arange(0, inputs["input_ids"].shape[1], dtype=np.int64)
+        inputs["position_ids"] = np.arange(0, inputs["input_ids"].shape[1], dtype=np.int64).reshape(1, -1)
     if with_past:
         inputs["use_cache_branch"] = np.array([0], dtype=np.bool_)
         for i in range(num_layers):
@@ -100,7 +100,7 @@ def verify_correcness(
         mask = np.concatenate([mask, np.array([[1]])], axis=1)
         inputs = {"input_ids": np.array([[3]]), "attention_mask": mask}
         if "position_ids" in [i.name for i in session.get_inputs()]:
-            inputs["position_ids"] = np.array([sample_inputs[0].shape[1]], dtype=np.int64)
+            inputs["position_ids"] = np.array([sample_inputs[0].shape[1]], dtype=np.int64).reshape(1, -1)
         inputs["use_cache_branch"] = np.array([1], dtype=np.bool_)
         for i in range(num_layers):
             inputs[f"past_key_values.{i}.key"] = ref.past_key_values[i][0].cpu().numpy()
@@ -112,7 +112,11 @@ def verify_correcness(
         )
         err_decode = ref.logits.cpu().numpy() - outputs[0]
     print(
-        "max abs err_prefill:", np.abs(err_prefill).max(),
-        "max abs err_decode:", np.abs(err_decode).max(),
-        "correctness check is ", "" if np.abs(err_decode).max() < 1e-2 else "not", " passed",
+        "max abs err_prefill:",
+        np.abs(err_prefill).max(),
+        "max abs err_decode:",
+        np.abs(err_decode).max(),
+        "correctness check is ",
+        "" if np.abs(err_decode).max() < 1e-2 else "not",
+        " passed",
     )
