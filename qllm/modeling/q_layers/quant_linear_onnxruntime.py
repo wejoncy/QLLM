@@ -15,13 +15,12 @@ DEBUG_ = False
 
 class QuantLinearTorchFunction(torch.autograd.Function):
     @staticmethod
-    def symbolic(g, x, qself_qweight, qself_scales, qself_qzeros, bits, groupsize, in_features, out_features):
+    def symbolic(g, x, qself_qweight, qself_scales, qself_qzeros, g_idx, bits, groupsize, in_features, out_features):
+        input_tuple = (x, qself_qweight, qself_scales, qself_qzeros)
+        input_tuple += (g_idx,) if g_idx is not None else ()
         return g.op(
             "com.microsoft::MatMulNBits",
-            x,
-            qself_qweight,
-            qself_scales,
-            qself_qzeros,
+            *input_tuple,
             outputs=1,
             K_i=in_features,
             N_i=out_features,
@@ -30,34 +29,47 @@ class QuantLinearTorchFunction(torch.autograd.Function):
         )
 
     @staticmethod
-    def forward(ctx, x, qself_qweight, qself_scales, qself_qzeros, bits, groupsize, in_features, out_features):
+    def forward(ctx, x, qself_qweight, qself_scales, qself_qzeros, g_idx, bits, groupsize, in_features, out_features):
         if torch.onnx.is_in_onnx_export():
             return torch.zeros(x.shape[:-1] + (out_features,), dtype=x.dtype, device=x.device)
+        g_idx = torch.tensor([]) if g_idx[:32].sum().item() == 0 else g_idx
         if not has_ort_ops():
-            raise Exception("ort_ops is not installed.")
-        fp_weight = ort_ops.Dequantize4Bits(
-            qself_qweight, qself_qzeros, qself_scales, groupsize, in_features, out_features
-        )
+            fp_weight = dequantize_blockwise_4bits(
+            qself_qweight, qself_scales, qself_qzeros, g_idx, in_features, out_features
+            )[0]
+        else:
+            fp_weight = ort_ops.Dequantize4Bits(
+            qself_qweight, qself_scales, qself_qzeros, g_idx, groupsize, in_features, out_features
+            )
         return torch.matmul(x, fp_weight.T)
 
 
-def QuantLinearTorchFunction_forward(inputs, qweight, scales, qzeros, bits, groupsize, in_features, out_features):
+def QuantLinearTorchFunction_forward(inputs, qweight, scales, qzeros, g_idx, bits, groupsize, in_features, out_features):
     assert bits == 4, "Only 4 bits are supported."
-    out = QuantLinearTorchFunction().apply(inputs, qweight, scales, qzeros, bits, groupsize, in_features, out_features)
+    out = QuantLinearTorchFunction().apply(inputs, qweight, scales, qzeros, g_idx, bits, groupsize, in_features, out_features)
     return out
 
 
-def dequantize_blockwise_4bits(quant_values, scale, zero_point, rows, cols):
+def dequantize_blockwise_4bits(quant_values, scale, zero_point, g_idx, rows, cols):
     expand_quant_value = (
         quant_values.unsqueeze(-1) >> torch.tensor([[[[0, 4]]]], dtype=torch.int32, device=quant_values.device)
     ) & 0x0F
     expand_quant_value = expand_quant_value.reshape(*quant_values.shape[:-1], -1)
     aligned_scale = scale.reshape(*quant_values.shape[:-1], 1)
-    expand_zero_point = (
-        zero_point.unsqueeze(-1) >> torch.tensor([[[[0, 4]]]], dtype=torch.int32, device=quant_values.device)
-    ) & 0x0F
-    expand_zero_point = expand_zero_point.reshape(*quant_values.shape[:-1], -1)
-    float_values = ((expand_quant_value - expand_zero_point) * aligned_scale).to(scale.dtype)
+    if zero_point.dtype == scale.dtype:
+        expand_zero_point = zero_point.reshape(*quant_values.shape[:-1], -1)
+    else:
+        expand_zero_point = (
+            zero_point.unsqueeze(-1) >> torch.tensor([[[[0, 4]]]], dtype=torch.int32, device=quant_values.device)
+        ) & 0x0F
+        expand_zero_point = expand_zero_point.reshape(*quant_values.shape[:-1], -1)
+    if g_idx is not None and g_idx[:32].sum().item() != 0:
+        float_values = (
+            (expand_quant_value.reshape(expand_quant_value.shape[0], -1) - expand_zero_point[:, g_idx, 0])
+            * aligned_scale[:, g_idx, 0]
+        ).to(scale.dtype)
+    else:
+        float_values = ((expand_quant_value - expand_zero_point) * aligned_scale).to(scale.dtype)
     float_values = float_values.reshape(cols, -1)
     if rows != float_values.shape[-1]:
         float_values = float_values[:, :rows]
@@ -103,8 +115,8 @@ class QuantLinearORT(nn.Module, CompressWeight):
 
     def pack_on_device_for_even_bits(self, intweight_gpu, intzeros_T):
         self.act_order = self.g_idx[: self.groupsize // self.bits].sum().item() != 0
-        assert self.act_order is False, "please set the pack_model to others like [GPTQ, AUTO] and try again."
-        intzeros_pt = intzeros_T.T.byte()
+        assert self.bits == 4, "only 4bit is supported by ONNXRUNTIME for now."
+        intzeros_pt = intzeros_T.T if intzeros_T.dtype == self.scales.dtype else intzeros_T.T.byte()
         scales_pt = self.scales.T.to(intweight_gpu.device)
         intweight_pt = intweight_gpu.byte()
         block_size = self.groupsize
@@ -118,8 +130,9 @@ class QuantLinearORT(nn.Module, CompressWeight):
             intweight_pt = torch.nn.functional.pad(intweight_pt, (0, 0, 0, pad_len), "constant", 0)
             intzeros_pt = torch.nn.functional.pad(intzeros_pt, (0, 0, 0, pad_len), "constant", 0)
 
-        intzeros_pt = (intzeros_pt[:, 0::2]) | (intzeros_pt[:, 1::2] << 4)
-        intzeros_pt = intzeros_pt.reshape(-1)
+        if intzeros_T.dtype != self.scales.dtype:
+            intzeros_pt = (intzeros_pt[:, 0::2]) | (intzeros_pt[:, 1::2] << 4)
+            intzeros_pt = intzeros_pt.reshape(-1)
 
         intweight_pt_T = intweight_gpu.T
         intweight_pt_T = (intweight_pt_T[:, 0::2]) | (intweight_pt_T[:, 1::2] << 4)
@@ -135,21 +148,21 @@ class QuantLinearORT(nn.Module, CompressWeight):
         self.qzeros = intzeros_pt.contiguous().byte()
 
         if DEBUG_:
-            mat_float, _, _ = dequantize_blockwise_4bits(scales_pt, scales_pt, intzeros_pt, rows, cols)
+            mat_float, _, _ = dequantize_blockwise_4bits(intweight_pt_T, scales_pt, intzeros_pt, self.g_idx, rows, cols)
             print("mat_float", mat_float.shape, mat_float.dtype)
 
     def unpack(self):
         float_values, zero_point, scale = dequantize_blockwise_4bits(
-            self.qweight, self.scales, self.qzeros, self.infeatures, self.outfeatures
+            self.qweight, self.scales, self.qzeros, self.g_idx, self.infeatures, self.outfeatures
         )
         float_values = float_values.contiguous()
         zero_point = zero_point.T.contiguous()
         scale = scale.T.contiguous()
-        return float_values, zero_point, scale
+        return float_values.cpu(), scale.cpu(), zero_point.cpu()
 
     def forward(self, x):
         out = QuantLinearTorchFunction_forward(
-            x, self.qweight, self.scales, self.qzeros, self.bits, self.groupsize, self.infeatures, self.outfeatures
+            x, self.qweight, self.scales, self.qzeros, self.g_idx if self.act_order else None, self.bits, self.groupsize, self.infeatures, self.outfeatures
         )
         out = out + self.bias if self.bias is not None else out
         return out

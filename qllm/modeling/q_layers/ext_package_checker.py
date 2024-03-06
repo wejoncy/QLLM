@@ -1,7 +1,8 @@
 import importlib
 import torch
 import functools
-
+from ...utils.logger import get_logger
+logger = get_logger()
 
 @functools.lru_cache()
 def has_package(package_name):
@@ -10,7 +11,7 @@ def has_package(package_name):
             importlib.import_module(package_name)
             return True
     except:  # noqa: E722
-        pass
+        logger.warning(f"Failed to import {package_name}")
     return False
 
 

@@ -42,7 +42,7 @@ def gen_conditions(_wbits, _groupsize):
 
 
 def select_quant_linear(pack_mode: str, wbits:int, method:str):
-    from ..modeling.q_layers import QuantLinear
+    from ..modeling.q_layers import QuantLinearGPTQ
     from ..modeling.q_layers.quant_linear_awq import WQLinear_GEMM
     from ..modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
     from ..modeling.q_layers.quant_linear_onnxruntime import QuantLinearORT
@@ -55,7 +55,7 @@ def select_quant_linear(pack_mode: str, wbits:int, method:str):
     elif method == "hqq":
         target_layer = QuantLinearHQQ
     else:
-        target_layer = QuantLinear
+        target_layer = QuantLinearGPTQ
     return target_layer
 
 # copy from https://github.com/openppl-public/ppq/blob/master/ppq/quantization/measure/norm.py
@@ -176,21 +176,21 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
 
 # deprecated
 #def make_quant_linear(module, names, bits, groupsize, name=''):
-#    if isinstance(module, QuantLinear):
+#    if isinstance(module, QuantLinearGPTQ):
 #        return
 #    for attr in dir(module):
 #        tmp = getattr(module, attr)
 #        name1 = name + '.' + attr if name != '' else attr
 #        if name1 in names:
 #            delattr(module, attr)
-#            setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
+#            setattr(module, attr, QuantLinearGPTQ(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
 #    for name1, child in module.named_children():
 #        make_quant_linear(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
 #
 #
 #
 #def make_linear_qdq_back(module, names, name=''):
-#    if isinstance(module, QuantLinear):
+#    if isinstance(module, QuantLinearGPTQ):
 #        return
 #    for attr in dir(module):
 #        tmp = getattr(module, attr)

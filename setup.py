@@ -171,20 +171,20 @@ def build_cuda_extensions():
             CUDAExtension(
                 "qllm.awq_inference_engine",
                 [
-                    "src/awq_cuda/pybind_awq.cpp",
-                    "src/awq_cuda/quantization/gemm_cuda_gen.cu",
-                    #"src/awq_cuda/layernorm/layernorm.cu",
-                    #"src/awq_cuda/position_embedding/pos_encoding_kernels.cu",
-                    "src/awq_cuda/quantization/gemv_cuda.cu"
+                    "csrc/awq_cuda/pybind_awq.cpp",
+                    "csrc/awq_cuda/quantization/gemm_cuda_gen.cu",
+                    #"csrc/awq_cuda/layernorm/layernorm.cu",
+                    #"csrc/awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                    "csrc/awq_cuda/quantization/gemv_cuda.cu"
                 ], extra_compile_args=extra_compile_args_awq
             )
         )
 
     extra_compile_args_ort = get_extra_compile_args()
     extensions.append(CUDAExtension("qllm.ort_ops", [
-        "src/ort_cuda/ort_ops.cc",
-        "src/ort_cuda/dq.cu",
-        "src/ort_cuda/dq_gemv.cu",
+        "csrc/ort_cuda/ort_ops.cc",
+        "csrc/ort_cuda/dq.cu",
+        "csrc/ort_cuda/dq_gemv.cu",
     ], extra_compile_args=extra_compile_args_ort))
     return extensions
 

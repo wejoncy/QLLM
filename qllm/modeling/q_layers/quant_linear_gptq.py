@@ -89,7 +89,7 @@ def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits
     return QuantLinearTorchFunction().apply(input, qweight, scales, qzeros, groupsize, bits, in_features, g_idx)
 
 
-class QuantLinear(nn.Module, CompressWeight):
+class QuantLinearGPTQ(nn.Module, CompressWeight):
 
     def __init__(self, bits, groupsize, infeatures, outfeatures, bias):
         super().__init__()

@@ -1,4 +1,4 @@
-from ..modeling.q_layers import make_mixbits_quant_linear, QuantLinear
+from ..modeling.q_layers import make_mixbits_quant_linear, QuantLinearGPTQ
 from ..utils import find_layers, gen_conditions
 from ..quantization.gptq import GPTQ, Observer
 from texttable import Texttable
@@ -259,7 +259,7 @@ def mpt_pack(model, quantizers):
     layers = {n: layers[n] for n in quantizers}
     quant_info = {key: {"wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
     make_mixbits_quant_linear(model, quantizers, quant_info)
-    qlayers = find_layers(model, [QuantLinear])
+    qlayers = find_layers(model, [QuantLinearGPTQ])
     print('Packing ...')
     for name in qlayers:
         print(name)
