@@ -104,37 +104,49 @@ torch::Tensor op_gemv(const torch::Tensor &input_a,
 namespace onnxruntime {
 namespace contrib {
 namespace cuda {
-template <class T>
-int Dequantize4Bits(T *output, const uint8_t *quant_data,
-                       const T *scales_data, const uint8_t *zero_points, int k,
-                       int n, int block_size, cudaStream_t stream);
+template <class T, class ZeroT>
+int Dequantize4Bits(T *output, const uint8_t *quant_data, const T *scales_data,
+                    const ZeroT *zero_points, const int32_t *reorder_idx, int k,
+                    int n, int block_size, cudaStream_t stream);
 
 } // namespace cuda
 } // namespace contrib
 } // namespace onnxruntime
 
 #define QLLM_DISPATCH_CASE_FLOATING_TYPES(...)                                 \
-  AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)                         \
   AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)
+  //  AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__) \
 
 #define QLLM_DISPATCH_FLOATING_TYPES(TYPE, NAME, ...)                          \
   AT_DISPATCH_SWITCH(TYPE, NAME, QLLM_DISPATCH_CASE_FLOATING_TYPES(__VA_ARGS__))
 
-torch::Tensor Dequantize4Bits(torch::Tensor &qweight, torch::Tensor &qzeros,
-                              torch::Tensor &scales, int block_size,
+torch::Tensor Dequantize4Bits(const torch::Tensor &qweight,
+                              const torch::Tensor &scales,
+                              const torch::Tensor &qzeros,
+                              const torch::Tensor &g_idx, int block_size,
                               int in_features, int out_features) {
   CHECK_INPUT(qweight);
   CHECK_INPUT(scales);
   CHECK_INPUT(qzeros);
+  CHECK_INPUT(g_idx);
   at::cuda::OptionalCUDAGuard guard(qweight.device());
 
   torch::Tensor out = torch::empty({out_features, in_features}, scales.options());
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   QLLM_DISPATCH_FLOATING_TYPES(out.scalar_type(), "Dequantize4Bits", [&] {
-    onnxruntime::contrib::cuda::Dequantize4Bits<scalar_t>(
-        out.data_ptr<scalar_t>(), qweight.data_ptr<uint8_t>(),scales.data_ptr<scalar_t>(),
-        qzeros.data_ptr<uint8_t>(), in_features, out_features, block_size,
-        stream);
+    if (qzeros.scalar_type() == torch::kFloat16){
+      onnxruntime::contrib::cuda::Dequantize4Bits<scalar_t, scalar_t>(
+          out.data_ptr<scalar_t>(), qweight.data_ptr<uint8_t>(),
+          scales.data_ptr<scalar_t>(), qzeros.data_ptr<scalar_t>(),
+          g_idx.data_ptr<int32_t>(), in_features, out_features, block_size,
+          stream);
+    } else {
+      onnxruntime::contrib::cuda::Dequantize4Bits<scalar_t, uint8_t>(
+          out.data_ptr<scalar_t>(), qweight.data_ptr<uint8_t>(),
+          scales.data_ptr<scalar_t>(), qzeros.data_ptr<uint8_t>(),
+          g_idx.data_ptr<int32_t>(), in_features, out_features, block_size,
+          stream);
+    }
   });
   return out;
 }

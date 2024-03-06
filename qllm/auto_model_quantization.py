@@ -111,7 +111,7 @@ class AutoModelQuantization(object):
             tmp = qlayer
             new_module = target_layer(bits, groupsize, tmp.infeatures, tmp.outfeatures, tmp.bias is not None)
             set_op_by_name(model, module_name, new_module)
-            new_module.pack(tmp, scales.T, zeros.T, None)
+            new_module.pack(tmp, scales.T, zeros.T, tmp.g_idx)
             qlayer.to('cpu')
             new_module.to('cpu')
         del qlayers

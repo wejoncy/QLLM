@@ -61,6 +61,7 @@ def export_onnx(
 
     onnx_path_one_for_all = onnx_path_enc.parent / "decoder_merged.onnx"
     merge_decoders(onnx_path_enc, onnx_path_dec, save_path=onnx_path_one_for_all)
+    logger.info(f"model is exported to onnx and saved to {onnx_path_one_for_all}")
     return onnx_path_one_for_all
 
 

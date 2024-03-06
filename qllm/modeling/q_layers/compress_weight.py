@@ -117,8 +117,8 @@ class CompressWeight(object):
 
         # assert (intweight_T.T == intweight).all()
         if not need_transpose:
-            return intweight_T.cpu()
-        return intweight_T.T.cpu()
+            return intweight_T
+        return intweight_T.T
 
     def dequant_weight(self, intweight, zeros):
         # scales = scales.t().contiguous()
@@ -142,7 +142,7 @@ class CompressWeight(object):
         # qdq_weight_T = (intweight.to(device).T-zeros_mat)*scale_mat
 
         # assert (qdq_weight_T.T == qdq_weight).all()
-        return qdq_weight_T.T.cpu()
+        return qdq_weight_T.T
 
     def weight_qdq(self, linear, scales, zeros, g_idx=None):
         self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
@@ -176,7 +176,7 @@ class CompressWeight(object):
         weight = weight.cpu()
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
-        return fp16_weight, self.scales, zeros.cpu()
+        return fp16_weight.cpu(), self.scales.cpu(), zeros.cpu()
 
     def reorder_int_tensor(self, int_tensor):
         return int_tensor
