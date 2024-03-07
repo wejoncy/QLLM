@@ -123,12 +123,15 @@ int Dequantize4Bits(T *output, const uint8_t *quant_data, const T *scales_data,
 torch::Tensor Dequantize4Bits(const torch::Tensor &qweight,
                               const torch::Tensor &scales,
                               const torch::Tensor &qzeros,
-                              const torch::Tensor &g_idx, int block_size,
-                              int in_features, int out_features) {
+                              const c10::optional<torch::Tensor> &g_idx,
+                              int block_size, int in_features,
+                              int out_features) {
   CHECK_INPUT(qweight);
   CHECK_INPUT(scales);
   CHECK_INPUT(qzeros);
-  CHECK_INPUT(g_idx);
+  if (g_idx.has_value()) {
+    CHECK_INPUT(g_idx.value());
+  }
   at::cuda::OptionalCUDAGuard guard(qweight.device());
 
   torch::Tensor out = torch::empty({out_features, in_features}, scales.options());
@@ -138,13 +141,13 @@ torch::Tensor Dequantize4Bits(const torch::Tensor &qweight,
       onnxruntime::contrib::cuda::Dequantize4Bits<scalar_t, scalar_t>(
           out.data_ptr<scalar_t>(), qweight.data_ptr<uint8_t>(),
           scales.data_ptr<scalar_t>(), qzeros.data_ptr<scalar_t>(),
-          g_idx.data_ptr<int32_t>(), in_features, out_features, block_size,
+          nullptr, in_features, out_features, block_size,
           stream);
     } else {
       onnxruntime::contrib::cuda::Dequantize4Bits<scalar_t, uint8_t>(
           out.data_ptr<scalar_t>(), qweight.data_ptr<uint8_t>(),
           scales.data_ptr<scalar_t>(), qzeros.data_ptr<uint8_t>(),
-          g_idx.data_ptr<int32_t>(), in_features, out_features, block_size,
+          g_idx.has_value()?g_idx->data_ptr<int32_t>():nullptr, in_features, out_features, block_size,
           stream);
     }
   });
