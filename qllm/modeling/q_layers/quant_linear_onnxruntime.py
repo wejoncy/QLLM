@@ -32,7 +32,6 @@ class QuantLinearTorchFunction(torch.autograd.Function):
     def forward(ctx, x, qself_qweight, qself_scales, qself_qzeros, g_idx, bits, groupsize, in_features, out_features):
         if torch.onnx.is_in_onnx_export():
             return torch.zeros(x.shape[:-1] + (out_features,), dtype=x.dtype, device=x.device)
-        g_idx = torch.tensor([]) if g_idx[:32].sum().item() == 0 else g_idx
         if not has_ort_ops():
             fp_weight = dequantize_blockwise_4bits(
             qself_qweight, qself_scales, qself_qzeros, g_idx, in_features, out_features
@@ -141,11 +140,14 @@ class QuantLinearORT(nn.Module, CompressWeight):
         scales_pt = scales_pt.reshape(-1)
 
         assert self.qweight.shape == intweight_pt_T.shape
-        assert self.qzeros.shape == intzeros_pt.shape
+        assert self.qzeros.shape == intzeros_pt.shape or self.qzeros.dtype != intzeros_pt.dtype
 
         self.scales = scales_pt.contiguous()
         self.qweight = intweight_pt_T.contiguous().byte()
-        self.qzeros = intzeros_pt.contiguous().byte()
+        if intzeros_T.dtype != self.scales.dtype:
+            self.qzeros = intzeros_pt.contiguous().byte()
+        else:
+            self.qzeros = intzeros_pt.contiguous()
 
         if DEBUG_:
             mat_float, _, _ = dequantize_blockwise_4bits(intweight_pt_T, scales_pt, intzeros_pt, self.g_idx, rows, cols)

@@ -126,6 +126,8 @@ class AutoModelQuantization(object):
                 logger.warn("ORT pack_mode only support 4bit quantization, will use the original pack mode")
             else:
                 model = self.repack_to_new_mode(model, args, "ORT")
+        # enforce to ort pack_mode
+        model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter
         opset = 16
         if self.tokenizer:
