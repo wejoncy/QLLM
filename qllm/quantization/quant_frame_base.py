@@ -7,10 +7,9 @@ from ..utils.modelutils import get_op_by_name
 logger = get_logger()
 
 class QuantFrameBase:
-    def __init__(self, args) -> None:
+    def __init__(self) -> None:
         self.rec_use_cache = False
         self.quant_layers = [torch.nn.Linear]
-        self.args = args
         self.swap_device = torch.device('cpu')
 
     @torch.no_grad()
@@ -102,11 +101,12 @@ class QuantFrameBase:
         outs = torch.zeros_like(inps)
         return inps, outs, attention_layers, layer_input_args
 
-    def hook_before_qlayer(self, layer_id, args):
-        if str(layer_id + 1) in args.mix_qlayer_conf:
+    def hook_before_qlayer(self, layer_id, config):
+        mix_qlayer_conf = {}
+        if str(layer_id + 1) in mix_qlayer_conf:
             layer_key = str(layer_id + 1)
-            args.wbits = args.mix_qlayer_conf[layer_key].get('wbits', args.wbits)
-            args.groupsize = args.mix_qlayer_conf[layer_key].get('groupsize', args.groupsize)
+            self.quant_config.wbits = mix_qlayer_conf[layer_key].get('wbits', self.quant_config.wbits)
+            self.quant_config.groupsize = mix_qlayer_conf[layer_key].get("groupsize", self.quant_config.groupsize)
 
     def do_quantize(self, model, dataloader, model_prefix, dev):
         raise NotImplementedError

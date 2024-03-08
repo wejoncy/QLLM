@@ -128,19 +128,14 @@ class AutoQuantizedModelForCausalLM:
         trust_remote_code: bool = False,
         **kwargs
     ) -> AutoModelForCausalLM:
-        args = kwargs.pop("args", None)
 
         if pretrained_model_name_or_path is None:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading model from {pretrained_model_name_or_path}")
         cls.disable_double_init()
-        versioned_args = {}
-        if version.parse(transformers.__version__) >= version.parse("4.36"):
-            versioned_args["attn_implementation"] =  'eager' if args.export_onnx else None
 
         llm = AutoModelForCausalLM.from_pretrained(
-            pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code, 
-            **versioned_args)
+            pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
         return llm
 
     @classmethod
@@ -159,7 +154,6 @@ class AutoQuantizedModelForCausalLM:
             warmup_triton: bool = False,
             **kwargs) -> AutoModelForCausalLM:
 
-        args = kwargs.pop("args", None)
         cls.disable_double_init()
 
         if isinstance(device_map, str):
@@ -178,15 +172,12 @@ class AutoQuantizedModelForCausalLM:
         auto_conf = transformers.AutoConfig.from_pretrained(
             model_name_or_path, trust_remote_code=trust_remote_code)
         with transformers.utils.generic.ContextManagers(init_contexts):
-            versioned_args = {}
-            if version.parse(transformers.__version__) >= version.parse("4.36"):
-                versioned_args["attn_implementation"] =  'eager' if args.export_onnx else None
-            model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code, **versioned_args)
+            model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code)
         # device_map = accelerate.infer_auto_device_map(
         #    model, dtype=torch_dtype, no_split_module_classes=get_no_split_layer_type_name(model))
 
         if quant_config is None:
-            quant_config = BaseQuantizeConfig.from_pretrained(model_name_or_path, args)
+            quant_config = BaseQuantizeConfig.from_pretrained(model_name_or_path)
         model.quant_config = quant_config.quant_config
         model.quant_config_by_layer = quant_config.quant_config_by_op
 

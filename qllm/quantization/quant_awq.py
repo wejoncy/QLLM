@@ -37,12 +37,11 @@ def scale_activations(module):
 
 
 class AWQQuant(QuantFrameBase):
-    def __init__(self, args) -> None:
-        super().__init__(args)
+    def __init__(self, config) -> None:
+        super().__init__()
         self.auto_scale = True
         self.auto_clip = True
-        self.quant_config = {"zero_point": True, "q_group_size": args.groupsize,
-                "w_bit": args.wbits, "method": 'awq'}
+        self.quant_config = config
 
     def hijack_internal_block(self, named_linears, layer_block, inps, layer_kwargs):
         dev = next(layer_block.parameters()).device
@@ -84,26 +83,26 @@ class AWQQuant(QuantFrameBase):
         return outs, input_feat
 
     def _apply_quant(self, model, named_linears, quantizers, state_dict_prefix, version="GEMM"):
+        bits = self.quant_config.to_meta.bits
+        groupsize = self.quant_config.to_meta.group_size
         for name, linear_layer in named_linears.items():
             # NOTE: small regression in perplexity if linear layer uses .cpu().float()
             linear_layer = linear_layer.cuda().half()
 
             linear_layer.weight.data, scales, zeros = pseudo_quantize_tensor(
                 linear_layer.weight.data,
-                n_bit=self.args.wbits,
+                n_bit=bits,
                 q_config=self.quant_config,
                 get_scale_zp=True,
             )
             # get_op_name(model, linear_layer)
             layer_key = f"{state_dict_prefix}.{name}"
-            quantizers[layer_key] = (
-                None, scales.cpu(), zeros.cpu(), None, self.args.wbits, self.args.groupsize)
+            quantizers[layer_key] = (None, scales.cpu(), zeros.cpu(), None, bits, groupsize)
             linear_layer.cpu()
             clear_memory(scales, zeros)
 
     @torch.no_grad()
     def do_quantize(self, model, dataloader, model_prefix, dev):
-        args = self.args
         inps, outs, attention_layers, layer_kwargs = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
         run_batch = len(dataloader) if USE_ACCUMULATE_BATCH == -1 else USE_ACCUMULATE_BATCH
         if layer_kwargs.get('attention_mask', None) is not None:
@@ -119,7 +118,7 @@ class AWQQuant(QuantFrameBase):
             inps, input_feat = self.hijack_internal_block(named_linears, layer, inps, layer_kwargs)
 
             in_quantizer = InternalAWQuantizer()
-            in_quantizer.configure(args.wbits, self.quant_config, self.auto_scale, self.auto_clip)
+            in_quantizer.configure(self.quant_config.to_meta.bits, self.quant_config, self.auto_scale, self.auto_clip)
 
             in_quantizer.fast_quant_layer(layer_kwargs, input_feat, layer, attention_layers, i, model.__class__.__name__)
             self._apply_quant(model, named_linears, quantizers, f"{model_prefix}.{i}")
@@ -127,6 +126,6 @@ class AWQQuant(QuantFrameBase):
             layer = layer.cpu()
             # Haotian: check activation replacement
             clear_memory(input_feat)
-        # real_quantize_model_weight(attention_layers, args.wbits, self.quant_config)
-        
+        # real_quantize_model_weight(attention_layers, self.quant_config.to_meta.bits, self.quant_config)
+
         return quantizers

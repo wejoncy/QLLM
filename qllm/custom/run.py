@@ -27,7 +27,7 @@ class CustomModel(AutoModelQuantization):
         self.quant_layers = [torch.nn.Linear, lora.MergedLinear, lora.Linear]
         self.datsets = None
 
-    def get_torch_model(self, args, dev):
+    def get_torch_model(self, args):
         argv_user = self.argv_user
         if 'ckpt/mpt-' not in argv_user[argv_user.index('--model_name_or_path')+1]:
             lora_ind = argv_user.index('--use_lora')
@@ -55,11 +55,10 @@ please switch to the right directory and try again")
         self.datsets = new_data
         return model.half()
 
-    def get_datasets(self, args):
-        cache_dir = Path(
-            f"/tmp/qllm_v1/{args.model.replace(' ','_')}_{args.dataset}_dataloader.pt")
+    def get_datasets(self, tokenizer_path, dataset, nsamples, seed):
+        cache_dir = Path(f"/tmp/qllm_v1/{tokenizer_path.replace(' ','_')}_{dataset}_dataloader.pt")
         cache_dir.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"loading dataset from {args.dataset}")
+        logger.info(f"loading dataset from {dataset}")
 
         if self.datsets is not None:
             torch.save(self.datsets, str(cache_dir))
@@ -79,7 +78,6 @@ please switch to the right directory and try again")
         from examples_ads import run_llama_prompt
         run_llama_prompt.main(quant_model=model.to(dev))
 
-
     def process_forward_args(self, args):
         argv_user = args.forward_args
         import re
@@ -97,7 +95,6 @@ please switch to the right directory and try again")
                 idx += 1
         self.argv_user = argv_user
 
-
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str, sample_inputs: tuple, with_past: bool = False, args=None):
         try:
             import onnxruntime
@@ -108,7 +105,7 @@ please switch to the right directory and try again")
         except:
             warnings.warn('this exporter will be deprecated, please upgrade to torch 2.1.0+ and onnxruntime 1.17+',
                       DeprecationWarning, stacklevel=2)
-        #model = self.pipeline_to_multiple_gpu(model, [torch.device(i)
+        # model = self.pipeline_to_multiple_gpu(model, [torch.device(i)
         #                                            for i in range(torch.cuda.device_count())], sample_inputs)
         # model = model.cpu().float()
         model = model.cuda()
