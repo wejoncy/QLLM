@@ -123,7 +123,7 @@ class CompressWeight(object):
 
     def weight_qdq(self, linear, scales, zeros, g_idx=None):
         self.g_idx = g_idx.clone().to("cpu", non_blocking=True) if g_idx is not None else self.g_idx
-        self.scales = scales.clone().half().to("cpu", non_blocking=True)
+        self.scales = scales.T.contiguous().half().to("cpu", non_blocking=True)
         if linear.bias is not None:
             self.bias = linear.bias.clone().half()
         q_weight = self.quant_weight(linear.weight.data, scales, zeros, self.g_idx)
@@ -235,7 +235,7 @@ class CompressWeight(object):
             assert (fw == self.orig_fp_weight.to(device)).all()
 
     def accelerate_pack_on_device(self, layer_weight, scales, zeros, g_idx=None, device="cuda"):
-        self.scales = scales.clone().half().to("cpu", non_blocking=True)
+        self.scales = scales.T.contiguous().half().to("cpu", non_blocking=True)
         self.g_idx = g_idx.clone().to("cpu", non_blocking=True) if g_idx is not None else self.g_idx
         intweight_gpu = self.quant_weight(layer_weight, scales, zeros, g_idx, need_transpose=False)
 
