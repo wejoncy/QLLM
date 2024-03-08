@@ -10,6 +10,7 @@ from .utils import find_layers
 from .utils.modelutils import ScaledLinear, make_mixbits_quant_linear, select_quant_linear, set_op_by_name
 from .utils.logger import get_logger
 from .modeling import AutoQuantizedModelForCausalLM
+from . import quantization
 
 logger = get_logger()
 ROUNDTRIP_CHECK = False
@@ -21,37 +22,35 @@ class AutoModelQuantization(object):
         self.quant_layers = [torch.nn.Linear]
         self.tokenizer = None
 
-    def get_torch_model(self, args, dev='cpu'):
+    def get_torch_model(self, model_name_or_path):
         from transformers import AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
-            args.model, use_fast=True, trust_remote_code=True)
-        return AutoQuantizedModelForCausalLM.from_pretrained(args.model, args=args, trust_remote_code=True)
+            model_name_or_path, use_fast=True, trust_remote_code=True)
+        return AutoQuantizedModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
 
-    def get_datasets(self, args):
-        return get_sample_datas_for_quantization(args)
+    def get_datasets(self, tokenizer_path, dataset, nsamples, seed):
+        return get_sample_datas_for_quantization(tokenizer_path, dataset, nsamples, seed)
 
-    def __load_quant(self, args):
+    def __load_quant(self, quant_model_name_or_path):
         from transformers import AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            args.load, use_fast=True, trust_remote_code=True)
-        return AutoQuantizedModelForCausalLM.from_quantized(args.load, args=args, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(quant_model_name_or_path, use_fast=True, trust_remote_code=True)
+        return AutoQuantizedModelForCausalLM.from_quantized(quant_model_name_or_path, trust_remote_code=True)
 
     # you shouldn't rewrite this function
     @torch.no_grad()
-    def __quant_by_sequential(self, model, inputs_dataloader, args, dev):
-        from .quantization import get_quantizer
-        quantizer = get_quantizer(args)
+    def __dispatch_quant(self, model, inputs_dataloader, config, dev):
+        quantizer = quantization.get_quantizer(config)
         return quantizer.quantize(model, inputs_dataloader, dev)
 
     @torch.inference_mode()
-    def eval_model(self, model, dev, args):
+    def eval_model(self, model, dev):
         logger.info('Evaluating ...')
 
         from .modeling.q_layers.quant_linear_awq import has_awq_inference_engine
         if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
             logger.warning(
                 "AWQ inference engine not found, will convert to GPTQ packing for inference.")
-            model = self.repack_to_new_mode(model, args, "GPTQ")
+            model = self.repack_to_new_mode(model, "GPTQ")
 
         model.eval()
         model.to(dev)
@@ -64,15 +63,17 @@ class AutoModelQuantization(object):
         print(self.tokenizer.decode(out[0]))
 
     # TODO: perform packing on GPU
-    def pack_model(self, model, quantizers, args):
+    def pack_model(self, model, quantizers, pack_mode):
         attention_layers = find_layers(model, self.quant_layers+[ScaledLinear])
         attention_layers = {n: attention_layers[n] for n in quantizers}
 
         quant_config_by_layer = {key: {
             "wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
-        quant_config_by_layer["method"] = args.method
+        meta_info = model.quant_config.to_meta
+        wbits, method = meta_info.bits, meta_info.method
+        quant_config_by_layer["method"] = model.quant_config.method
 
-        target_layer = select_quant_linear(args.pack_mode, args.wbits, args.method)
+        target_layer = select_quant_linear(pack_mode, wbits, method)
 
         make_mixbits_quant_linear(model, quantizers, quant_config_by_layer, target_layer=target_layer, device="cpu")
         qlayers = find_layers(model, [target_layer])
@@ -88,21 +89,22 @@ class AutoModelQuantization(object):
 
             qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
-        model.quant_config["version"] = qlayers[name].pack_mode
-        if os.getenv('COMPATIBLE_WITH_AUTOGPTQ', None) == "1" and args.pack_mode == "GPTQ":
+        model.quant_config.version = qlayers[name].pack_mode
+        if os.getenv('COMPATIBLE_WITH_AUTOGPTQ', None) == "1" and pack_mode == "GPTQ":
             model.quant_config["COMPATIBLE_WITH_AUTOGPTQ"] = 1
         model.quant_config_by_layer = quant_config_by_layer
 
         return model
 
-    def repack_to_new_mode(self, model, args, new_pack_mode):
-        old_pack_mode = model.quant_config["version"]
+    def repack_to_new_mode(self, model, new_pack_mode):
+        old_pack_mode = model.quant_config.version
         if old_pack_mode == new_pack_mode:
             return model
         model.quant_config["version"] = new_pack_mode
-        bits, groupsize = args.wbits, args.groupsize
-        source_layer = select_quant_linear(old_pack_mode, args.wbits, args.method)
-        target_layer = select_quant_linear(new_pack_mode, args.wbits, args.method)
+        meta_info = model.quant_config.to_meta
+        bits, groupsize = meta_info.wbits, meta_info.groupsize
+        source_layer = select_quant_linear(old_pack_mode, bits, meta_info.method)
+        target_layer = select_quant_linear(new_pack_mode, bits, meta_info.method)
         qlayers = find_layers(model, [source_layer])
         for module_name, qlayer in tqdm.tqdm(qlayers.items(),
                 desc=f"replacing model packed-weight from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
@@ -120,14 +122,16 @@ class AutoModelQuantization(object):
 
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str,
-                    sample_inputs: tuple, with_past: bool = False, args=None):
-        #if args.pack_mode == "ORT":
-        #    if args.wbits != 4:
-        #        logger.warn("ORT pack_mode only support 4bit quantization, will use the original pack mode")
-        #    else:
-        #        model = self.repack_to_new_mode(model, args, "ORT")
+                    sample_inputs: tuple, with_past: bool = False):
         # enforce to ort pack_mode
-        model = self.repack_to_new_mode(model, args, "ORT")
+        pack_mode = model.quant_config.version
+        wbits = model.quant_config.to_meta.bits
+        if pack_mode != "ORT":
+            if wbits != 4:
+                logger.warn("ORT pack_mode only support 4bit quantization, will use the original pack mode")
+            else:
+                model = self.repack_to_new_mode(model, "ORT")
+
         from .utils.onnx import exporter
         opset = 16
         if self.tokenizer:
@@ -141,6 +145,20 @@ class AutoModelQuantization(object):
         # verify correctness
         exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
 
+    def api_quantize(self, model_or_model_path, **kwargs):
+        if isinstance(model_or_model_path, str):
+            model = self.get_torch_model(model_or_model_path)
+        else:
+            model = model_or_model_path
+        from .args_config import FakeArgs
+        args = FakeArgs(**kwargs)
+        config = quantization.build_config(args)
+
+        inputs_dataloader = self.get_datasets(model_or_model_path, args.dataset, args.nsamples, args.seed)
+        quantizers = self.__dispatch_quant(model, inputs_dataloader, config, "cuda")
+        model = self.pack_model(model, quantizers, args.pack_mode)
+        return model
+
     def run(self, args):
         from .utils.comm_utils import set_seed
         set_seed(args.seed)
@@ -153,6 +171,10 @@ class AutoModelQuantization(object):
         if not isinstance(args.load,  str):
             args.load = args.load.as_posix()
 
+        if args.method == "awq" and args.nsamples > 32:
+            logger.warning("as the memory blast, AWQ will limit to 32 samples for quantization")
+            args.nsamples = 32
+
         if args.tokenizer == "":
             args.tokenizer = args.load if args.load else args.model
 
@@ -163,35 +185,37 @@ class AutoModelQuantization(object):
             model = self.__load_quant(args)
             model.eval()
         elif args.model:
-            model = self.get_torch_model(args, dev='cpu')
+            model = self.get_torch_model(args.model)
             model.eval()
         else:
             raise ValueError("either --model or --load must be specified. \
 Please run with `-h` to refer the usage.")
 
         if not args.load and args.wbits < 16:
-            inputs_dataloader = self.get_datasets(args)
+            inputs_dataloader = self.get_datasets(args.tokenizer, args.dataset, args.nsamples, args.seed)
             if args.mix_qlayer_conf:
                 with open(args.mix_qlayer_conf) as fp:
                     args.mix_qlayer_conf = json.load(fp)
             else:
                 args.mix_qlayer_conf = {}
             tick = time.time()
-            quantizers = self.__quant_by_sequential(model, inputs_dataloader, args, "cuda")
-            model = self.pack_model(model, quantizers, args)
+            config = quantization.build_config(args)
+            quantizers = self.__dispatch_quant(model, inputs_dataloader, config, "cuda")
+            model = self.pack_model(model, quantizers, args.pack_mode)
             logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
         if args.save:
-            def repack_func(): return self.repack_to_new_mode(model, args, args.pack_mode)
+            def repack_func(): return self.repack_to_new_mode(model, args.pack_mode)
             AutoQuantizedModelForCausalLM.save_pretrained(model, self.tokenizer, args.save,
                                                           args.pack_mode, repack_func, save_serialization=False)
 
         if args.eval:
-            self.eval_model(model, "cuda", args)
+            self.eval_model(model, "cuda")
 
         if args.export_onnx:
-            inputs_dataloader = self.get_datasets(args) if self.tokenizer is None else [None]
-            self.export_onnx(model, args.export_onnx, inputs_dataloader[0], True, args=args)
+            inputs_dataloader = self.get_datasets(
+                args.tokenizer, args.dataset, args.nsamples, args.seed) if self.tokenizer is None else [None]
+            self.export_onnx(model, args.export_onnx, inputs_dataloader[0], True)
 
         if args.use_plugin:
             from .plugin.conversation import loop_in_chat_completion
@@ -199,5 +223,5 @@ Please run with `-h` to refer the usage.")
             if args.wbits < 16 and not is_the_machine_support_awq_engine(args.wbits
                                                                          ) and model.quant_config["version"] == "GEMM":
                 logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
-                model = self.repack_to_new_mode(model, args, "GPTQ")
+                model = self.repack_to_new_mode(model, "GPTQ")
             loop_in_chat_completion(self.tokenizer, model)

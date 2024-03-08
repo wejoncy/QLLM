@@ -141,7 +141,7 @@ def apply_scale(module, scales_list, input_feat_dict=None):
 
 
 def pseudo_quantize_tensor(w, n_bit, q_config, inplace=False, get_scale_zp=False):
-    zero_point, q_group_size = q_config.get("zero_point", True), q_config.get("q_group_size", -1)
+    zero_point, q_group_size = q_config.zero_point, q_config.q_group_size
     org_w_shape = w.shape
     if q_group_size > 0:
         assert org_w_shape[-1] % q_group_size == 0
@@ -192,7 +192,7 @@ def auto_clip_layer(w, input_feat, n_bit, q_config,
     assert w.dim() == 2
     # w           [co, ci]      -> [co, 1, n_group, group size]
     # input_feat  [n_token, ci] -> [1, n_token, n_group, group size]
-    group_size = q_config["q_group_size"] if q_config["q_group_size"] > 0 else w.shape[1]
+    group_size = q_config.q_group_size if q_config.q_group_size > 0 else w.shape[1]
     input_feat = input_feat.view(-1, input_feat.shape[-1])
     input_feat = input_feat.reshape(1, input_feat.shape[0], -1, group_size)
     input_feat = input_feat[:, 0::input_feat.shape[1] // n_sample_token]
@@ -298,8 +298,7 @@ class InternalAWQuantizer(nn.Module):
             # w: co, ci
             # x: n, ci
             weight = torch.cat([_m.weight for _m in linears2scale], dim=0)
-            w_max = get_weight_scale(
-                weight, q_group_size=self.quant_config.get("q_group_size", -1))
+            w_max = get_weight_scale(weight, q_group_size=self.quant_config.q_group_size)
             # Clear GPU memory
             clear_memory(weight)
 

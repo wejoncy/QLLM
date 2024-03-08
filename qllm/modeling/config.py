@@ -9,7 +9,6 @@ logger = utils.logger.get_logger()
 
 class BaseQuantizeConfig:
     def __init__(self):
-        self.args = None
         self.quant_config = {}
         self.quant_config_by_op = {}
         self.method = None
@@ -50,17 +49,15 @@ class BaseQuantizeConfig:
         self.quant_config_by_op = {
             "groupsize": self.groupsize(), "wbits": self.wbits()}
 
-    def load_quant_op_config(self, model_name_or_path, args):
+    def load_quant_op_config(self, model_name_or_path):
         if not (Path(model_name_or_path) / "quant_config_by_layer.json").exists():
             return self.try_make_default_quant_op_config()
         # load quant info
         with open(Path(model_name_or_path) / "quant_config_by_layer.json") as fp:
             qunat_info = json.load(fp)
-            args.method = qunat_info["method"]
-            args.qunat_info = qunat_info
             self.quant_config_by_op = qunat_info
 
-    def load_quant_config(self, model_name_or_path, args):
+    def load_quant_config(self, model_name_or_path):
         config_file = self.get_resolved_base_dir(model_name_or_path, "quant_config.json")
         if config_file is None:
             # GPTQ-for-llama/AutoGPTQ
@@ -69,9 +66,9 @@ class BaseQuantizeConfig:
         assert config_file is not None, ("quant_config.json/quantize_config.json not found in checkpoint directory")
         with open(config_file) as fp:
             quant_config = json.load(fp)
-        args.wbits = quant_config.get("w_bit", quant_config.get("bits", None))
-        args.groupsize = quant_config.get("q_group_size", quant_config.get("group_size", None))
-        assert args.wbits is not None and args.groupsize is not None
+        wbits = quant_config.get("w_bit", quant_config.get("bits", None))
+        groupsize = quant_config.get("q_group_size", quant_config.get("group_size", None))
+        assert wbits is not None and groupsize is not None
 
         if quant_config.get('COMPATIBLE_WITH_AUTOGPTQ', None):
             self.COMPATIBLE_WITH_AUTOGPTQ = True
@@ -86,8 +83,8 @@ class BaseQuantizeConfig:
         self.quant_config = quant_config
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path, args):
+    def from_pretrained(cls, model_name_or_path):
         obj = cls()
-        obj.load_quant_config(model_name_or_path, args)
-        obj.load_quant_op_config(model_name_or_path, args)
+        obj.load_quant_config(model_name_or_path)
+        obj.load_quant_op_config(model_name_or_path)
         return obj
