@@ -121,11 +121,11 @@ class AutoModelQuantization(object):
     @torch.no_grad()
     def export_onnx(self, model: torch.nn.Module, onnx_path_str: str,
                     sample_inputs: tuple, with_past: bool = False, args=None):
-        if args.pack_mode == "ORT":
-            if args.wbits != 4:
-                logger.warn("ORT pack_mode only support 4bit quantization, will use the original pack mode")
-            else:
-                model = self.repack_to_new_mode(model, args, "ORT")
+        #if args.pack_mode == "ORT":
+        #    if args.wbits != 4:
+        #        logger.warn("ORT pack_mode only support 4bit quantization, will use the original pack mode")
+        #    else:
+        #        model = self.repack_to_new_mode(model, args, "ORT")
         # enforce to ort pack_mode
         model = self.repack_to_new_mode(model, args, "ORT")
         from .utils.onnx import exporter

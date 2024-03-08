@@ -150,7 +150,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
             self.qzeros = intzeros_pt.contiguous()
 
         if DEBUG_:
-            mat_float, _, _ = dequantize_blockwise_4bits(intweight_pt_T, scales_pt, intzeros_pt, self.g_idx, rows, cols)
+            mat_float, _, _ = dequantize_blockwise_4bits(intweight_pt_T, scales_pt, intzeros_pt, self.g_idx.cuda(), rows, cols)
             print("mat_float", mat_float.shape, mat_float.dtype)
 
     def unpack(self):
@@ -160,7 +160,11 @@ class QuantLinearORT(nn.Module, CompressWeight):
         float_values = float_values.contiguous()
         zero_point = zero_point.T.contiguous()
         scale = scale.T.contiguous()
-        return float_values.cpu(), scale.cpu(), zero_point.cpu()
+        return (
+            float_values.to("cpu", non_blocking=True),
+            scale.to("cpu", non_blocking=True),
+            zero_point.to("cpu", non_blocking=True),
+        )
 
     def forward(self, x):
         out = QuantLinearTorchFunction_forward(

@@ -93,63 +93,28 @@ def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits: int):
 
 
 class CompressWeight(object):
-    def quant_weight(self, weight, scales, zeros, g_idx=None, need_transpose=True):
-        device = weight.device
-        scales = scales.t().contiguous().to(device)
-        zeros = zeros.t().contiguous().to(device)
-        g_idx = self.g_idx.long().to(device)
+    def _quant_weight(self, weight, scales, zeros, g_idx, need_transpose=True):
         scale_zeros = zeros * scales
-        self.scales = (scales.clone().half() if self.scales.sum() == 0 else self.scales).cpu()
-
-        # intweight = []
-        # for idx in range(self.infeatures):
-        #     intweight.append(torch.round((linear.weight.data[:, idx].to(device) + scale_zeros[self.g_idx[idx]].to(device)) / self.scales[self.g_idx[idx]].to(device)).to(torch.int)[:, None])
-        # intweight = torch.cat(intweight, dim=1)
-
         scale_mat = scales[g_idx]
         scale_zeros_mat = scale_zeros[g_idx]
-        intweight_T = torch.round((weight.T + scale_zeros_mat) / scale_mat).to(torch.int)
+        intweight_T = torch.round((weight + scale_zeros_mat) / scale_mat).to(torch.int)
+        return intweight_T
 
-        # when shouldn't use scale_zeros_mat
-        # zeros=zeros.to(device)
-        # zeros_mat = zeros[self.g_idx.long().to(device)]
-        # intweight_T  = torch.round((linear.weight.to(device).T/scale_mat)+zeros_mat).to(torch.int)
-
-        # assert (intweight_T.T == intweight).all()
-        if not need_transpose:
-            return intweight_T
-        return intweight_T.T
-
-    def dequant_weight(self, intweight, zeros):
-        # scales = scales.t().contiguous()
-        device = intweight.device
-        scales = self.scales.to(device)
-        zeros = zeros.t().contiguous()
+    def _dequant_weight(self, intweight, scales, zeros, g_idx):
         scale_zeros = zeros * scales
-        g_idx = self.g_idx.long().to(device)
-
-        # qdq_weight=linear.weight.clone().to(device)
-        # for idx in range(self.infeatures):
-        #     qdq_weight[:, idx] = intweight[:,idx].to(device)*self.scales[self.g_idx[idx]].to(device) - scale_zeros[self.g_idx[idx]].to(device).half()
-
         scale_mat = scales[g_idx]
-        scale_zeros_mat = scale_zeros[g_idx].half()
-        qdq_weight_T = intweight.T * scale_mat - scale_zeros_mat.half()
+        scale_zeros_mat = scale_zeros[g_idx]
+        qdq_weight_T = intweight * scale_mat - scale_zeros_mat.half()
 
-        # when shouldn't use scale_zeros_mat
-        # zeros=zeros.to(device)
-        # zeros_mat=zeros[self.g_idx.long().to(device)]
-        # qdq_weight_T = (intweight.to(device).T-zeros_mat)*scale_mat
-
-        # assert (qdq_weight_T.T == qdq_weight).all()
-        return qdq_weight_T.T
+        return qdq_weight_T
 
     def weight_qdq(self, linear, scales, zeros, g_idx=None):
-        self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
         if linear.bias is not None:
             self.bias = linear.bias.clone().half()
-        q_weight = self.quant_weight(linear.weight.data, scales, zeros, self.g_idx)
-        return self.dequant_weight(q_weight, zeros)
+        g_idx = self.g_idx.to(scales.device) if g_idx is None else g_idx
+        weight = linear.weight.data
+        q_weight = self._quant_weight(weight.T, scales.T, zeros.T, g_idx).T
+        return self._dequant_weight(q_weight.T, scales.T, zeros.T, g_idx).T
 
     def unpack(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -159,8 +124,7 @@ class CompressWeight(object):
         if "GEMM" in self._get_name():
             qweight = qweight.T.contiguous()
             weight_dim0 = self.outfeatures
-        scales = self.scales
-        scales = scales.reshape(-1, 1, scales.shape[-1])
+        scales = self.scales.to(device)
 
         weight = torch.zeros((weight_dim0, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
         zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
@@ -172,11 +136,15 @@ class CompressWeight(object):
         zeros = self.reverse_reorder_int_tensor(zeros)
         weight = self.reverse_reorder_int_tensor(weight)
 
-        fp16_weight = self.dequant_weight(weight.T, zeros.T)
-        weight = weight.cpu()
+        fp16_weight = self._dequant_weight(weight, scales, zeros, self.g_idx.to(device)).T
+        # free memory
+        weight = weight.to("cpu", non_blocking=True)
         # weight = (scales * (weight - zeros))
         # weight = weight.reshape(weight.shape[0] * weight.shape[1], weight.shape[2])
-        return fp16_weight.cpu(), self.scales.cpu(), zeros.cpu()
+        fp16_weight = fp16_weight.to("cpu", non_blocking=True)
+        zeros = zeros.to("cpu", non_blocking=True)
+        scales = scales.to("cpu", non_blocking=True)
+        return (fp16_weight, scales, zeros)
 
     def reorder_int_tensor(self, int_tensor):
         return int_tensor
@@ -194,11 +162,11 @@ class CompressWeight(object):
         qzeros_cuda = torch.zeros(
             (intzeros.shape[0], (intzeros.shape[1] * self.bits + 31) // 32), dtype=torch.int32, device=device)
 
-        qzeros_cuda = qzeros_cuda.T.contiguous()
-        zeros_cuda = zeros_cuda.T.contiguous()
+        qzeros_cuda = qzeros_cuda.T
+        zeros_cuda = zeros_cuda.T
         general_pack_on_row(qzeros_cuda, zeros_cuda, self.bits)
 
-        self.qzeros = qzeros_cuda.T.contiguous().cpu()
+        self.qzeros = qzeros_cuda.T.contiguous().to("cpu", non_blocking=True)
 
     # odd bits, 3,5,6,7
     def pack_on_device_for_odd_bits(self, intweight_gpu, intzeros):
@@ -207,7 +175,7 @@ class CompressWeight(object):
             ((intweight_gpu.shape[0] * self.bits + 31) // 32, intweight_gpu.shape[1]), dtype=torch.int32, device=device)
 
         general_pack_on_row(qweight_gpu, intweight_gpu, self.bits)
-        self.qweight = qweight_gpu.cpu()
+        self.qweight = qweight_gpu.to("cpu", non_blocking=True)
 
         self.pack_qzeros_odd(intzeros, device)
 
@@ -228,7 +196,7 @@ class CompressWeight(object):
         qzeros_cuda = qzeros_cuda.T.contiguous()
         zeros_cuda = zeros_cuda.T.contiguous()
         pack_on_row_fast_248bit(qzeros_cuda, zeros_cuda, self.bits)
-        self.qzeros = qzeros_cuda.T.contiguous().cpu()
+        self.qzeros = qzeros_cuda.T.contiguous().to("cpu", non_blocking=True)
 
     def pack_on_device_for_even_bits(self, intweight_gpu, qzeros):
         device = intweight_gpu.device
@@ -244,7 +212,7 @@ class CompressWeight(object):
         pack_on_row_fast_248bit(qweight_gpu, intweight_gpu, self.bits)
         if "GEMM" in self._get_name():
             qweight_gpu = qweight_gpu.T.contiguous()
-        self.qweight = qweight_gpu.cpu()
+        self.qweight = qweight_gpu.to("cpu", non_blocking=True)
 
         assert max(1, qzeros.shape[1] // 32 * self.bits) == int(round(qzeros.shape[1] * self.bits / 32 + 0.5))
         self.pack_qzeros_even(qzeros, device)
@@ -253,16 +221,16 @@ class CompressWeight(object):
             fw, _, iz = self.unpack()
             assert (fw == self.orig_fp_weight.to(device)).all()
 
-    def accelerate_pack_on_device(self, linear, scales, zeros, g_idx=None, device="cuda"):
-        scales = scales.to(device)
-        zeros = zeros.to(device)
-        layer_weight = linear.weight.data.to(device)
+    def accelerate_pack_on_device(self, layer_weight, scales, zeros, g_idx=None, device="cuda"):
+        self.scales = scales.T.contiguous().half().to("cpu", non_blocking=True)
+        if g_idx is None:
+            g_idx = self.g_idx.to(device) if g_idx is None else g_idx
+        else:
+            self.g_idx = g_idx.clone().to("cpu", non_blocking=True)
 
-        self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
-        intweight = self.quant_weight(layer_weight, scales, zeros, g_idx, need_transpose=False)
-        intweight_gpu = intweight.to(device)
+        intweight_gpu = self._quant_weight(layer_weight.T, scales.T, zeros.T, g_idx)
 
-        qzeros = zeros.t().contiguous()
+        qzeros = zeros.T.contiguous()
 
         if self.bits in [2, 4, 8]:
             return self.pack_on_device_for_even_bits(intweight_gpu, qzeros)
@@ -271,4 +239,7 @@ class CompressWeight(object):
 
     def pack(self, linear, scales, zeros, g_idx=None):
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        return self.accelerate_pack_on_device(linear, scales, zeros, g_idx, device)
+        scales = scales.to(device)
+        zeros = zeros.to(device)
+        layer_weight = linear.weight.data.to(device)
+        return self.accelerate_pack_on_device(layer_weight, scales, zeros, g_idx, device)
