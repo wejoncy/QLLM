@@ -160,7 +160,11 @@ class QuantLinearORT(nn.Module, CompressWeight):
         float_values = float_values.contiguous()
         zero_point = zero_point.T.contiguous()
         scale = scale.T.contiguous()
-        return float_values.cpu(), scale.cpu(), zero_point.cpu()
+        return (
+            float_values.to("cpu", non_blocking=True),
+            scale.to("cpu", non_blocking=True),
+            zero_point.to("cpu", non_blocking=True),
+        )
 
     def forward(self, x):
         out = QuantLinearTorchFunction_forward(

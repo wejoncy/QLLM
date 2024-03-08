@@ -69,10 +69,10 @@ class QuantLinearHQQ(nn.Module, CompressWeight):
             self.bias = None
 
     def pack_qzeros_even(self, intzeros, device):
-        self.qzeros = intzeros.contiguous().cpu()
+        self.qzeros = intzeros.contiguous().to("cpu", non_blocking=True)
 
     def pack_qzeros_odd(self, intzeros, device):
-        self.qzeros = intzeros.contiguous().cpu()
+        self.qzeros = intzeros.contiguous().to("cpu", non_blocking=True)
 
     def forward(self, x):
         out = QuantLinearTorchFunction.apply(x, self.qweight, self.scales, self.qzeros,

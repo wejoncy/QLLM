@@ -130,7 +130,7 @@ class QuantLinearGPTQ(nn.Module, CompressWeight):
 
         general_pack_on_row(qzeros, zeros, self.bits)
 
-        self.qzeros = qzeros.cpu()
+        self.qzeros = qzeros.to("cpu", non_blocking=True)
 
     def forward(self, x):
         if self.act_order is None:
