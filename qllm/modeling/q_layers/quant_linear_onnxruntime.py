@@ -150,7 +150,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
             self.qzeros = intzeros_pt.contiguous()
 
         if DEBUG_:
-            mat_float, _, _ = dequantize_blockwise_4bits(intweight_pt_T, scales_pt, intzeros_pt, self.g_idx, rows, cols)
+            mat_float, _, _ = dequantize_blockwise_4bits(intweight_pt_T, scales_pt, intzeros_pt, self.g_idx.cuda(), rows, cols)
             print("mat_float", mat_float.shape, mat_float.dtype)
 
     def unpack(self):
