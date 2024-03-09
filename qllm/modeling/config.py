@@ -3,7 +3,7 @@ import json
 from transformers.utils.hub import cached_file
 import os
 from .. import utils
-
+from ..quantization.config_builder import MetaConfig
 logger = utils.logger.get_logger()
 
 
@@ -19,10 +19,22 @@ class BaseQuantizeConfig:
             return self.quant_config_by_op[layer_name]["groupsize"]
         return self.quant_config.get('group_size', None) or self.quant_config.get('q_group_size', None)
 
-    def wbits(self, layer_name: str = None):
+    def bits(self, layer_name: str = None):
         if layer_name is not None and layer_name in self.quant_config_by_op:
             return self.quant_config_by_op[layer_name]["wbits"]
         return self.quant_config.get('bits', None) or self.quant_config.get('w_bit', None)
+
+    @property
+    def to_meta(self):
+        return MetaConfig(self.bits(), self.groupsize(), self.method)
+
+    @property
+    def version(self):
+        return self.quant_config["version"]
+
+    @version.setter
+    def version(self, value):
+        self.quant_config["version"] = value
 
     def get_resolved_base_dir(self, model_name_or_path, quantize_config_filename) -> Path:
         if os.path.isdir(model_name_or_path):  # Local
@@ -47,7 +59,7 @@ class BaseQuantizeConfig:
         if self.quant_config_by_op: return
         # backward compatability, we just make a genaral config
         self.quant_config_by_op = {
-            "groupsize": self.groupsize(), "wbits": self.wbits()}
+            "groupsize": self.groupsize(), "wbits": self.bits()}
 
     def load_quant_op_config(self, model_name_or_path):
         if not (Path(model_name_or_path) / "quant_config_by_layer.json").exists():

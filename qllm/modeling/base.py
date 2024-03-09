@@ -148,7 +148,6 @@ class AutoQuantizedModelForCausalLM:
             low_cpu_mem_usage: bool = True,
             use_triton: bool = False,
             torch_dtype: Optional[torch.dtype] = torch.float16,
-            quant_config: Optional[BaseQuantizeConfig] = None,
             use_safetensors: bool = True,
             trust_remote_code: bool = False,
             warmup_triton: bool = False,
@@ -176,9 +175,8 @@ class AutoQuantizedModelForCausalLM:
         # device_map = accelerate.infer_auto_device_map(
         #    model, dtype=torch_dtype, no_split_module_classes=get_no_split_layer_type_name(model))
 
-        if quant_config is None:
-            quant_config = BaseQuantizeConfig.from_pretrained(model_name_or_path)
-        model.quant_config = quant_config.quant_config
+        quant_config = BaseQuantizeConfig.from_pretrained(model_name_or_path)
+        model.quant_config = quant_config
         model.quant_config_by_layer = quant_config.quant_config_by_op
 
         quant_layers = [torch.nn.Linear]
@@ -202,7 +200,7 @@ class AutoQuantizedModelForCausalLM:
                         del layers[layer_name]
 
         target_layer = utils.modelutils.select_quant_linear(
-            quant_config.quant_config["version"], quant_config.wbits(), quant_config.method)
+            quant_config.version, quant_config.bits(), quant_config.method)
         utils.modelutils.make_mixbits_quant_linear(
             model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
         if quant_config.method == "awq":

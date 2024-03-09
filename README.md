@@ -113,6 +113,11 @@ use `--export_onnx ./onnx_model` to export and save onnx model
 ```
 python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
 ```
+or you can convert a existing model in HF Hub
+```
+python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --export_onnx=./onnx
+python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --export_onnx=./onnx
+```
 
 ## model inference with the saved model
 ```bash

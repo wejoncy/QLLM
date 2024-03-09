@@ -194,7 +194,7 @@ setuptools.setup(
     version=find_version(get_path("./qllm/", "__init__.py")),
     author="qllm Team",
     license="Apache 2.0",
-    description="A general x-bit quantization engine for LLMs,[2-8] bits, awq/gptq",
+    description="A general x-bit quantization engine for LLMs,[2-8] bits, awq/gptq/hqq",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
     url="https://github.com/wejoncy/QLLM",

@@ -100,9 +100,9 @@ class AutoModelQuantization(object):
         old_pack_mode = model.quant_config.version
         if old_pack_mode == new_pack_mode:
             return model
-        model.quant_config["version"] = new_pack_mode
+        model.quant_config.version = new_pack_mode
         meta_info = model.quant_config.to_meta
-        bits, groupsize = meta_info.wbits, meta_info.groupsize
+        bits, groupsize = meta_info.bits, meta_info.group_size
         source_layer = select_quant_linear(old_pack_mode, bits, meta_info.method)
         target_layer = select_quant_linear(new_pack_mode, bits, meta_info.method)
         qlayers = find_layers(model, [source_layer])
@@ -171,9 +171,9 @@ class AutoModelQuantization(object):
         if not isinstance(args.load,  str):
             args.load = args.load.as_posix()
 
-        if args.method == "awq" and args.nsamples > 32:
+        if args.method == "awq" and args.nsamples > 64:
             logger.warning("as the memory blast, AWQ will limit to 32 samples for quantization")
-            args.nsamples = 32
+            args.nsamples = 64
 
         if args.tokenizer == "":
             args.tokenizer = args.load if args.load else args.model
@@ -182,7 +182,7 @@ class AutoModelQuantization(object):
             if args.model != "":
                 logger.warn(
                     f"--model={args.model} will be ignored when --load is specified")
-            model = self.__load_quant(args)
+            model = self.__load_quant(args.load)
             model.eval()
         elif args.model:
             model = self.get_torch_model(args.model)
@@ -192,7 +192,10 @@ class AutoModelQuantization(object):
 Please run with `-h` to refer the usage.")
 
         if not args.load and args.wbits < 16:
-            inputs_dataloader = self.get_datasets(args.tokenizer, args.dataset, args.nsamples, args.seed)
+            if args.method == "hqq":
+                inputs_dataloader = None
+            else:
+                inputs_dataloader = self.get_datasets(args.tokenizer, args.dataset, args.nsamples, args.seed)
             if args.mix_qlayer_conf:
                 with open(args.mix_qlayer_conf) as fp:
                     args.mix_qlayer_conf = json.load(fp)
