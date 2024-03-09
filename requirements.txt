@@ -1,6 +1,6 @@
 safetensors
 torch>=2.0.0
-datasets==2.15.0
+datasets==2.18.0
 zstandard
 #sentencepiece
 transformers
