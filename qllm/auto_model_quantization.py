@@ -107,7 +107,7 @@ class AutoModelQuantization(object):
         target_layer = select_quant_linear(new_pack_mode, bits, meta_info.method)
         qlayers = find_layers(model, [source_layer])
         for module_name, qlayer in tqdm.tqdm(qlayers.items(),
-                desc=f"replacing model packed-weight from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
+                desc=f"repacking model from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
             fp16_weight, scales, zeros = qlayer.unpack()
             qlayer.weight = fp16_weight
             tmp = qlayer
