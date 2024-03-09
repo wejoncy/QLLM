@@ -221,7 +221,7 @@ Please run with `-h` to refer the usage.")
             from .plugin.conversation import loop_in_chat_completion
             from .modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
             if args.wbits < 16 and not is_the_machine_support_awq_engine(args.wbits
-                                                                         ) and model.quant_config["version"] == "GEMM":
+                                                                         ) and model.quant_config.version == "GEMM":
                 logger.warning("AWQ inference engine not found, will convert to GPTQ packing for inference.")
                 model = self.repack_to_new_mode(model, "GPTQ")
             loop_in_chat_completion(self.tokenizer, model)

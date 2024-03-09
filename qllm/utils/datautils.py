@@ -3,17 +3,23 @@ import torch
 import logging
 from typing import List, Union
 from datasets import load_dataset
+import random
 
 
 def get_wikitext2(nsamples, seed, seqlen, tokenizer):
-    traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
-    testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
-
-    trainenc = tokenizer("\n\n".join(traindata['text']), return_tensors='pt')
-    testenc = tokenizer("\n\n".join(testdata['text']), return_tensors='pt')
-
-    import random
     random.seed(seed)
+
+    traindata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
+    #testdata = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+
+    traindata = traindata.select(indices=random.sample(range(len(traindata)), 
+        min(len(traindata), nsamples*4)), keep_in_memory=True,)
+    traindata_text = [text for text in traindata['text'] if text != '']
+
+    trainenc = tokenizer("\n\n".join(traindata_text), return_tensors='pt')
+    #testenc = tokenizer("\n\n".join(testdata['text']), return_tensors='pt')
+    testenc = None
+
     trainloader = []
     for _ in range(nsamples):
         i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
@@ -47,9 +53,8 @@ def get_ptb(nsamples, seed, seqlen, tokenizer):
 
 def get_c4(nsamples, seed, seqlen, tokenizer):
     traindata = load_dataset('allenai/c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, split='train')
-    valdata = load_dataset('allenai/c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation')
+    #valdata = load_dataset('allenai/c4', data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, split='validation')
 
-    import random
     random.seed(seed)
     trainloader = []
     for _ in range(nsamples):
@@ -65,26 +70,27 @@ def get_c4(nsamples, seed, seqlen, tokenizer):
         tar[:, :-1] = -100
         trainloader.append((inp, tar))
 
-    import random
-    random.seed(0)
-    valenc = []
-    for _ in range(256):
-        while True:
-            i = random.randint(0, len(valdata) - 1)
-            tmp = tokenizer(valdata[i]['text'], return_tensors='pt')
-            if tmp.input_ids.shape[1] >= seqlen:
-                break
-        i = random.randint(0, tmp.input_ids.shape[1] - seqlen - 1)
-        j = i + seqlen
-        valenc.append(tmp.input_ids[:, i:j])
-    valenc = torch.hstack(valenc)
+    #import random
+    #random.seed(0)
+    #valenc = []
+    #for _ in range(256):
+    #    while True:
+    #        i = random.randint(0, len(valdata) - 1)
+    #        tmp = tokenizer(valdata[i]['text'], return_tensors='pt')
+    #        if tmp.input_ids.shape[1] >= seqlen:
+    #            break
+    #    i = random.randint(0, tmp.input_ids.shape[1] - seqlen - 1)
+    #    j = i + seqlen
+    #    valenc.append(tmp.input_ids[:, i:j])
+    #valenc = torch.hstack(valenc)
 
-    class TokenizerWrapper:
+    #class TokenizerWrapper:
 
-        def __init__(self, input_ids):
-            self.input_ids = input_ids
+    #    def __init__(self, input_ids):
+    #        self.input_ids = input_ids
 
-    valenc = TokenizerWrapper(valenc)
+    #valenc = TokenizerWrapper(valenc)
+    valenc = None
 
     return trainloader, valenc
 
