@@ -1,7 +1,4 @@
 # QLLM
-<center>
-<img src="https://github.com/wejoncy/QLLM/blob/main/assets/fb201d9c-f889-4504-9ef5-ac77ec1cd8e2.jpg?raw=true" width="210">
-</center>
 <p align="center">
     <a href="https://colab.research.google.com/github/wejoncy/QLLM/blob/main/qllm_colab.ipynb">
         <img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg">
@@ -14,11 +11,13 @@
     </a>
 </p>
 
+KeyWords **Quantization**, **GPTQ,AWQ, HQQ**, **ONNX, ONNXRuntime**, **VLLM**
+
 <font size=5>
-<center>Supports any LLMs in HuggingFace/Transformers, mixed bits(2-8bit), GPTQ/AWQ/HQQ, ONNX export</center>
+<center>Quantize all LLMs in HuggingFace/Transformers with GPTQ/AWQ/HQQ in mixed bits(2-8bit), and export to onnx model</center>
 </font>
 <br><br>
-QLLM is a out-of-box quantization toolbox for large language models, It didn't limit to a specific model, and designed to be auto-quantization layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
+QLLM is a out-of-box quantization toolbox for large language models, It is designed to be a auto-quantization framework which takes layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
 Besides, model quantized by different quantization method (GPTQ/AWQ/HQQ) can be loaded from huggingface/transformers and transfor to each other without extra effort. 
 
 We alread supported 
@@ -31,8 +30,10 @@ Features:
 - [x] GPTQ supports all LLM models in huggingface/transformers, it will automatically detect the model type and quantize it.
 - [x] We support to quantize model by 2-8 bits, and support to quantize model with different quantization bits for different layers.
 - [x] Auto promoting bits/group-size for better accuracy
+- [x] Export to ONNX model, Running by OnnxRuntime 
 
 *Latest News* 🔥
+- [2024/03] ONNX Models export API
 - [2024/01] Support [HQQ](https://github.com/mobiusml/hqq) algorithm
 - [2023/12] The first PyPi package released 
 
@@ -66,6 +67,19 @@ python setup.py install
 ```bash
 #  Quantize and Save compressed model, method can be one of [gptq/awq/hqq]
 python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --nsamples=64 --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
+python -m qllm --model=meta-llama/Llama-2-7b-hf --method=awq --dataset=pileval --nsamples=16 --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
+python -m qllm --model=meta-llama/Llama-2-7b-hf --method=hqq --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
+```
+
+## Convert to onnx model
+use `--export_onnx ./onnx_model` to export and save onnx model
+```
+python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
+```
+or you can convert a existing model in HF Hub
+```
+python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --export_onnx=./onnx
+python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --export_onnx=./onnx
 ```
 
 ## (NEW) Quantize model with mix bits/groupsize for higher precision (PPL)
@@ -107,17 +121,6 @@ Not all cases are supported, for example,
 2)  if GPTQ model is quantized with `--allow_mix_bits` option, you can't convert it to AWQ.
 3)  if GPTQ model is quantized with `--act_order` option, you can't convert it to AWQ.
 
-
-## Convert to onnx model
-use `--export_onnx ./onnx_model` to export and save onnx model
-```
-python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
-```
-or you can convert a existing model in HF Hub
-```
-python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --export_onnx=./onnx
-python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --export_onnx=./onnx
-```
 
 ## model inference with the saved model
 ```bash
