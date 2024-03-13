@@ -1,5 +1,4 @@
 # QLLM
-KeyWords **Quantization**, **GPTQ,AWQ, HQQ**, **ONNX, ONNXRuntime**, **VLLM**
 <p align="center">
     <a href="https://colab.research.google.com/github/wejoncy/QLLM/blob/main/qllm_colab.ipynb">
         <img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg">
@@ -12,11 +11,13 @@ KeyWords **Quantization**, **GPTQ,AWQ, HQQ**, **ONNX, ONNXRuntime**, **VLLM**
     </a>
 </p>
 
+KeyWords **Quantization**, **GPTQ,AWQ, HQQ**, **ONNX, ONNXRuntime**, **VLLM**
+
 <font size=5>
 <center>Quantize all LLMs in HuggingFace/Transformers with GPTQ/AWQ/HQQ in mixed bits(2-8bit), and export to onnx model</center>
 </font>
 <br><br>
-QLLM is a out-of-box quantization toolbox for large language models, It didn't limit to a specific model, and designed to be auto-quantization layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
+QLLM is a out-of-box quantization toolbox for large language models, It is designed to be a auto-quantization framework which takes layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
 Besides, model quantized by different quantization method (GPTQ/AWQ/HQQ) can be loaded from huggingface/transformers and transfor to each other without extra effort. 
 
 We alread supported 
