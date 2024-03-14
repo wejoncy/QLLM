@@ -28,8 +28,8 @@ class AutoModelQuantization(object):
             model_name_or_path, use_fast=True, trust_remote_code=True)
         return AutoQuantizedModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
 
-    def get_datasets(self, tokenizer_path, dataset, nsamples, seed):
-        return get_sample_datas_for_quantization(tokenizer_path, dataset, nsamples, seed)
+    def get_datasets(self, tokenizer, dataset, nsamples, seed):
+        return get_sample_datas_for_quantization(tokenizer, dataset, nsamples, seed)
 
     def __load_quant(self, quant_model_name_or_path):
         from transformers import AutoTokenizer
@@ -145,16 +145,20 @@ class AutoModelQuantization(object):
         # verify correctness
         exporter.verify_correcness(model, sample_inputs, onnx_model_path, with_past)
 
-    def api_quantize(self, model_or_model_path, **kwargs):
+    def api_quantize(self, model_or_model_path, tokenizer=None, **kwargs):
+        if not isinstance(self, AutoModelQuantization):
+            raise ValueError("api_quantize should be called by AutoModelQuantization instance")
         if isinstance(model_or_model_path, str):
             model = self.get_torch_model(model_or_model_path)
         else:
             model = model_or_model_path
+            self.tokenizer = tokenizer
+            assert tokenizer is not None, "tokenizer is required when model is provided"
         from .args_config import FakeArgs
         args = FakeArgs(**kwargs)
         config = quantization.build_config(args)
 
-        inputs_dataloader = self.get_datasets(model_or_model_path, args.dataset, args.nsamples, args.seed)
+        inputs_dataloader = self.get_datasets(self.tokenizer, args.dataset, args.nsamples, args.seed)
         quantizers = self.__dispatch_quant(model, inputs_dataloader, config, "cuda")
         model = self.pack_model(model, quantizers, args.pack_mode)
         return model

@@ -150,12 +150,13 @@ def get_c4_new(nsamples, seed, seqlen, tokenizer):
     return trainloader, valenc
 
 
-def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):
+def get_loaders(name, nsamples=128, seed=0, seqlen=2048, tokenizer=''):
     from transformers import AutoTokenizer
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model, fast=False)
-    except: # noqa: E722
-        tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True)
+    if isinstance(tokenizer, str):
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer, fast=False)
+        except: # noqa: E722
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer, use_fast=True)
 
     if 'wikitext2' in name:
         return get_wikitext2(nsamples, seed, seqlen, tokenizer)

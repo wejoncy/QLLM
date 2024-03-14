@@ -8,9 +8,14 @@ class FakeArgs:
         self.wbits = 4
         self.groupsize = 128
         self.pack_mode = "AUTO"
+        self.act_order = False
+        self.true_sequential = False
+        self.sym = False
+        self.allow_mix_bits = False
+        self.static_groups = False
         self.__dict__.update(entries)
 
-    #def __getattr__(self, name):
+    # def __getattr__(self, name):
     #    if name not in self.__dict__:
     #        return None
     #    return self.__dict__[name]
