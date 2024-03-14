@@ -48,15 +48,14 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         assert out_features % (32 // self.w_bit) == 0
 
         self.g_idx = torch.tensor([i // group_size for i in range(in_features)], dtype=torch.int32)
-        dev = torch.device('cpu')
         self.register_buffer('qweight', torch.zeros((in_features, out_features
-                             // (32 // self.w_bit)), dtype=torch.int32, device=dev))
+                             // (32 // self.w_bit)), dtype=torch.int32))
         self.register_buffer('qzeros', torch.zeros((in_features // self.group_size,
-                             out_features // (32 // self.w_bit)), dtype=torch.int32, device=dev))
+                             out_features // (32 // self.w_bit)), dtype=torch.int32))
         self.register_buffer('scales', torch.zeros(
-            (in_features // self.group_size, out_features), dtype=torch.float16, device=dev))
+            (in_features // self.group_size, out_features), dtype=torch.float16))
         if bias:
-            self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16, device=dev))
+            self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16))
         else:
             self.bias = None
 

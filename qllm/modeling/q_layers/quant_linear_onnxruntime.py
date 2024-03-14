@@ -94,14 +94,14 @@ class QuantLinearORT(nn.Module, CompressWeight):
         self.groupsize = groupsize if groupsize != -1 else infeatures
         self.act_order = None
         self.pack_mode = "ORT"
-
+        q_rows = infeatures // self.groupsize
         self.register_buffer(
             "qweight",
-            torch.zeros((outfeatures, infeatures // self.groupsize, self.groupsize // (8 // bits)), dtype=torch.uint8),
+            torch.zeros((outfeatures, q_rows, self.groupsize // (8 // bits)), dtype=torch.uint8),
         )
         self.register_buffer(
             "qzeros",
-            torch.zeros((math.ceil(infeatures // self.groupsize) * (outfeatures // 8 * self.bits)), dtype=torch.uint8),
+            torch.zeros((q_rows+(q_rows&1)) * (outfeatures // 8 * self.bits), dtype=torch.uint8),
         )
         self.register_buffer(
             "scales", torch.zeros((math.ceil(infeatures / self.groupsize) * outfeatures), dtype=torch.float16)
@@ -127,7 +127,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
         pad_len = padded_rows - rows
         if pad_len > 0:
             intweight_pt = torch.nn.functional.pad(intweight_pt, (0, 0, 0, pad_len), "constant", 0)
-            intzeros_pt = torch.nn.functional.pad(intzeros_pt, (0, 0, 0, pad_len), "constant", 0)
+        intzeros_pt = torch.nn.functional.pad(intzeros_pt, (0, intzeros_pt.shape[-1]&1, 0, 0), "constant", 0)
 
         if intzeros_T.dtype != self.scales.dtype:
             intzeros_pt = (intzeros_pt[:, 0::2]) | (intzeros_pt[:, 1::2] << 4)

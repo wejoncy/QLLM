@@ -120,11 +120,12 @@ class CompressWeight(object):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         qzeros = self.qzeros.to(device)
         qweight = self.qweight.to(device)
+        scales = self.scales.to(device)
+
         weight_dim0 = self.infeatures
         if "GEMM" in self._get_name():
             qweight = qweight.T.contiguous()
             weight_dim0 = self.outfeatures
-        scales = self.scales.to(device)
 
         weight = torch.zeros((weight_dim0, qweight.shape[1]), dtype=torch.int32, device=qweight.device)
         zeros = torch.zeros((self.infeatures // self.groupsize, self.outfeatures), dtype=torch.int32, device=qweight.device)
