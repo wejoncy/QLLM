@@ -253,4 +253,4 @@ class AutoQuantizedModelForCausalLM:
         with open(save_directory + "/quant_config_by_layer.json", 'w') as fp:
             fp.write(json.dumps(quant_config_by_layer))
         with open(save_directory + "/quantize_config.json", 'w') as fp:
-            fp.write(json.dumps(quant_config))
+            fp.write(json.dumps(quant_config.quant_config))

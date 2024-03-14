@@ -47,7 +47,7 @@ class AutoModelQuantization(object):
         logger.info('Evaluating ...')
 
         from .modeling.q_layers.quant_linear_awq import has_awq_inference_engine
-        if not has_awq_inference_engine() and model.quant_config["version"] == "GEMM":
+        if not has_awq_inference_engine() and model.quant_config.version == "GEMM":
             logger.warning(
                 "AWQ inference engine not found, will convert to GPTQ packing for inference.")
             model = self.repack_to_new_mode(model, "GPTQ")
