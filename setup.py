@@ -133,7 +133,7 @@ def build_cuda_extensions():
         return []
     else:
         print(f"detect cuda home: {CUDA_HOME}")
-    #include_dirs = get_include_dirs()
+    # include_dirs = get_include_dirs()
     def get_extra_compile_args(x_arch_flags = None):
         arch_flags = x_arch_flags if x_arch_flags is not None else get_compute_capabilities(set([]))
         generator_flags = get_generator_flag()
@@ -158,7 +158,7 @@ def build_cuda_extensions():
             extra_compile_args["cxx"] = ["/openmp", "/std:c++17"]
         else:
             extra_compile_args["cxx"] = ["-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]
-            
+
         return extra_compile_args
 
     def get_gpu_ver():
@@ -173,10 +173,13 @@ def build_cuda_extensions():
                 [
                     "csrc/awq_cuda/pybind_awq.cpp",
                     "csrc/awq_cuda/quantization/gemm_cuda_gen.cu",
-                    #"csrc/awq_cuda/layernorm/layernorm.cu",
-                    #"csrc/awq_cuda/position_embedding/pos_encoding_kernels.cu",
-                    "csrc/awq_cuda/quantization/gemv_cuda.cu"
-                ], extra_compile_args=extra_compile_args_awq
+                    # "csrc/awq_cuda/layernorm/layernorm.cu",
+                    # "csrc/awq_cuda/position_embedding/pos_encoding_kernels.cu",
+                    "csrc/awq_cuda/quantization/gemv_cuda.cu",
+                    "csrc/awq_cuda/quantization/marlin_cuda_kernel.cu",
+                    "csrc/awq_cuda/quantization/marlin_cuda.cpp",
+                ],
+                extra_compile_args=extra_compile_args_awq,
             )
         )
 

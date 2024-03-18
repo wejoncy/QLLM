@@ -21,8 +21,10 @@
 
 #include <cuda.h>
 #include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <assert.h>
+#include <iostream>
 
+#include "marlin_cuda_kernel.cuh"
 
 constexpr int ceildiv(int a, int b) {
   return (a + b - 1) / b;
@@ -41,7 +43,7 @@ struct Vec {
 
 using I4 = Vec<int, 4>;
 
-// Matrix fragments for tensor core instructions; their precise layout is documented here: 
+// Matrix fragments for tensor core instructions; their precise layout is documented here:
 // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#matrix-fragments-for-mma-m16n8k16-with-floating-point-type
 using FragA = Vec<half2, 4>;
 using FragB = Vec<half2, 2>;
@@ -51,6 +53,7 @@ using FragS = Vec<half2, 1>; // quantization scales
 // Predicated asynchronous global->shared copy; used for inputs A where we apply predication to handle batchsizes that
 // are not multiples of 16.
 __device__ inline void cp_async4_pred(void* smem_ptr, const void* glob_ptr, bool pred = true) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   const int BYTES = 16;
   uint32_t smem = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
   asm volatile(
@@ -60,12 +63,16 @@ __device__ inline void cp_async4_pred(void* smem_ptr, const void* glob_ptr, bool
     "   @p cp.async.cg.shared.global [%1], [%2], %3;\n"
     "}\n" :: "r"((int) pred), "r"(smem), "l"(glob_ptr), "n"(BYTES)
   );
+#else
+  assert(0);
+#endif
 }
 
 // Asynchronous global->shared copy with a chache hint indicating that the values may be evicted immediately; used for
 // quantized weights B, which are only accessed precisely once and should thus not pollute the L2 cache which we need
-// for inputs A and outputs C. 
+// for inputs A and outputs C.
 __device__ inline void cp_async4_stream(void* smem_ptr, const void* glob_ptr) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   const int BYTES = 16;
   uint32_t smem = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
   asm volatile(
@@ -75,21 +82,33 @@ __device__ inline void cp_async4_stream(void* smem_ptr, const void* glob_ptr) {
     "   cp.async.cg.shared.global.L2::cache_hint [%0], [%1], %2, p;\n"
     "}\n" :: "r"(smem), "l"(glob_ptr), "n"(BYTES)
   );
+#else
+  assert(0);
+#endif
 }
 
 // Async copy fence.
 __device__ inline void cp_async_fence() {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   asm volatile("cp.async.commit_group;\n" ::);
+#else
+  assert(0);
+#endif
 }
 
 // Wait until at most `n` async copy stages are still pending.
 template <int n>
 __device__ inline void cp_async_wait() {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   asm volatile("cp.async.wait_group %0;\n" :: "n"(n));
+#else
+  assert(0);
+#endif
 }
 
 // m16n8k16 tensor core mma instruction with fp16 inputs and fp32 output/accumulation.
 __device__ inline void mma(const FragA& a_frag, const FragB& frag_b, FragC& frag_c) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   const uint32_t* a = reinterpret_cast<const uint32_t*>(&a_frag);
   const uint32_t* b = reinterpret_cast<const uint32_t*>(&frag_b);
   float* c = reinterpret_cast<float*>(&frag_c);
@@ -100,20 +119,27 @@ __device__ inline void mma(const FragA& a_frag, const FragB& frag_b, FragC& frag
     :  "r"(a[0]),  "r"(a[1]),  "r"(a[2]),  "r"(a[3]),  "r"(b[0]),  "r"(b[1]),
        "f"(c[0]),  "f"(c[1]),  "f"(c[2]),  "f"(c[3])
   );
+#else
+  assert(0);
+#endif
 }
 
 // Instruction for loading a full 16x16 matrix fragment of operand A from shared memory, directly in tensor core layout.
 __device__ inline void ldsm4(FragA& frag_a, const void* smem_ptr) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   uint32_t* a = reinterpret_cast<uint32_t*>(&frag_a);
   uint32_t smem = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
   asm volatile(
     "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
     : "=r"(a[0]), "=r"(a[1]), "=r"(a[2]), "=r"(a[3]) : "r"(smem)
   );
+#else
+  assert(0);
+#endif
 }
 
 // Lookup-table based 3-input logical operation; explicitly used for dequantization as the compiler does not seem to
-// automatically recognize it in all cases. 
+// automatically recognize it in all cases.
 template <int lut>
 __device__ inline int lop3(int a, int b, int c) {
   int res;
@@ -159,6 +185,7 @@ __device__ inline void scale(FragB& frag_b, FragS& frag_s, int i) {
 
 // Wait until barrier reaches `count`, then lock for current threadblock.
 __device__ inline void barrier_acquire(int* lock, int count) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   if (threadIdx.x == 0) {
     int state = -1;
     do
@@ -167,10 +194,14 @@ __device__ inline void barrier_acquire(int* lock, int count) {
     while (state != count);
   }
   __syncthreads();
+#else
+  assert(0);
+#endif
 }
 
 // Release barrier and increment visitation count.
 __device__ inline void barrier_release(int* lock, bool reset = false) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   __syncthreads();
   if (threadIdx.x == 0) {
     if (reset) {
@@ -178,68 +209,87 @@ __device__ inline void barrier_release(int* lock, bool reset = false) {
       return;
     }
     int val = 1;
-    // Make sure that all writes since acquiring this barrier are visible globally, while releasing the barrier. 
+    // Make sure that all writes since acquiring this barrier are visible globally, while releasing the barrier.
     asm volatile ("fence.acq_rel.gpu;\n");
-    asm volatile ("red.relaxed.gpu.global.add.s32 [%0], %1;\n" : : "l"(lock), "r"(val)); 
+    asm volatile ("red.relaxed.gpu.global.add.s32 [%0], %1;\n" : : "l"(lock), "r"(val));
   }
+#else
+  assert(0);
+#endif
 }
 
 
 template <
   const int threads, // number of threads in a threadblock
-  const int thread_m_blocks, // number of 16x16 blocks in the m dimension (batchsize) of the threadblock 
-  const int thread_n_blocks, // same for n dimension (output) 
+  const int thread_m_blocks, // number of 16x16 blocks in the m dimension (batchsize) of the threadblock
+  const int thread_n_blocks, // same for n dimension (output)
   const int thread_k_blocks, // same for k dimension (reduction)
   const int stages, // number of stages for the async global->shared fetch pipeline
   const int group_blocks = -1 // number of consecutive 16x16 blocks with a separate quantization scale
 >
 __global__ void Marlin(
-  const int4* __restrict__ A, // fp16 input matrix of shape mxk 
-  const int4* __restrict__ B, // 4bit quantized weight matrix of shape kxn 
+  const int4* __restrict__ A, // fp16 input matrix of shape mxk
+  const int4* __restrict__ B, // 4bit quantized weight matrix of shape kxn
         int4* __restrict__ C, // fp16 output buffer of shape mxn
-  const int4* __restrict__ s, // fp16 quantization scales of shape (k/groupsize)xn 
+  const int4* __restrict__ s, // fp16 quantization scales of shape (k/groupsize)xn
   int  prob_m, // batch dimension m
   int  prob_n, // output dimension n
   int  prob_k, // reduction dimension k
-  int* locks // extra global storage for barrier synchronization 
+  int* locks // extra global storage for barrier synchronization
 ) {
-  // Each threadblock processes one "stripe" of the B matrix with (roughly) the same size, which might involve multiple 
-  // column "slices" (of width 16 * `thread_n_blocks`). Stripes are defined as shown in the 3x3 matrix 5 SM example: 
-  //   0 1 3 
+  // Each threadblock processes one "stripe" of the B matrix with (roughly) the same size, which might involve multiple
+  // column "slices" (of width 16 * `thread_n_blocks`). Stripes are defined as shown in the 3x3 matrix 5 SM example:
+  //   0 1 3
   //   0 2 3
   //   1 2 4
   // While this kind of partitioning makes things somewhat more complicated, it ensures good utilization of all SMs
-  // for many kinds of shape and GPU configurations, while requiring as few slow global cross-threadblock reductions as 
+  // for many kinds of shape and GPU configurations, while requiring as few slow global cross-threadblock reductions as
   // possible.
+
+  // For larger GEMMs we run multiple batchsize 64 versions in parallel for a better partitioning with less reductions
+  int parallel = 1;
+  if (prob_m > 16 * thread_m_blocks) {
+    parallel = prob_m / (16 * thread_m_blocks);
+    prob_m = 16 * thread_m_blocks;
+  }
 
   int k_tiles = prob_k / 16 / thread_k_blocks;
   int n_tiles = prob_n / 16 / thread_n_blocks;
-  int iters = ceildiv(k_tiles * n_tiles, gridDim.x);
+  int iters = ceildiv(k_tiles * n_tiles * parallel, gridDim.x);
   // Ensure that the number of tiles in each stripe is a multiple of the groupsize; this avoids an annoying special case
   // where a stripe starts in the middle of group.
   if (group_blocks != -1)
     iters = (group_blocks / thread_k_blocks) * ceildiv(iters, (group_blocks / thread_k_blocks));
 
   int slice_row = (iters * blockIdx.x) % k_tiles;
-  int slice_col = (iters * blockIdx.x) / k_tiles;
+  int slice_col_par = (iters * blockIdx.x) / k_tiles;
+  int slice_col = slice_col_par;
   int slice_iters; // number of threadblock tiles in the current slice
   int slice_count = 0; // total number of active threadblocks in the current slice
   int slice_idx; // index of threadblock in current slice; numbered bottom to top
 
+  // We can easily implement parallel problem execution by just remapping indices and advancing global pointers
+  if (slice_col_par >= n_tiles) {
+    A += (slice_col_par / n_tiles) * 16 * thread_m_blocks * prob_k / 8;
+    C += (slice_col_par / n_tiles) * 16 * thread_m_blocks * prob_n / 8;
+    locks += (slice_col_par / n_tiles) * n_tiles;
+    slice_col = slice_col_par % n_tiles;
+  }
+
   // Compute all information about the current slice which is required for synchronization.
   auto init_slice = [&] () {
-    slice_iters = iters * (blockIdx.x + 1) - (k_tiles * slice_col + slice_row);
-    if (slice_iters < 0 || slice_col >= n_tiles)
+    slice_iters = iters * (blockIdx.x + 1) - (k_tiles * slice_col_par + slice_row);
+    if (slice_iters < 0 || slice_col_par >= n_tiles * parallel)
       slice_iters = 0;
     if (slice_iters == 0)
       return;
-    if (slice_row + slice_iters > k_tiles) 
+    if (slice_row + slice_iters > k_tiles)
       slice_iters = k_tiles - slice_row;
     slice_count = 1;
     slice_idx = 0;
-    int col_first = iters * ceildiv(k_tiles * slice_col, iters);
-    if (col_first <= k_tiles * (slice_col + 1)) {
-      int col_off = col_first - k_tiles * slice_col;
+    int col_first = iters * ceildiv(k_tiles * slice_col_par, iters);
+    if (col_first <= k_tiles * (slice_col_par + 1)) {
+      int col_off = col_first - k_tiles * slice_col_par;
       slice_count = ceildiv(k_tiles - col_off, iters);
       if (col_off > 0)
         slice_count++;
@@ -251,6 +301,12 @@ __global__ void Marlin(
         if (col_off > 0)
           slice_idx--;
       }
+    }
+    if (slice_col == n_tiles) {
+      A += 16 * thread_m_blocks * prob_k / 8;
+      C += 16 * thread_m_blocks * prob_n / 8;
+      locks += n_tiles;
+      slice_col = 0;
     }
   };
   init_slice();
@@ -304,7 +360,7 @@ __global__ void Marlin(
     s_sh_rd = 8 * ((threadIdx.x / 32) % (thread_n_blocks / 4)) + (threadIdx.x % 32) / 4;
   else
     s_sh_rd = 8 * ((threadIdx.x / 32) % (thread_n_blocks / 4)) + (threadIdx.x % 32) % 4;
-  
+
   // Precompute which thread should not read memory in which iterations; this is needed if there are more threads than
   // required for a certain tilesize or when the batchsize is not a multiple of 16.
   bool a_sh_wr_pred[a_sh_wr_iters];
@@ -314,14 +370,14 @@ __global__ void Marlin(
   bool s_sh_wr_pred = threadIdx.x < s_sh_stride;
 
   // To ensure that writing and reading A tiles to/from shared memory, the latter in fragment format, is fully bank
-  // conflict free, we need to use a rather fancy XOR-based layout. The key here is that neither reads nor writes of 
+  // conflict free, we need to use a rather fancy XOR-based layout. The key here is that neither reads nor writes of
   // the 16-byte `int4` blocks of 8 consecutive threads involve the same shared memory banks. Further, it seems (based
   // on NSight-Compute) that each warp must also write a consecutive memory segment?
   auto transform_a = [&] (int i) {
     int row = i / a_gl_rd_delta_o;
     return a_gl_rd_delta_o * row + (i % a_gl_rd_delta_o) ^ row;
   };
-  // Since the computation of this remapping is non-trivial and, due to our main loop unrolls, all shared memory 
+  // Since the computation of this remapping is non-trivial and, due to our main loop unrolls, all shared memory
   // accesses are static, we simply precompute both transformed reads and writes.
   int a_sh_wr_trans[a_sh_wr_iters];
   #pragma unroll
@@ -332,7 +388,7 @@ __global__ void Marlin(
   for (int i = 0; i < b_sh_wr_iters; i++) {
     #pragma unroll
     for (int j = 0; j < thread_m_blocks; j++)
-      a_sh_rd_trans[i][j] = transform_a(a_sh_rd_delta_o * i + a_sh_rd_delta_i * j + a_sh_rd); 
+      a_sh_rd_trans[i][j] = transform_a(a_sh_rd_delta_o * i + a_sh_rd_delta_i * j + a_sh_rd);
   }
 
   // Since B-accesses have non-constant stride they have to be computed at runtime; we break dependicies between
@@ -343,11 +399,11 @@ __global__ void Marlin(
     B_ptr[i] = B + b_gl_rd_delta_i * i + b_gl_rd;
 
   extern __shared__ int4 sh[];
-  // Shared memory storage for global fetch pipelines. 
+  // Shared memory storage for global fetch pipelines.
   int4* sh_a = sh;
   int4* sh_b = sh_a + (stages * a_sh_stage);
   int4* sh_s = sh_b + (stages * b_sh_stage);
-  // Register storage for double buffer of shared memory reads. 
+  // Register storage for double buffer of shared memory reads.
   FragA frag_a[2][thread_m_blocks];
   I4 frag_b_quant[2];
   FragC frag_c[thread_m_blocks][4][2];
@@ -415,7 +471,7 @@ __global__ void Marlin(
     frag_b_quant[k % 2] = *reinterpret_cast<I4*>(&sh_b_stage[b_sh_rd_delta * (k % b_sh_wr_iters) + b_sh_rd]);
   };
 
-  // Execute the actual tensor core matmul of a sub-tile. 
+  // Execute the actual tensor core matmul of a sub-tile.
   auto matmul = [&] (int k) {
     // We have the m dimension as the inner loop in order to encourage overlapping dequantization and matmul operations.
     #pragma unroll
@@ -445,11 +501,11 @@ __global__ void Marlin(
     if (red_off >= 1) {
       int red_idx = threadIdx.x / b_sh_stride;
       constexpr int red_sh_stride = b_sh_stride * 4 * 2;
-      constexpr int red_sh_delta = b_sh_stride; 
+      constexpr int red_sh_delta = b_sh_stride;
       int red_sh_rd = red_sh_stride * (threadIdx.x / b_sh_stride) + (threadIdx.x % b_sh_stride);
 
       // Parallel logarithmic shared memory reduction. We make sure to avoid any unnecessary read or write iterations,
-      // e.g., for two warps we write only once by warp 1 and read only once by warp 0. 
+      // e.g., for two warps we write only once by warp 1 and read only once by warp 0.
 
       #pragma unroll
       for (int m_block = 0; m_block < thread_m_blocks; m_block++) {
@@ -489,7 +545,7 @@ __global__ void Marlin(
   // the results. As the striped partioning minimizes the number of such reductions and our outputs are usually rather
   // small, we perform this reduction serially in L2 cache.
   auto global_reduce = [&] (bool first = false, bool last = false) {
-    // We are very careful here to reduce directly in the output buffer to maximize L2 cache utilization in this step. 
+    // We are very careful here to reduce directly in the output buffer to maximize L2 cache utilization in this step.
     // To do this, we write out results in FP16 (but still reduce with FP32 compute).
     constexpr int active_threads = 32 * thread_n_blocks / 4;
     if (threadIdx.x < active_threads) {
@@ -546,7 +602,7 @@ __global__ void Marlin(
   };
 
   // Write out the reduce final result in the correct layout. We only actually reshuffle matrix fragments in this step,
-  // the reduction above is performed in fragment layout. 
+  // the reduction above is performed in fragment layout.
   auto write_result = [&] () {
     int c_gl_stride = prob_n / 8;
     constexpr int c_sh_stride = 2 * thread_n_blocks + 1;
@@ -594,7 +650,7 @@ __global__ void Marlin(
     }
   };
 
-  // Start global fetch and register load pipelines. 
+  // Start global fetch and register load pipelines.
   auto start_pipes = [&] () {
     #pragma unroll
     for (int i = 0; i < stages - 1; i++)
@@ -656,6 +712,7 @@ __global__ void Marlin(
       if (last) // only the last block in a slice actually writes the result
         write_result();
       slice_row = 0;
+      slice_col_par++;
       slice_col++;
       init_slice();
       if (slice_iters) {
@@ -663,6 +720,11 @@ __global__ void Marlin(
         #pragma unroll
         for (int i = 0; i < b_sh_wr_iters; i++)
           B_ptr[i] += b_sh_stride - b_gl_rd_delta_o * k_tiles;
+        if (slice_col == 0) {
+          #pragma unroll
+          for (int i = 0; i < b_sh_wr_iters; i++)
+            B_ptr[i] -= b_gl_stride;
+        }
         s_gl_rd = s_sh_stride * slice_col + threadIdx.x;
         start_pipes();
       }
@@ -713,10 +775,12 @@ int marlin_cuda(
   cudaStream_t stream = 0,
   int thread_k = -1,
   int thread_n = -1,
-  int sms = -1
+  int sms = -1,
+  int max_par = 16
 ) {
   int tot_m = prob_m;
   int tot_m_blocks = ceildiv(tot_m, 16);
+  int pad = 16 * tot_m_blocks - tot_m;
 
   if (sms == -1)
     cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev);
@@ -753,11 +817,17 @@ int marlin_cuda(
   for (int i = 0; i < tot_m_blocks; i += 4) {
     int thread_m_blocks = tot_m_blocks - i;
     prob_m = tot_m - 16 * i;
+    int par = 1;
     if (thread_m_blocks > 4) {
+      // Note that parallel > 1 currently only works for inputs without any padding
+      par = (16 * thread_m_blocks - pad) / 64;
+      if (par > max_par)
+        par = max_par;
+      prob_m = 64 * par;
+      i += 4 * (par - 1);
       thread_m_blocks = 4;
-      prob_m = 64;
     }
-    
+
     // For compilation speed, we only define the kernel configurations that have seemed useful (in terms of performance)
     // in our testing, however many more are, in principle, possible.
     if (false) {}
@@ -774,8 +844,8 @@ int marlin_cuda(
     else
       ret = ERR_KERN_SHAPE;
 
-    A_ptr += 16 * thread_m_blocks * (prob_k / 8);
-    C_ptr += 16 * thread_m_blocks * (prob_n / 8);
+    A_ptr += 16 * thread_m_blocks * (prob_k / 8) * par;
+    C_ptr += 16 * thread_m_blocks * (prob_n / 8) * par;
   }
 
   return ret;
