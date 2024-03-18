@@ -53,7 +53,7 @@ A typical usage is:
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--use_plugin', action='store_true', help='test with plugin, such as fastchat conversation')
     parser.add_argument('--pack_mode', type=str, default=default_args.pack_mode,
-                        choices=["AUTO", "GEMM", "GPTQ", "ORT", "HQQ"], help="""the quantization pack mode, 
+                        choices=["AUTO", "GEMM", "GPTQ", "ORT", "HQQ", "MARLIN"], help="""the quantization pack mode, 
 `GEMM` represents to use AWQ GEMM engine, same as what AutoAWQ used, 
 `AUTO` represents that it is selected by the GPU arch, as awq GEMM needs SM75+ 
 `GPTQ` represent using old GPTQ style DQ+GEMM, it is not fused but more general than AWQ-GEMM, 
