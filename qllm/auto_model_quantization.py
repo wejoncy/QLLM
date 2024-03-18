@@ -43,10 +43,13 @@ class AutoModelQuantization(object):
         return quantizer.quantize(model, inputs_dataloader, dev)
 
     @torch.inference_mode()
-    def eval_model(self, model, dev):
+    def eval_model(self, model, pack_mode, dev):
         logger.info('Evaluating ...')
 
         from .modeling.q_layers.quant_linear_awq import has_awq_inference_engine
+        if pack_mode != "GEMM" or has_awq_inference_engine():
+            model = self.repack_to_new_mode(model, pack_mode)
+            
         if not has_awq_inference_engine() and model.quant_config.version == "GEMM":
             logger.warning(
                 "AWQ inference engine not found, will convert to GPTQ packing for inference.")
@@ -217,7 +220,7 @@ Please run with `-h` to refer the usage.")
                                                           args.pack_mode, repack_func, save_serialization=False)
 
         if args.eval:
-            self.eval_model(model, "cuda")
+            self.eval_model(model, args.pack_mode, "cuda")
 
         if args.export_onnx:
             inputs_dataloader = self.get_datasets(
