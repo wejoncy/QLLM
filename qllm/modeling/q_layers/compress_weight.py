@@ -192,7 +192,7 @@ class CompressWeight(object):
         if g_idx is None:
             g_idx = self.g_idx.to(device) if g_idx is None else g_idx
         else:
-            self.g_idx = g_idx.clone().to("cpu", non_blocking=True)
+            self.g_idx = g_idx.clone().to("cpu")
 
         intweight_gpu = self._quant_weight(layer_weight.T, scales.T, zeros.T, g_idx)
 
