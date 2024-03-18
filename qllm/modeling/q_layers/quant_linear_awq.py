@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .compress_weight import CompressWeight
+from .compress_weight import CompressWeight, general_unpack_on_row
 from .ext_package_checker import has_awq_inference_engine
 if not has_awq_inference_engine():
     print("awq_inference_engine not found, will skip it.")
@@ -58,6 +58,31 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
             self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16))
         else:
             self.bias = None
+
+    def pack_qzeros(self, qzeros, device):
+        qzeros = self.reorder_int_tensor(qzeros)
+        qzeros = qzeros.T.contiguous()
+        assert max(1, qzeros.shape[1] // 32 * self.bits) == int(round(qzeros.shape[1] * self.bits / 32 + 0.5))
+        super().pack_qzeros(qzeros, device)
+
+    def unpack_qzeros(self, device):
+        zeros = super().unpack_qzeros(device)
+        zeros = zeros.T.contiguous()
+        zeros = self.reverse_reorder_int_tensor(zeros)
+        return zeros
+
+    def unpack_qweight(self, device):
+        qweight = self.qweight.to(device)
+        # weight_dim0 = self.infeatures
+
+        qweight = qweight.T.contiguous()
+        weight_dim0 = self.outfeatures
+
+        weight = torch.zeros((weight_dim0, qweight.shape[1]), dtype=torch.int32, device=device)
+        general_unpack_on_row(qweight, weight, self.bits)
+        weight = self.reverse_reorder_int_tensor(weight)
+
+        return weight
 
     def reorder_int_tensor(self, int_tensor):
         if self.g_idx is not None:

@@ -68,10 +68,10 @@ class QuantLinearHQQ(nn.Module, CompressWeight):
         else:
             self.bias = None
 
-    def pack_qzeros_even(self, intzeros, device):
-        self.qzeros = intzeros.contiguous().to("cpu", non_blocking=True)
+    def unpack_qzeros(self, device):
+        return self.qzeros.to(device)
 
-    def pack_qzeros_odd(self, intzeros, device):
+    def pack_qzeros(self, intzeros, device):
         self.qzeros = intzeros.contiguous().to("cpu", non_blocking=True)
 
     def forward(self, x):

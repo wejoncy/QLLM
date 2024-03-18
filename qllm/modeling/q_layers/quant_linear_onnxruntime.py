@@ -112,7 +112,7 @@ class QuantLinearORT(nn.Module, CompressWeight):
         else:
             self.bias = None
 
-    def pack_on_device_for_even_bits(self, intweight_gpu, intzeros_T):
+    def pack_on_device(self, intweight_gpu, intzeros_T):
         self.act_order = self.g_idx[: self.groupsize // self.bits].sum().item() != 0
         assert self.bits == 4, "only 4bit is supported by ONNXRUNTIME for now."
         intzeros_pt = intzeros_T.T if intzeros_T.dtype == self.scales.dtype else intzeros_T.T.byte()
