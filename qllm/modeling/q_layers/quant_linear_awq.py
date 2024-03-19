@@ -86,9 +86,13 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
 
     def reorder_int_tensor(self, int_tensor):
         if self.g_idx is not None:
-            assert torch.allclose(self.g_idx, torch.tensor(
-                [i // self.groupsize for i in range(self.infeatures)], dtype=torch.int32, device=self.g_idx.device
-            ))
+            self.act_order = self.g_idx[: self.group_size // self.bits].sum().item() != 0
+            assert self.act_order is True or torch.allclose(
+                self.g_idx,
+                torch.tensor(
+                    [i // self.groupsize for i in range(self.infeatures)], dtype=torch.int32, device=self.g_idx.device
+                ),
+            )
         compress_ratio = (32 // self.bits)
         assert int_tensor.shape[-1] % compress_ratio == 0
         if self.w_bit == 4:

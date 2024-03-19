@@ -52,14 +52,19 @@ A typical usage is:
                         help='Auto upgrade layer precision to higher precision, for example int2 to int4, groupsize 128 to 64.')
     parser.add_argument('--export_onnx', type=str, default=None, help='where does the onnx model save to.')
     parser.add_argument('--use_plugin', action='store_true', help='test with plugin, such as fastchat conversation')
-    parser.add_argument('--pack_mode', type=str, default=default_args.pack_mode,
-                        choices=["AUTO", "GEMM", "GPTQ", "ORT", "HQQ"], help="""the quantization pack mode, 
+    parser.add_argument(
+        "--pack_mode",
+        type=str,
+        default=default_args.pack_mode,
+        choices=["AUTO", "GEMM", "GPTQ", "ORT", "HQQ", "MARLIN"],
+        help="""the quantization pack mode, 
 `GEMM` represents to use AWQ GEMM engine, same as what AutoAWQ used, 
 `AUTO` represents that it is selected by the GPU arch, as awq GEMM needs SM75+ 
 `GPTQ` represent using old GPTQ style DQ+GEMM, it is not fused but more general than AWQ-GEMM, 
-and can be used on all GPU archs.
+`MARLIN` is fastest but require sm80+.
 `ORT` represents using onnxruntime packing stype,
-""")
+""",
+    )
 
     return parser
 

@@ -47,6 +47,7 @@ def select_quant_linear(pack_mode: str, wbits:int, method:str):
     from ..modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
     from ..modeling.q_layers.quant_linear_onnxruntime import QuantLinearORT
     from ..modeling.q_layers.quant_linear_hqq import QuantLinearHQQ
+    from ..modeling.q_layers.quant_linear_marlin import QuantLinearMarlin
 
     if pack_mode == "GEMM" or (pack_mode == "AUTO" and is_the_machine_support_awq_engine(wbits)):
         target_layer = WQLinear_GEMM
@@ -54,6 +55,8 @@ def select_quant_linear(pack_mode: str, wbits:int, method:str):
         target_layer = QuantLinearORT
     elif method == "hqq":
         target_layer = QuantLinearHQQ
+    elif pack_mode == "MARLIN":
+        target_layer = QuantLinearMarlin
     else:
         target_layer = QuantLinearGPTQ
     return target_layer
@@ -175,7 +178,7 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
 
 
 # deprecated
-#def make_quant_linear(module, names, bits, groupsize, name=''):
+# def make_quant_linear(module, names, bits, groupsize, name=''):
 #    if isinstance(module, QuantLinearGPTQ):
 #        return
 #    for attr in dir(module):
@@ -189,7 +192,7 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
 #
 #
 #
-#def make_linear_qdq_back(module, names, name=''):
+# def make_linear_qdq_back(module, names, name=''):
 #    if isinstance(module, QuantLinearGPTQ):
 #        return
 #    for attr in dir(module):
