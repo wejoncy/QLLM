@@ -171,6 +171,23 @@ or
 python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
 ```
 
+## use QLLM with API
+```python
+from qllm import AutoModelQuantization
+
+quantizer = AutoModelQuantization()
+q_model = quantizer.api_quantize(model_or_model_path='meta-llama/Llama-2-7b-hf', method='gptq', wbits=4, groupsize=128)
+```
+OR 
+```python
+from qllm import AutoModelQuantization
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf", use_fast=True, trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf", torch_dtype=torch.float16)
+q_model = quantizer.api_quantize(model_or_model_path=q_model, method='gptq', wbits=4, groupsize=128)
+```
+
 ## For some users has transformers connect issues.
 Please set environment with PROXY_PORT=your http proxy port
 
