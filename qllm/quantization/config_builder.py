@@ -41,7 +41,7 @@ class GPTQConfig(MetaInterface):
 class AWQConfig(MetaInterface):
     q_group_size: int
     w_bit: int
-    zero_point: bool = True
+    zero_point: bool
     version: str = ""
     method: str = "awq"
 
@@ -67,7 +67,7 @@ def build_config(args):
             static_groups=args.static_groups,
         )
     elif args.method == 'awq':
-        config = AWQConfig(args.groupsize, args.wbits)
+        config = AWQConfig(args.groupsize, args.wbits, not args.sym)
     elif args.method == "hqq":
         config = HQQConfig(args.groupsize, args.wbits)
 

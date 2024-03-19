@@ -97,7 +97,9 @@ class AWQQuant(QuantFrameBase):
             )
             # get_op_name(model, linear_layer)
             layer_key = f"{state_dict_prefix}.{name}"
-            quantizers[layer_key] = (None, scales.cpu(), zeros.cpu(), None, bits, groupsize)
+            if zeros is not None:
+                zeros = zeros.cpu()
+            quantizers[layer_key] = (None, scales.cpu(), zeros, None, bits, groupsize)
             linear_layer.cpu()
             clear_memory(scales, zeros)
 

@@ -107,7 +107,7 @@ python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7
 ```bash
 python -m qllm --model=meta-llama/Llama-2-7b-hf --method=awq --save ./Llama-2-7b-4bit --pack_mode=GEMM
 ```
-## Conversion between AWQ and GPTQ
+## Conversion among AWQ, GPTQ and MarLin
 ```bash
 python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --eval --save ./Llama-2-7b-chat-hf_gptq_q4/ --pack_mode=GPTQ
 ```
@@ -115,6 +115,15 @@ Or you can use `--pack_mode=AWQ` to convert GPTQ to AWQ.
 ```bash
 python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --eval --save ./Llama-2-7b-chat-hf_awq_q4/ --pack_mode=GEMM
 ```
+Or you can use `--pack_mode=MARLIN` to convert GPTQ to Marlin.
+```bash
+python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --eval --save ./Llama-2-7b-chat-hf_marlin_q4/ --pack_mode=MARLIN
+```
+Or you can use `--pack_mode=MARLIN` to convert AWQ to Marlin.
+```bash
+python -m qllm --load TheBloke/Llama-2-7B-Chat-AWQ --eval --save ./Llama-2-7b-chat-hf_marlin_q4/ --pack_mode=MARLIN
+```
+
 ### Note:
 Not all cases are supported, for example,
 1)  if you quantized model with different quantization bits for different layers, you can't convert it to AWQ.
