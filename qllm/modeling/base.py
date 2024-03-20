@@ -236,11 +236,10 @@ class AutoQuantizedModelForCausalLM:
 
         target_layer = utils.modelutils.select_quant_linear(
             quant_config.version, quant_config.bits(), quant_config.method)
-        with transformers.utils.generic.ContextManagers([transformers.modeling_utils.no_init_weights()]):
-            torch.set_default_device("cuda")
-            utils.modelutils.make_mixbits_quant_linear(
-                model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
-            torch.set_default_device("cpu")
+        torch.set_default_device("cuda")
+        utils.modelutils.make_mixbits_quant_linear(
+            model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
+        torch.set_default_device("cpu")
         if quant_config.method == "awq":
             from ..quantization.quant_awq import scale_activations
             scale_activations(model)
@@ -249,17 +248,19 @@ class AutoQuantizedModelForCausalLM:
         #    model = model.cuda()
         model.tie_weights()  # works with init_empty_weights and load_checkpoint_and_dispatch
         try:
+            # bias issue
+            no_split_module_classes = get_no_split_layer_type_name(model)
+            assert no_split_module_classes is None
             if torch.cuda.mem_get_info()[1]/1024/1024/1024 < 8:
-                no_split_module_classes = get_no_split_layer_type_name(model)
-                assert no_split_module_classes is None
-                # bias issue
-                #model = accelerate.big_modeling.load_checkpoint_and_dispatch(
-                #    model,
-                #    checkpoint=_get_resolved_weight_or_index_file(model_name_or_path, quant_config),
-                #    device_map=device_map,
-                #    no_split_module_classes=no_split_module_classes,
-                #    dtype=torch_dtype,
-                #)
+                model = accelerate.big_modeling.load_checkpoint_and_dispatch(
+                    model,
+                    checkpoint=_get_resolved_weight_or_index_file(model_name_or_path, quant_config),
+                    device_map=device_map,
+                    no_split_module_classes=no_split_module_classes,
+                    dtype=torch_dtype,
+                )
+            else:
+                raise Exception("")
         except Exception:
             clear_memory()
             all_missing_keys, all_unexpected_keys = _load_check_point(model, model_name_or_path)
