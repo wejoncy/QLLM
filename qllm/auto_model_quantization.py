@@ -78,7 +78,7 @@ class AutoModelQuantization(object):
 
         target_layer = select_quant_linear(pack_mode, wbits, method)
 
-        make_mixbits_quant_linear(model, quantizers, quant_config_by_layer, target_layer=target_layer, device="cpu")
+        make_mixbits_quant_linear(model, quantizers, quant_config_by_layer, target_layer=target_layer)
         qlayers = find_layers(model, [target_layer])
         for name in tqdm.tqdm(qlayers, desc='Packing weights....'):
             quantizers[name], scale, zero, g_idx, _, _ = quantizers[name]

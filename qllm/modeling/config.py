@@ -36,7 +36,8 @@ class BaseQuantizeConfig:
     def version(self, value):
         self.quant_config["version"] = value
 
-    def get_resolved_base_dir(self, model_name_or_path, quantize_config_filename) -> Path:
+    @staticmethod
+    def get_resolved_base_dir(model_name_or_path, quantize_config_filename) -> Path:
         if os.path.isdir(model_name_or_path):  # Local
             resolved_config_file = Path(model_name_or_path) / quantize_config_filename
             if not resolved_config_file.exists():

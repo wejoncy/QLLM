@@ -14,6 +14,8 @@ from packaging import version
 
 from .. import utils
 from .config import BaseQuantizeConfig
+from ..utils.comm_utils import clear_memory
+
 logger = utils.logger.get_logger()
 
 
@@ -43,65 +45,98 @@ def no_init_weights(attrs: list = None):
         if old_attr[idx] is not None:
             setattr(torch.Tensor, attr, old_attr[idx])
 
-# def get_no_split_layer_type_name(model:torch.nn.Module):
-#    for name,mod in model.named_modules():
-#        if '.0' in name and name.count('.0') == 1:
-#            return mod.__class__.__name__
-#
+def get_no_split_layer_type_name(model:torch.nn.Module):
+   for name,mod in model.named_modules():
+       if '.0' in name and name.count('.0') == 1:
+           return [mod.__class__.__name__]
+
+def _hf_weight_generator(hf_weights_files, is_safetensors:bool):
+    if is_safetensors:
+        from safetensors.torch import safe_open
+        for st_file in hf_weights_files:
+            with safe_open(st_file, framework="pt", device="cuda") as f:
+                for name in f.keys():  # noqa: SIM118
+                    param = f.get_tensor(name)
+                    yield name, param
+    else:
+        for bin_file in hf_weights_files:
+            state = torch.load(bin_file, map_location="cuda")
+            for name, param in state.items():
+                yield name, param
+            del state
+            torch.cuda.empty_cache()
 
 
-def _load_check_point(model, model_name_or_path, quant_config, get_keys_only: bool = False):
+def _get_resolved_weight_or_index_file(model_name_or_path):
+    if Path(model_name_or_path).exists():  # local
+        while True:
+            weight_or_index_file = glob.glob(str(Path(model_name_or_path).absolute()/ '*.index.json'))
+            weight_or_index_file += glob.glob(str(Path(model_name_or_path).absolute()/ '*.safetensors'))
+            weight_or_index_file += glob.glob(str(Path(model_name_or_path).absolute()/ 'pytorch_model*.bin'))
+            if weight_or_index_file: 
+                weight_or_index_file = weight_or_index_file[0]
+            else:
+                raise FileNotFoundError("model weight is not found")
+    else:
+        for possible_index_name in ["model.safetensors.index.json", "pytorch_model.bin.index.json"]:
+            weight_or_index_file = BaseQuantizeConfig.get_resolved_base_dir(model_name_or_path, possible_index_name)
+            if weight_or_index_file:break
+        if not weight_or_index_file:
+            for possible_weight_file in ["model.safetensors", "pytorch_model.bin"]:
+                weight_or_index_file = cached_file(model_name_or_path, possible_weight_file)
+                if weight_or_index_file:break
+    return weight_or_index_file
+
+
+def _load_check_point(model, model_name_or_path, get_keys_only: bool = False):
+    weight_or_index_file = _get_resolved_weight_or_index_file(model_name_or_path)
     all_keys = set()
     all_missing_keys = []
     all_unexpected_keys = []
-    if Path(model_name_or_path).exists():  # local
-        while True:
-            weight_bins = glob.glob(str(Path(model_name_or_path).absolute() / 'pytorch_model*.bin'))
-            if len(weight_bins) > 0:
-                for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights"):
-                    weights = torch.load(weight_bins[i], map_location="cpu")
-                    if get_keys_only:
-                        all_keys.update(weights.keys())
-                    else:
-                        ret = model.load_state_dict(weights, strict=False)
-                        all_missing_keys.extend(ret.missing_keys)
-                        all_unexpected_keys.extend(ret.unexpected_keys)
-                break
-            weight_bins = glob.glob(str(Path(model_name_or_path).absolute() / '*.safetensors'))
-            if len(weight_bins) > 0:
-                for i in tqdm.tqdm(range(len(weight_bins)), desc="loading weights from safetensors"):
-                    weights = safetensors.torch.load_file(weight_bins[i], device="cpu")
-                    if get_keys_only:
-                        all_keys.update(weights.keys())
-                    else:
-                        ret = model.load_state_dict(weights, strict=False)
-                        all_missing_keys.extend(ret.missing_keys)
-                        all_unexpected_keys.extend(ret.unexpected_keys)
-                break
-            raise ValueError(f"{model_name_or_path} is not a folder containing weights or safetensors")
+    if weight_or_index_file.endswith(".index.json"):
+        with open(weight_or_index_file, "r") as f:
+            index = json.loads(f.read())
+        if "weight_map" in index:
+            index = index["weight_map"]
+        checkpoint_files = sorted(list(set(index.values())))
+        checkpoint_files = [cached_file(model_name_or_path, f) for f in checkpoint_files]
     else:
-        index_config_file = quant_config.get_resolved_base_dir(model_name_or_path, "model.safetensors.index.json")
-        if index_config_file:
-            with open(index_config_file) as fp:
-                index_files = set(json.load(fp)["weight_map"].values())
-            for index_file in tqdm.tqdm(index_files, desc="loading weights from safetensors"):
-                weight_file = cached_file(model_name_or_path, index_file)
-                weights = safetensors.torch.load_file(weight_file, device="cpu")
-                if get_keys_only:
-                    all_keys.update(weights.keys())
-                else:
-                    ret = model.load_state_dict(weights, strict=False)
-                    all_missing_keys.extend(ret.missing_keys)
-                    all_unexpected_keys.extend(ret.unexpected_keys)
-        else:
-            weight_file = cached_file(model_name_or_path, "model.safetensors")
-            weights = safetensors.torch.load_file(weight_file, device="cpu")
+        checkpoint_files = [weight_or_index_file]
+
+    #if not get_keys_only:
+    #    from ..utils.modelutils import get_op_by_name
+    #    params_dict = dict(model.named_parameters())
+    #    params_dict.update(dict(model.named_buffers()))
+    #    all_missing_keys = list(params_dict.keys())
+    #    for name,weight in _hf_weight_generator(checkpoint_files, checkpoint_files[0].endswith("safetensors")):
+    #        if name not in params_dict:
+    #            all_unexpected_keys.append(name)
+    #        else:
+    #            #params_dict[name] = weight
+    #            op_name, val_name = '.'.join(name.split('.')[:-1]), name.split('.')[-1]
+    #            param_dtype = getattr(get_op_by_name(model, op_name), val_name).dtype
+    #            new_weight = torch.nn.Parameter(weight.to(param_dtype), requires_grad=False)
+    #            setattr(get_op_by_name(model, op_name), val_name, new_weight)
+    #            all_missing_keys.remove(name)
+    #    return all_missing_keys, all_unexpected_keys
+
+    if len(checkpoint_files) > 0:
+        for i in tqdm.tqdm(range(len(checkpoint_files)), desc="loading weights"):
+            if not checkpoint_files[i].endswith("safetensors"):
+                weights = torch.load(checkpoint_files[i], map_location="cpu")
+            else:
+                weights = safetensors.torch.load_file(checkpoint_files[i], device="cpu")
             if get_keys_only:
                 all_keys.update(weights.keys())
+                del weights
             else:
                 ret = model.load_state_dict(weights, strict=False)
+                del weights
                 all_missing_keys.extend(ret.missing_keys)
                 all_unexpected_keys.extend(ret.unexpected_keys)
+    else:
+        raise ValueError(f"{model_name_or_path} is not a folder containing weights or safetensors")
+
     if get_keys_only:
         return all_keys
     return all_missing_keys, all_unexpected_keys
@@ -142,7 +177,7 @@ class AutoQuantizedModelForCausalLM:
     def from_quantized(
             cls,
             model_name_or_path: Optional[str],
-            device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "sequential",
+            device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "auto",
             max_memory: Optional[dict] = None,
             device: Optional[Union[str, int]] = "cuda",
             low_cpu_mem_usage: bool = True,
@@ -190,7 +225,7 @@ class AutoQuantizedModelForCausalLM:
         else:  # removed unquantized layer, TODO load layers from safetensors
             use_heuristic = False
             if not use_heuristic:
-                all_keys = _load_check_point(None, model_name_or_path, quant_config, get_keys_only=True)
+                all_keys = _load_check_point(None, model_name_or_path, get_keys_only=True)
                 all_keys = [i.replace('.qweight', '') for i in all_keys if i.endswith('.qweight')]
                 for layer_name in set(layers.keys()) - set(all_keys):
                     del layers[layer_name]
@@ -201,8 +236,11 @@ class AutoQuantizedModelForCausalLM:
 
         target_layer = utils.modelutils.select_quant_linear(
             quant_config.version, quant_config.bits(), quant_config.method)
-        utils.modelutils.make_mixbits_quant_linear(
-            model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
+        with transformers.utils.generic.ContextManagers([transformers.modeling_utils.no_init_weights()]):
+            torch.set_default_device("cuda")
+            utils.modelutils.make_mixbits_quant_linear(
+                model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
+            torch.set_default_device("cpu")
         if quant_config.method == "awq":
             from ..quantization.quant_awq import scale_activations
             scale_activations(model)
@@ -211,24 +249,23 @@ class AutoQuantizedModelForCausalLM:
         #    model = model.cuda()
         model.tie_weights()  # works with init_empty_weights and load_checkpoint_and_dispatch
         try:
-            accelerate.big_modeling.load_checkpoint_and_dispatch(
-                model,
-                checkpoint=model_name_or_path,
-                device_map=device_map,
-                no_split_module_classes=None,
-                offload_folder=None,
-                dtype=torch_dtype,
-            )
+            if torch.cuda.mem_get_info()[1]/1024/1024/1024 < 8:
+                no_split_module_classes = get_no_split_layer_type_name(model)
+                assert no_split_module_classes is None
+                # bias issue
+                #model = accelerate.big_modeling.load_checkpoint_and_dispatch(
+                #    model,
+                #    checkpoint=_get_resolved_weight_or_index_file(model_name_or_path, quant_config),
+                #    device_map=device_map,
+                #    no_split_module_classes=no_split_module_classes,
+                #    dtype=torch_dtype,
+                #)
         except Exception:
-            all_missing_keys, all_unexpected_keys = _load_check_point(model, model_name_or_path, quant_config)
+            clear_memory()
+            all_missing_keys, all_unexpected_keys = _load_check_point(model, model_name_or_path)
             all_unexpected_keys = [i for i in all_unexpected_keys if not i.endswith('.bias')]
             if len(all_unexpected_keys) != 0:
                 logger.warn(f"Unexpected keys in checkpoint: {all_unexpected_keys}")
-            # weight_dict = torch.load(weight_bins[0])
-            # for i in range(1, len(weight_bins)):
-            #    weight_dict.update(torch.load(weight_bins[i]))
-            # model.load_state_dict(weight_dict)
-            # layers.autotune_warmup_linear(model, transpose=False)
 
         # autogptq has extra -1 in qzeros but we don't have it.
         if quant_config.COMPATIBLE_WITH_AUTOGPTQ:
