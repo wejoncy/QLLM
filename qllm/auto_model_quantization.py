@@ -4,6 +4,7 @@ import torch
 import time
 import json
 import tqdm
+import transformers
 
 from .auto_datasets import get_sample_datas_for_quantization
 from .utils import find_layers
@@ -23,8 +24,7 @@ class AutoModelQuantization(object):
         self.tokenizer = None
 
     def get_torch_model(self, model_name_or_path):
-        from transformers import AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        self.tokenizer = transformers.AutoTokenizer.from_pretrained(
             model_name_or_path, use_fast=True, trust_remote_code=True)
         return AutoQuantizedModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
 
@@ -32,8 +32,7 @@ class AutoModelQuantization(object):
         return get_sample_datas_for_quantization(tokenizer, dataset, nsamples, seed)
 
     def __load_quant(self, quant_model_name_or_path):
-        from transformers import AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(quant_model_name_or_path, use_fast=True, trust_remote_code=True)
+        self.tokenizer = transformers.AutoTokenizer.from_pretrained(quant_model_name_or_path, use_fast=True, trust_remote_code=True)
         return AutoQuantizedModelForCausalLM.from_quantized(quant_model_name_or_path, trust_remote_code=True)
 
     # you shouldn't rewrite this function
@@ -103,11 +102,13 @@ class AutoModelQuantization(object):
         old_pack_mode = model.quant_config.version
         if old_pack_mode == new_pack_mode:
             return model
-        model.quant_config.version = new_pack_mode
         meta_info = model.quant_config.to_meta
         bits, groupsize = meta_info.bits, meta_info.group_size
         source_layer = select_quant_linear(old_pack_mode, bits, meta_info.method)
         target_layer = select_quant_linear(new_pack_mode, bits, meta_info.method)
+        if source_layer == target_layer:
+            return model
+        model.quant_config.version = new_pack_mode
         qlayers = find_layers(model, [source_layer])
         for module_name, qlayer in tqdm.tqdm(qlayers.items(),
                 desc=f"repacking model from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
