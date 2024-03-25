@@ -89,10 +89,14 @@ def verify_correcness(
     if "position_ids" in [i.name for i in session.get_inputs()]:
         inputs["position_ids"] = np.arange(0, inputs["input_ids"].shape[1], dtype=np.int64).reshape(1, -1)
     if with_past:
-        inputs["use_cache_branch"] = np.array([0], dtype=np.bool_)
+        if "merge" in str(onnx_model_path):
+            inputs["use_cache_branch"] = np.array([0], dtype=np.bool_)
+        kv_cache_shape = list(ref.past_key_values[0][0].shape)
+        kv_cache_shape[-2] = 0
+        kv_cache_shape = tuple(kv_cache_shape)
         for i in range(num_layers):
-            inputs[f"past_key_values.{i}.key"] = np.zeros(ref.past_key_values[0][0].shape, dtype=np.float16)
-            inputs[f"past_key_values.{i}.value"] = np.zeros(ref.past_key_values[0][0].shape, dtype=np.float16)
+            inputs[f"past_key_values.{i}.key"] = np.zeros(kv_cache_shape, dtype=np.float16)
+            inputs[f"past_key_values.{i}.value"] = np.zeros(kv_cache_shape, dtype=np.float16)
     outputs = session.run(None, inputs)
     err_prefill = ref.logits.cpu().numpy() - outputs[0]
     err_decode = np.zeros_like(err_prefill)
@@ -102,7 +106,8 @@ def verify_correcness(
         inputs = {"input_ids": np.array([[3]]), "attention_mask": mask}
         if "position_ids" in [i.name for i in session.get_inputs()]:
             inputs["position_ids"] = np.array([sample_inputs[0].shape[1]], dtype=np.int64).reshape(1, -1)
-        inputs["use_cache_branch"] = np.array([1], dtype=np.bool_)
+        if "merge" in str(onnx_model_path):
+            inputs["use_cache_branch"] = np.array([1], dtype=np.bool_)        
         for i in range(num_layers):
             inputs[f"past_key_values.{i}.key"] = ref.past_key_values[i][0].cpu().numpy()
             inputs[f"past_key_values.{i}.value"] = ref.past_key_values[i][1].cpu().numpy()
