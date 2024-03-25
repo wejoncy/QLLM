@@ -1,3 +1,4 @@
+import concurrent.futures
 import torch
 import transformers
 from transformers import AutoModelForCausalLM
@@ -85,7 +86,7 @@ def _get_resolved_weight_or_index_file(model_name_or_path):
             for possible_weight_file in ["model.safetensors", "pytorch_model.bin"]:
                 weight_or_index_file = cached_file(model_name_or_path, possible_weight_file)
                 if weight_or_index_file:break
-    return weight_or_index_file
+    return str(weight_or_index_file)
 
 
 def _load_check_point(model, model_name_or_path, get_keys_only: bool = False):
@@ -99,7 +100,10 @@ def _load_check_point(model, model_name_or_path, get_keys_only: bool = False):
         if "weight_map" in index:
             index = index["weight_map"]
         checkpoint_files = sorted(list(set(index.values())))
-        checkpoint_files = [cached_file(model_name_or_path, f) for f in checkpoint_files]
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_checkpoint_files = {executor.submit(cached_file, model_name_or_path, f): f for f in checkpoint_files}
+            checkpoint_files = [future.result() for future in concurrent.futures.as_completed(future_to_checkpoint_files)]
+        #checkpoint_files = [cached_file(model_name_or_path, f) for f in checkpoint_files]
     else:
         checkpoint_files = [weight_or_index_file]
 
@@ -284,7 +288,7 @@ class AutoQuantizedModelForCausalLM:
         quant_config_by_layer, quant_config = model.quant_config_by_layer, model.quant_config
         if pack_mode != quant_config.version and pack_mode != "AUTO":
             repack_func()
-
+        model.config.quantization_config = model.quant_config.quant_config
         model.save_pretrained(save_directory, save_serialization=save_serialization)
         tokenizer is not None and tokenizer.save_pretrained(save_directory)
 
