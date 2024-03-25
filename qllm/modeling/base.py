@@ -70,14 +70,14 @@ def _hf_weight_generator(hf_weights_files, is_safetensors:bool):
 
 def _get_resolved_weight_or_index_file(model_name_or_path):
     if Path(model_name_or_path).exists():  # local
-        while True:
-            weight_or_index_file = glob.glob(str(Path(model_name_or_path).absolute()/ '*.index.json'))
-            weight_or_index_file += glob.glob(str(Path(model_name_or_path).absolute()/ '*.safetensors'))
-            weight_or_index_file += glob.glob(str(Path(model_name_or_path).absolute()/ 'pytorch_model*.bin'))
-            if weight_or_index_file: 
-                weight_or_index_file = weight_or_index_file[0]
-            else:
-                raise FileNotFoundError("model weight is not found")
+        weight_or_index_file = glob.glob(str(Path(model_name_or_path).absolute()/ '*.index.json'))
+        weight_or_index_file += glob.glob(str(Path(model_name_or_path).absolute()/ '*.safetensors'))
+        weight_or_index_file += glob.glob(str(Path(model_name_or_path).absolute()/ 'pytorch_model*.bin'))
+        if weight_or_index_file: 
+            weight_or_index_file = weight_or_index_file[0]
+            
+        else:
+            raise FileNotFoundError("model weight is not found")
     else:
         for possible_index_name in ["model.safetensors.index.json", "pytorch_model.bin.index.json"]:
             weight_or_index_file = BaseQuantizeConfig.get_resolved_base_dir(model_name_or_path, possible_index_name)

@@ -71,22 +71,24 @@ class BaseQuantizeConfig:
             self.quant_config_by_op = qunat_info
 
     def load_quant_config(self, model_name_or_path):
-        config_file = self.get_resolved_base_dir(model_name_or_path, "quant_config.json")
-        quant_config = None
-        if config_file is None:
-            # GPTQ-for-llama/AutoGPTQ
-            config_file = self.get_resolved_base_dir(model_name_or_path, "quantize_config.json")
-        if config_file is not None:
-            with open(config_file) as fp:
-                quant_config = json.load(fp)
-
-        if config_file is None:
-            config_file = self.get_resolved_base_dir(model_name_or_path, "config.json")
-        if config_file is not None:
-            with open(config_file) as fp:
-                quant_config = json.load(fp)
-            quant_config = quant_config.get("quantization_config", None)
-            assert quant_config.get('use_exllama', False) == False, "use_exllama is not supported yet"
+        while True:
+            config_file = self.get_resolved_base_dir(model_name_or_path, "quant_config.json")
+            quant_config = None
+            if config_file is None:
+                # GPTQ-for-llama/AutoGPTQ
+                config_file = self.get_resolved_base_dir(model_name_or_path, "quantize_config.json")
+            if config_file is not None:
+                with open(config_file) as fp:
+                    quant_config = json.load(fp)
+                break
+            if config_file is None:
+                config_file = self.get_resolved_base_dir(model_name_or_path, "config.json")
+            if config_file is not None:
+                with open(config_file) as fp:
+                    quant_config = json.load(fp)
+                quant_config = quant_config.get("quantization_config", None)
+                assert quant_config.get('use_exllama', False) is False, "use_exllama is not supported yet"
+            break
 
         assert quant_config is not None, ("quant_config.json/quantize_config.json not found in checkpoint directory")
 
