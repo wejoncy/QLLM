@@ -86,7 +86,7 @@ class BaseQuantizeConfig:
             with open(config_file) as fp:
                 quant_config = json.load(fp)
             quant_config = quant_config.get("quantization_config", None)
-            assert quant_config.get('use_exllama', False) == False, "use_exllama is not supported yet".
+            assert quant_config.get('use_exllama', False) == False, "use_exllama is not supported yet"
 
         assert quant_config is not None, ("quant_config.json/quantize_config.json not found in checkpoint directory")
 
