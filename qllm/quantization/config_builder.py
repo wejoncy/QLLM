@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 
 @dataclass
@@ -10,6 +10,8 @@ class MetaConfig:
 
 @dataclass
 class MetaInterface:
+    to_dict = asdict
+    dict = asdict
     @property
     def to_meta(self):
         if hasattr(self, "bits"):
