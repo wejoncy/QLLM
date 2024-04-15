@@ -288,7 +288,7 @@ class AutoQuantizedModelForCausalLM:
         quant_config_by_layer, quant_config = model.quant_config_by_layer, model.quant_config
         if pack_mode != quant_config.version and pack_mode != "AUTO":
             repack_func()
-        model.config.quantization_config = model.quant_config.quant_config
+        model.config.quantization_config = model.quant_config
         model.save_pretrained(save_directory, save_serialization=save_serialization)
         tokenizer is not None and tokenizer.save_pretrained(save_directory)
 
