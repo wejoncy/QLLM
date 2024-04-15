@@ -10,7 +10,7 @@ class MetaConfig:
 
 @dataclass
 class MetaInterface:
-    dict = asdict
+    to_dict = asdict
     @property
     def to_meta(self):
         if hasattr(self, "bits"):
