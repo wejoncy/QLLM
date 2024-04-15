@@ -32,7 +32,9 @@ class BaseQuantizeConfig:
     def version(self):
         return self.quant_config["version"]
     
-    @property
+    def dict(self):
+        return self.quant_config
+
     def to_dict(self):
         return self.quant_config
 
