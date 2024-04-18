@@ -218,7 +218,7 @@ Please run with `-h` to refer the usage.")
         if args.save:
             def repack_func(): return self.repack_to_new_mode(model, args.pack_mode)
             AutoQuantizedModelForCausalLM.save_pretrained(model, self.tokenizer, args.save,
-                                                          args.pack_mode, repack_func, save_serialization=False)
+                                                          args.pack_mode, repack_func, safe_serialization=False)
 
         if args.eval:
             self.eval_model(model, args.pack_mode, "cuda")

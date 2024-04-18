@@ -568,7 +568,7 @@ true_sequential_layers_for_model = dict(
     MistralForCausalLM=get_mistral_layers,
     MixtralForCausalLM =get_mixtral_layers,
     MptForCausalLM =get_mpt_layers,
-    OptForCausalLM =get_opt_layers,
+    OPTForCausalLM =get_opt_layers,
     QwenForCausalLM=get_qwen_layers,
     YiForCausalLM=get_yi_layers,
 )
