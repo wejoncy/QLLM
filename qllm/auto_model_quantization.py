@@ -26,7 +26,9 @@ class AutoModelQuantization(object):
     def get_torch_model(self, model_name_or_path):
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(
             model_name_or_path, use_fast=True, trust_remote_code=True)
-        return AutoQuantizedModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
+        attn_implementation = "flash_attention_2" if os.getenv('USE_FLASH_ATTN', "0")=="1" else None
+        return AutoQuantizedModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True,
+        attn_implementation=attn_implementation)
 
     def get_datasets(self, tokenizer, dataset, nsamples, seed):
         return get_sample_datas_for_quantization(tokenizer, dataset, nsamples, seed)

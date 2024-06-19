@@ -47,7 +47,7 @@ class ObserverHelper:
                 gptq.quantizer.configure(wbits, perchannel=True, sym=self.quant_config.sym, mse=False)
 
                 scale, zero, g_idx, error = gptq.fasterquant(
-                    percdamp=self.quant_config.percdamp,
+                    percdamp=self.quant_config.damp_percent,
                     groupsize=groupsize,
                     actorder=self.quant_config.desc_act,
                     static_groups=self.quant_config.static_groups,
