@@ -105,7 +105,7 @@ class AutoModelQuantization(object):
         if old_pack_mode == new_pack_mode:
             return model
         meta_info = model.quant_config.to_meta
-        bits, groupsize = meta_info.bits, meta_info.group_size
+        bits = meta_info.bits
         source_layer = select_quant_linear(old_pack_mode, bits, meta_info.method)
         target_layer = select_quant_linear(new_pack_mode, bits, meta_info.method)
         if source_layer == target_layer:
@@ -116,7 +116,7 @@ class AutoModelQuantization(object):
                 desc=f"repacking model from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
             fp16_weight, scales, zeros = qlayer.unpack()
             qlayer.weight = fp16_weight
-            new_module = target_layer(bits, groupsize, qlayer.infeatures, qlayer.outfeatures, qlayer.bias is not None)
+            new_module = target_layer(qlayer.bits, qlayer.groupsize, qlayer.infeatures, qlayer.outfeatures, qlayer.bias is not None)
             new_module.bias = qlayer.bias if qlayer.bias is not None else None
             set_op_by_name(model, module_name, new_module)
             new_module.pack(qlayer, scales.T, zeros.T, qlayer.g_idx)
