@@ -152,6 +152,7 @@ def build_cuda_extensions():
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
+                    "-allow-unsupported-compiler",
                 ] + generator_flags+arch_flags
         }
         if os.name == "nt":
