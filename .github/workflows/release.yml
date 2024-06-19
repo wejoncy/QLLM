@@ -90,7 +90,7 @@ jobs:
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
           if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.1.0" } else {$pytorchVersion = "torch==2.1.0"}
           python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
-          python -m pip install build setuptools wheel ninja
+          python -m pip install build setuptools==69.5.1 wheel ninja
           # Print version information
           python --version
           python -c "import torch; print('PyTorch:', torch.__version__)"
