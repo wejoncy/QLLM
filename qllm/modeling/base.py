@@ -163,8 +163,6 @@ class AutoQuantizedModelForCausalLM:
     def from_pretrained(
         cls,
         pretrained_model_name_or_path: str,
-        max_memory: Optional[dict] = None,
-        trust_remote_code: bool = False,
         **kwargs
     ) -> AutoModelForCausalLM:
 
@@ -172,9 +170,13 @@ class AutoQuantizedModelForCausalLM:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading model from {pretrained_model_name_or_path}")
         cls.disable_double_init()
+        trust_remote_code = kwargs.pop("trust_remote_code", False)
+        attn_implementation = kwargs.pop("attn_implementation", None)
+        max_memory = kwargs.pop("max_memory", None)
 
         llm = AutoModelForCausalLM.from_pretrained(
-            pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code)
+            pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code,
+            attn_implementation=attn_implementation)
         return llm
 
     @classmethod
