@@ -1,0 +1,101 @@
+name: build_wheels mannuly
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "Who to greet"
+        default: "World"
+
+jobs:
+    hello:
+        runs-on: ubuntu-latest
+
+        steps:
+          - name: Hello Step
+            shell: bash
+            run: echo "Hello ${{ github.event.inputs.name }}"
+    build_wheels:
+      name: Build qllm
+      runs-on: ${{ matrix.os }}
+      needs: release
+      
+      strategy:
+        matrix:
+          os: [ubuntu-20.04, windows-latest]
+          pyver: ["3.10"]
+          cuda: ["12.1.1"]
+      defaults:
+        run:
+          shell: pwsh
+      env:
+        PYPI_CUDA_VERSION: "11.8.0"  
+        CUDA_VERSION: ${{ matrix.cuda }}
+      
+      steps:
+        - name: Free Disk Space
+          uses: jlumbroso/free-disk-space@v1.3.0
+          if: runner.os == 'Linux'
+          with:
+            tool-cache: false
+            android: true
+            dotnet: true
+            haskell: true
+            large-packages: false
+            docker-images: true
+            swap-storage: false
+          
+        - uses: actions/checkout@v3
+
+        - uses: actions/setup-python@v3
+          with:
+            python-version: ${{ matrix.pyver }}
+
+        - name: Setup Mamba
+          uses: conda-incubator/setup-miniconda@v2.2.0
+          with:
+            activate-environment: "build"
+            python-version: ${{ matrix.pyver }}
+            miniforge-variant: Mambaforge
+            miniforge-version: latest
+            use-mamba: true
+            add-pip-as-python-dependency: true
+            auto-activate-base: false
+            
+        - name: Install Dependencies
+          run: |
+            # Install CUDA toolkit
+            mamba install -y 'cuda' -c "nvidia/label/cuda-${env:CUDA_VERSION}"
+            # Env variables
+            $env:CUDA_PATH = $env:CONDA_PREFIX
+            $env:CUDA_HOME = $env:CONDA_PREFIX
+            
+            # Install torch
+            $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
+            $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
+            if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.2.2" } else {$pytorchVersion = "torch==2.2.2"}
+            python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
+            python -m pip install build setuptools==69.5.1 wheel ninja
+            # Print version information
+            python --version
+            python -c "import torch; print('PyTorch:', torch.__version__)"
+            python -c "import torch; print('CUDA:', torch.version.cuda)"
+            python -c "import os; print('CUDA_HOME:', os.getenv('CUDA_HOME', None))"
+            python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
+        - name: Build Wheel
+          run: |
+            $env:CUDA_PATH = $env:CONDA_PREFIX
+            $env:CUDA_HOME = $env:CONDA_PREFIX
+            # Only add +cu118 to wheel if not releasing on PyPi
+            if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
+              $env:PYPI_BUILD = 1
+            }
+            # echo "{CUDA_VERSION}=$env:CUDA_VERSION" >> $GITHUB_ENV
+            python setup.py sdist bdist_wheel -k $env:PLAT_ARG.split()
+          env:
+            PLAT_ARG: ${{ contains(runner.os, 'Linux') && '--plat-name manylinux2014_x86_64' || '--plat-name win_amd64' }}
+
+        - uses: actions/upload-artifact@v3
+          with:
+            name: 'wheels'
+            path: ./dist/*.whl

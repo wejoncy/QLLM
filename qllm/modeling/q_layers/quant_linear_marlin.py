@@ -96,7 +96,8 @@ class QuantLinearMarlin(nn.Module, CompressWeight):
         if g_idx is not None:
             self.act_order = g_idx[: self.group_size // self.bits].sum().item() != 0
             assert self.act_order is False
-        assert zeros is None or torch.all(zeros == 8)
+        assert zeros is None or torch.all(zeros == 8), ("only support symmetry quantization, \
+                                    please add `--sym` and try again ")
         if linear.weight.dtype != torch.half:
             raise ValueError("Only `torch.half` weights are supported.")
         device = torch.device("cuda")
