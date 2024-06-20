@@ -52,7 +52,7 @@ Build from Source
 
 If you are using CUDA-121
 ```
-pip install git+https://github.com/wejoncy/QLLM.git
+pip install git+https://github.com/wejoncy/QLLM.git --no-build-isolation
 ```
 OR CUDA-118/117
 ```
