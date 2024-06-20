@@ -45,11 +45,11 @@ jobs:
       run: |
         bash -x .github/workflows/scripts/cuda-install.sh ${{ matrix.cuda-version }} ubuntu-20.04
 
-    - name: Install PyTorch 2.1.0 with CUDA ${{ matrix.cuda-version }}
+    - name: Install PyTorch 2.2.2 with CUDA ${{ matrix.cuda-version }}
       if: github.event.pull_request.merged == true
       run: |
         pip config set global.cache-dir "/tmp/.cache/pip"
-        bash -x .github/workflows/scripts/pytorch-install.sh ${{ matrix.python-version }} 2.1.0 ${{ matrix.cuda-version }}
+        bash -x .github/workflows/scripts/pytorch-install.sh ${{ matrix.python-version }} 2.2.2 ${{ matrix.cuda-version }}
 
     - name: Install dependencies
       run: |
