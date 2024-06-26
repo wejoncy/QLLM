@@ -49,6 +49,9 @@ def select_quant_linear(pack_mode: str, wbits:int, method:str):
     from ..modeling.q_layers.quant_linear_hqq import QuantLinearHQQ
     from ..modeling.q_layers.quant_linear_marlin import QuantLinearMarlin
 
+    pack_mode = pack_mode.upper()
+    method = method.lower()
+
     if pack_mode == "GEMM" or (pack_mode == "AUTO" and is_the_machine_support_awq_engine(wbits)):
         target_layer = WQLinear_GEMM
     elif pack_mode == "ORT":
