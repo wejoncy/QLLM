@@ -122,6 +122,8 @@ def get_generator_flag():
     torch_dir = torch.__path__[0]
     if os.path.exists(os.path.join(torch_dir, "include", "ATen", "CUDAGeneratorImpl.h")):
         generator_flag = ["-DOLD_GENERATOR_PATH"]
+    if os.environ.get("GENERAL_TORCH", "0") == "1":
+        generator_flag.append(["-DGENERAL_TORCH"])
     
     return generator_flag
 

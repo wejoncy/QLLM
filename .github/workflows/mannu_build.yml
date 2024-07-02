@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       name:
-        description: "Who to greet"
-        default: "World"
+        description: "need OptionalCUDAGuard?"
+        default: 'false'
 
 jobs:
     hello:
@@ -18,7 +18,6 @@ jobs:
     build_wheels:
       name: Build qllm
       runs-on: ${{ matrix.os }}
-      needs: release
       
       strategy:
         matrix:
@@ -91,6 +90,10 @@ jobs:
               $env:PYPI_BUILD = 1
             }
             # echo "{CUDA_VERSION}=$env:CUDA_VERSION" >> $GITHUB_ENV
+            if (${{ github.event.inputs.name }} -eq 'true') {
+              echo "set GENERAL_TORCH to true !!!!!!!!!!!!!!!"
+              $env:GENERAL_TORCH = 1
+            }
             python setup.py sdist bdist_wheel -k $env:PLAT_ARG.split()
           env:
             PLAT_ARG: ${{ contains(runner.os, 'Linux') && '--plat-name manylinux2014_x86_64' || '--plat-name win_amd64' }}

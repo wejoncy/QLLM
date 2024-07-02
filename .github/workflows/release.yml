@@ -106,6 +106,7 @@ jobs:
             $env:PYPI_BUILD = 1
           }
           # echo "{CUDA_VERSION}=$env:CUDA_VERSION" >> $GITHUB_ENV
+          $env:GENERAL_TORCH = 1 # OptionalCUDAGuard
           python setup.py sdist bdist_wheel -k $env:PLAT_ARG.split()
         env:
           PLAT_ARG: ${{ contains(runner.os, 'Linux') && '--plat-name manylinux2014_x86_64' || '--plat-name win_amd64' }}

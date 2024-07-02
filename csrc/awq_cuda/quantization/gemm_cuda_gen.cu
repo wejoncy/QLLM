@@ -1046,7 +1046,9 @@ torch::Tensor gemmv2_forward_cuda(torch::Tensor _in_feats,
                                   int split_k_iters) {
   int num_in_feats = _in_feats.size(0);
   int num_in_channels = _in_feats.size(1);
+#ifndef GENERAL_TORCH
   const at::cuda::OptionalCUDAGuard device_guard(device_of(_in_feats));
+#endif
 
   auto options = torch::TensorOptions()
                      .dtype(_in_feats.dtype())
@@ -1102,7 +1104,9 @@ torch::Tensor gemm_forward_cuda(torch::Tensor _in_feats, torch::Tensor _kernel,
                                 torch::Tensor _zeros, int split_k_iters) {
   int num_in_feats = _in_feats.size(0);
   int num_in_channels = _in_feats.size(1);
+#ifndef GENERAL_TORCH
   const at::cuda::OptionalCUDAGuard device_guard(device_of(_in_feats));
+#endif
 
   auto options = torch::TensorOptions()
                      .dtype(_in_feats.dtype())
