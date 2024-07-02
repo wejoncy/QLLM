@@ -123,7 +123,7 @@ def get_generator_flag():
     if os.path.exists(os.path.join(torch_dir, "include", "ATen", "CUDAGeneratorImpl.h")):
         generator_flag = ["-DOLD_GENERATOR_PATH"]
     if os.environ.get("GENERAL_TORCH", "0") == "1":
-        generator_flag.append(["-DGENERAL_TORCH"])
+        generator_flag.append("-DGENERAL_TORCH")
     
     return generator_flag
 
@@ -160,7 +160,7 @@ def build_cuda_extensions():
         if os.name == "nt":
             extra_compile_args["cxx"] = ["/openmp", "/std:c++17"]
         else:
-            extra_compile_args["cxx"] = ["-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]
+            extra_compile_args["cxx"] = ["-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"] + generator_flags
 
         return extra_compile_args
 
