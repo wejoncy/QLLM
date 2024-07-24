@@ -59,7 +59,7 @@ class QuantFrameBase:
         for _, layer in transformer_model.named_children():
             if type(layer) in [torch.nn.ModuleList]:
                 attention_layers = layer
-                break
+                continue
             else:
                 pre_layers_of_attention.append(layer)
         assert attention_layers is not None, "attention_layers not found"
