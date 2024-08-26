@@ -41,7 +41,7 @@ def gen_conditions(_wbits, _groupsize):
     return conditions
 
 
-def select_quant_linear(pack_mode: str, wbits:int, method:str):
+def select_quant_linear(pack_mode: str, wbits:int, quant_method:str):
     from ..modeling.q_layers import QuantLinearGPTQ
     from ..modeling.q_layers.quant_linear_awq import WQLinear_GEMM
     from ..modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
@@ -50,13 +50,13 @@ def select_quant_linear(pack_mode: str, wbits:int, method:str):
     from ..modeling.q_layers.quant_linear_marlin import QuantLinearMarlin
 
     pack_mode = pack_mode.upper()
-    method = method.lower()
+    quant_method = quant_method.lower()
 
     if pack_mode == "GEMM" or (pack_mode == "AUTO" and is_the_machine_support_awq_engine(wbits)):
         target_layer = WQLinear_GEMM
     elif pack_mode == "ORT":
         target_layer = QuantLinearORT
-    elif method == "hqq":
+    elif quant_method == "hqq":
         target_layer = QuantLinearHQQ
     elif pack_mode == "MARLIN":
         target_layer = QuantLinearMarlin
@@ -112,7 +112,7 @@ def torch_snr_error(y_pred: torch.Tensor, y_real: torch.Tensor, reduction: str =
     elif reduction == 'none':
         return snr
     else:
-        raise ValueError(f'Unsupported reduction method: {reduction}.')
+        raise ValueError(f'Unsupported reduction quant_method: {reduction}.')
 
 def get_op_by_name(module, op_name):
     # get the op by its name relative to the module

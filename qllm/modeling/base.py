@@ -47,9 +47,12 @@ def no_init_weights(attrs: list = None):
             setattr(torch.Tensor, attr, old_attr[idx])
 
 def get_no_split_layer_type_name(model:torch.nn.Module):
-   for name,mod in model.named_modules():
-       if '.0' in name and name.count('.0') == 1:
-           return [mod.__class__.__name__]
+    try:
+        return model._get_no_split_modules("auto")
+    except:  # noqa: E722
+        for name,mod in model.named_modules():
+            if '.0' in name and name.count('.0') == 1:
+                return [mod.__class__.__name__]
 
 def _hf_weight_generator(hf_weights_files, is_safetensors:bool):
     if is_safetensors:
@@ -172,11 +175,31 @@ class AutoQuantizedModelForCausalLM:
         cls.disable_double_init()
         trust_remote_code = kwargs.pop("trust_remote_code", False)
         attn_implementation = kwargs.pop("attn_implementation", None)
-        max_memory = kwargs.pop("max_memory", None)
+
+        # with accelerate.init_empty_weights():
+        #     auto_conf = transformers.AutoConfig.from_pretrained(
+        #         pretrained_model_name_or_path, trust_remote_code=trust_remote_code)
+        #     model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code)
+        # llm = accelerate.load_checkpoint_and_dispatch(
+        #     model,
+        #     checkpoint=pretrained_model_name_or_path,
+        #     device_map="auto",
+        #     max_memory={0: 1 * 1024 * 1024 * 1024, "cpu": 5 * 1024 * 1024 * 1024},
+        #     dtype=torch.float16,
+        #     no_split_module_classes=get_no_split_layer_type_name(model),
+        #     offload_folder="/tmp/a2",
+        # )
 
         llm = AutoModelForCausalLM.from_pretrained(
-            pretrained_model_name_or_path, torch_dtype=torch.float16, trust_remote_code=trust_remote_code,
-            attn_implementation=attn_implementation)
+            pretrained_model_name_or_path,
+            torch_dtype=torch.float16,
+            trust_remote_code=trust_remote_code,
+            attn_implementation=attn_implementation,
+            # device_map="auto",
+            # low_cpu_mem_usage=True,
+            # max_memory={0: 1*1024 * 1024 * 1024, "cpu": 5*1024 * 1024 * 1024},
+            # offload_folder="/tmp/a2"
+        )
         return llm
 
     @classmethod
@@ -241,24 +264,22 @@ class AutoQuantizedModelForCausalLM:
                         del layers[layer_name]
 
         target_layer = utils.modelutils.select_quant_linear(
-            quant_config.version, quant_config.bits(), quant_config.method)
+            quant_config.version, quant_config.bits(), quant_config.quant_method)
         torch.set_default_device("cuda")
         utils.modelutils.make_mixbits_quant_linear(
             model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
         torch.set_default_device("cpu")
-        if quant_config.method == "awq":
+        if quant_config.quant_method == "awq":
             from ..quantization.quant_awq import scale_activations
             scale_activations(model)
         del layers
-        # if low_cpu_mem_usage:
-        #    model = model.cuda()
         model.tie_weights()  # works with init_empty_weights and load_checkpoint_and_dispatch
         try:
             # bias issue
             no_split_module_classes = get_no_split_layer_type_name(model)
             assert no_split_module_classes is None
             if torch.cuda.mem_get_info()[1]/1024/1024/1024 < 8:
-                model = accelerate.big_modeling.load_checkpoint_and_dispatch(
+                model = accelerate.load_checkpoint_and_dispatch(
                     model,
                     checkpoint=_get_resolved_weight_or_index_file(model_name_or_path, quant_config),
                     device_map=device_map,

@@ -1,6 +1,6 @@
 class FakeArgs:
     def __init__(self, **entries):
-        self.method = "gptq"
+        self.quant_method = "gptq"
         self.dataset = "wikitext2"
         self.seed = 0
         self.nsamples = 128

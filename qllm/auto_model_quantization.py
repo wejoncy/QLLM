@@ -63,6 +63,17 @@ class AutoModelQuantization(object):
             "compared with awq, gptq is", return_tensors="pt").to(model.device)
         out = model.generate(**inputs, max_length=50)
 
+        # from .plugin import perplexity_utils
+        # ppl = perplexity_utils.Perplexity(
+        #         model,
+        #         self.tokenizer,
+        #         "wikitext",
+        #         None,
+        #         "test",
+        #         "text",
+        #     )
+        # ppl.calculate_perplexity(512, 512)
+
         model.to('cpu')
         print(self.tokenizer.decode(out[0]))
 
@@ -74,10 +85,10 @@ class AutoModelQuantization(object):
         quant_config_by_layer = {key: {
             "wbits": value[-2], "groupsize": value[-1]} for key, value in quantizers.items()}
         meta_info = model.quant_config.to_meta
-        wbits, method = meta_info.bits, meta_info.method
-        quant_config_by_layer["method"] = model.quant_config.method
+        wbits, quant_method = meta_info.bits, meta_info.quant_method
+        quant_config_by_layer["quant_method"] = model.quant_config.quant_method
 
-        target_layer = select_quant_linear(pack_mode, wbits, method)
+        target_layer = select_quant_linear(pack_mode, wbits, quant_method)
 
         make_mixbits_quant_linear(model, quantizers, quant_config_by_layer, target_layer=target_layer)
         qlayers = find_layers(model, [target_layer])
@@ -106,8 +117,8 @@ class AutoModelQuantization(object):
             return model
         meta_info = model.quant_config.to_meta
         bits = meta_info.bits
-        source_layer = select_quant_linear(old_pack_mode, bits, meta_info.method)
-        target_layer = select_quant_linear(new_pack_mode, bits, meta_info.method)
+        source_layer = select_quant_linear(old_pack_mode, bits, meta_info.quant_method)
+        target_layer = select_quant_linear(new_pack_mode, bits, meta_info.quant_method)
         if source_layer == target_layer:
             return model
         model.quant_config.version = new_pack_mode
@@ -174,14 +185,14 @@ class AutoModelQuantization(object):
         set_seed(args.seed)
 
         if args.pack_mode == "AUTO" and args.allow_mix_bits:
-            assert args.method == "gptq", "only gptq support allow_mix_bits mode"
+            assert args.quant_method == "gptq", "only gptq support allow_mix_bits mode"
             args.pack_mode = "GPTQ"
         if args.allow_mix_bits and args.pack_mode != "GPTQ":
             raise ValueError("allow_mix_bits only support GPTQ packing mode")
         if not isinstance(args.load,  str):
             args.load = args.load.as_posix()
 
-        if args.method == "awq" and args.nsamples > 64:
+        if args.quant_method == "awq" and args.nsamples > 64:
             logger.warning("as the memory blast, AWQ will limit to 32 samples for quantization")
             args.nsamples = 64
 
@@ -202,7 +213,7 @@ class AutoModelQuantization(object):
 Please run with `-h` to refer the usage.")
 
         if not args.load and args.wbits < 16:
-            if args.method == "hqq":
+            if args.quant_method == "hqq":
                 inputs_dataloader = None
             else:
                 inputs_dataloader = self.get_datasets(args.tokenizer, args.dataset, args.nsamples, args.seed)

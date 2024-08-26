@@ -11,7 +11,7 @@ class BaseQuantizeConfig:
     def __init__(self):
         self.quant_config = {}
         self.quant_config_by_op = {}
-        self.method = None
+        self.quant_method = None
         self.COMPATIBLE_WITH_AUTOGPTQ = False
 
     def groupsize(self, layer_name: str = None):
@@ -26,7 +26,7 @@ class BaseQuantizeConfig:
 
     @property
     def to_meta(self):
-        return MetaConfig(self.bits(), self.groupsize(), self.method)
+        return MetaConfig(self.bits(), self.groupsize(), self.quant_method)
 
     @property
     def version(self):
@@ -105,13 +105,13 @@ class BaseQuantizeConfig:
         if quant_config.get('COMPATIBLE_WITH_AUTOGPTQ', None):
             self.COMPATIBLE_WITH_AUTOGPTQ = True
         if "version" not in quant_config:
-            self.method = "gptq"
+            self.quant_method = "gptq"
             quant_config["version"] = "GPTQ"
             self.COMPATIBLE_WITH_AUTOGPTQ = True
             import os
             os.environ["COMPATIBLE_WITH_AUTOGPTQ"] = '1'  # FixMe: hacky
         else:  # FIXME is it correct?
-            self.method = quant_config.get("method", "awq")
+            self.quant_method = quant_config.get("quant_method", "awq")
         self.quant_config = quant_config
 
     @classmethod
