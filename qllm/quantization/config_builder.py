@@ -5,7 +5,7 @@ from dataclasses import dataclass, asdict
 class MetaConfig:
     bits: int
     group_size: int
-    method: str
+    quant_method: str
 
 
 @dataclass
@@ -22,7 +22,7 @@ class MetaInterface:
             group_size = self.group_size
         elif hasattr(self, "q_group_size"):
             group_size = self.q_group_size
-        return MetaConfig(bits, group_size, self.method)
+        return MetaConfig(bits, group_size, self.quant_method)
 
 
 @dataclass
@@ -36,7 +36,7 @@ class GPTQConfig(MetaInterface):
     true_sequential: bool
     static_groups: bool = False
     version: str = ""
-    method: str = "gptq"
+    quant_method: str = "gptq"
 
 
 @dataclass
@@ -45,7 +45,7 @@ class AWQConfig(MetaInterface):
     w_bit: int
     zero_point: bool
     version: str = ""
-    method: str = "awq"
+    quant_method: str = "awq"
 
 
 @dataclass
@@ -53,11 +53,11 @@ class HQQConfig(MetaInterface):
     group_size: int
     bits: int
     version: str = ""
-    method: str = "hqq"
+    quant_method: str = "hqq"
 
 
 def build_config(args):
-    if args.method == 'gptq':
+    if args.quant_method == 'gptq':
         config = GPTQConfig(
             damp_percent=args.percdamp,
             group_size=args.groupsize,
@@ -68,9 +68,9 @@ def build_config(args):
             true_sequential=args.true_sequential,
             static_groups=args.static_groups,
         )
-    elif args.method == 'awq':
+    elif args.quant_method == 'awq':
         config = AWQConfig(args.groupsize, args.wbits, not args.sym)
-    elif args.method == "hqq":
+    elif args.quant_method == "hqq":
         config = HQQConfig(args.groupsize, args.wbits)
 
     return config

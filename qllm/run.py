@@ -5,21 +5,21 @@ from .args_config import FakeArgs
 
 def define_basic_args():
     parser = argparse.ArgumentParser(description="""
-A general tool to quantize LLMs with the GPTQ/AWQ/HQQ method.
+A general tool to quantize LLMs with the GPTQ/AWQ/HQQ quant_method.
 you can easily quantize your model and save to checkpoint, which is compatiable with \
 [vLLM](https://github.com/vllm-project/vllm).
 You can also test the quantized model with a conversation plugin.
 
 A typical usage is:
-    python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  \
+    python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --quant_method=awq  \
 --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
 --export_onnx ./onnx_models/
 
-    method can be 'awq' or 'gptq', 'hqq' """,
+    quant_method can be 'awq' or 'gptq', 'hqq' """,
                                      formatter_class=argparse.RawTextHelpFormatter)
     default_args = FakeArgs()
-    parser.add_argument('--method', type=str, default=default_args.method,
-                        choices=["gptq", "awq", "hqq"], help='the quantization method')
+    parser.add_argument('--quant_method', type=str, default=default_args.quant_method,
+                        choices=["gptq", "awq", "hqq"], help='the quantization quant_method')
     parser.add_argument('--model', type=str, default="",
                         help='float/float16 model to load, such as [mosaicml/mpt-7b]')
     parser.add_argument('--tokenizer', type=str, default="", help='default same as [model]')

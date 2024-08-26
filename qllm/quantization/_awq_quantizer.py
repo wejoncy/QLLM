@@ -162,7 +162,7 @@ def pseudo_quantize_tensor(w, n_bit, q_config, inplace=False, get_scale_zp=False
         max_int = 2 ** (n_bit - 1) - 1
         min_int = - 2 ** (n_bit - 1)
         scales = max_val / max_int
-        zeros = None
+        zeros = torch.zeros_like(scales).view(org_w_shape[0], -1)
         w = torch.clamp(torch.round(w / scales), min_int, max_int) * scales
 
     assert torch.isnan(scales).sum() == 0

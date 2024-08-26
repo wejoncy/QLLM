@@ -66,15 +66,15 @@ python setup.py install
 ## Quantize llama2
 ```bash
 #  Quantize and Save compressed model, method can be one of [gptq/awq/hqq]
-python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --nsamples=64 --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
-python -m qllm --model=meta-llama/Llama-2-7b-hf --method=awq --dataset=pileval --nsamples=16 --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
-python -m qllm --model=meta-llama/Llama-2-7b-hf --method=hqq --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
+python -m qllm --model=meta-llama/Llama-2-7b-hf --quant_method=gptq --nsamples=64 --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
+python -m qllm --model=meta-llama/Llama-2-7b-hf --quant_method=awq --dataset=pileval --nsamples=16 --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
+python -m qllm --model=meta-llama/Llama-2-7b-hf --quant_method=hqq --wbits=4 --groupsize=128 --save ./Llama-2-7b-4bit
 ```
 
 ## Convert to onnx model
 use `--export_onnx ./onnx_model` to export and save onnx model
 ```
-python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
+python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --quant_method=gptq  --dataset=pileval --nsamples=16  --save ./Llama-2-7b-chat-hf_awq_q4/ --export_onnx ./Llama-2-7b-chat-hf_awq_q4_onnx/
 ```
 or you can convert a existing model in HF Hub
 ```
@@ -85,7 +85,7 @@ python -m qllm --load TheBloke/Llama-2-7B-Chat-GPTQ --export_onnx=./onnx
 ## (NEW) Quantize model with mix bits/groupsize for higher precision (PPL)
 ```bash
 #  Quantize and Save compressed model
-python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --allow_mix_bits --true-sequential
+python -m qllm --model=meta-llama/Llama-2-7b-hf --quant_method=gptq --save ./Llama-2-7b-4bit --allow_mix_bits --true-sequential
 ```
 ### NOTE:
 1. only support GPTQ
@@ -97,15 +97,15 @@ python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7
 ## Quantize model for vLLM 
 Due to the zereos diff, we need to set a env variable if you set pack_mode to GPTQ whenver the method is awq or gptq
 ```bash
-COMPATIBLE_WITH_AUTOGPTQ=1 python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --pack_mode=GPTQ
+COMPATIBLE_WITH_AUTOGPTQ=1 python -m qllm --model=meta-llama/Llama-2-7b-hf --quant_method=gptq --save ./Llama-2-7b-4bit --pack_mode=GPTQ
 ```
 If you use GEMM pack_mode, then you don't have to set the var
 ```bash
-python -m qllm --model=meta-llama/Llama-2-7b-hf --method=gptq --save ./Llama-2-7b-4bit --pack_mode=GEMM
+python -m qllm --model=meta-llama/Llama-2-7b-hf --quant_method=gptq --save ./Llama-2-7b-4bit --pack_mode=GEMM
 ```
 
 ```bash
-python -m qllm --model=meta-llama/Llama-2-7b-hf --method=awq --save ./Llama-2-7b-4bit --pack_mode=GEMM
+python -m qllm --model=meta-llama/Llama-2-7b-hf --quant_method=awq --save ./Llama-2-7b-4bit --pack_mode=GEMM
 ```
 ## Conversion among AWQ, GPTQ and MarLin
 ```bash
@@ -174,10 +174,10 @@ pip install fschat accelerate
 use `--use_plugin` to enable a chatbot plugin
 
 ```
-python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=awq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/
+python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --quant_method=awq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/
 
 or 
-python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
+python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --quant_method=gptq  --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_gptq_q4/
 ```
 
 ## use QLLM with API
