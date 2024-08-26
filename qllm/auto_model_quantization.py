@@ -63,6 +63,17 @@ class AutoModelQuantization(object):
             "compared with awq, gptq is", return_tensors="pt").to(model.device)
         out = model.generate(**inputs, max_length=50)
 
+        # from .plugin import perplexity_utils
+        # ppl = perplexity_utils.Perplexity(
+        #         model,
+        #         self.tokenizer,
+        #         "wikitext",
+        #         None,
+        #         "test",
+        #         "text",
+        #     )
+        # ppl.calculate_perplexity(512, 512)
+
         model.to('cpu')
         print(self.tokenizer.decode(out[0]))
 
