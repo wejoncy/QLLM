@@ -16,7 +16,7 @@ def get_weight_scale(weight, q_group_size=-1):
     org_shape = weight.shape
     if q_group_size > 0:
         weight = weight.view(-1, q_group_size)
-    scale = weight.abs() / weight.abs().amax(dim=1, keepdim=True)
+    scale = weight.abs() / (weight.abs().amax(dim=1, keepdim=True) + 1e-6)
     scale = scale.view(org_shape)
     scale = scale.mean(0)
     return scale
@@ -323,7 +323,7 @@ class InternalAWQuantizer(nn.Module):
             org_sd = {k: v.cpu() for k, v in block.state_dict().items()}
             for ratio in range(n_grid):
                 ratio = ratio * 1 / n_grid
-                scales = (x_max.pow(ratio) / w_max.pow(1-ratio)
+                scales = (x_max.pow(ratio) / (w_max.pow(1-ratio)+ 1e-4)
                           ).clamp(min=1e-4).view(-1)
                 scales = scales / (scales.max() * scales.min()).sqrt()
                 for fc in linears2scale:

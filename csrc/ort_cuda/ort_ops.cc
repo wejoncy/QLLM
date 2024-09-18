@@ -84,18 +84,20 @@ torch::Tensor op_gemv(const torch::Tensor &input_a,
     mat_m *= input_a.size(1);
   }
   auto f16_scale = scales;
+  auto f16_input_a = input_a;
   auto ori_dtype = scales.scalar_type();
   if (ori_dtype == torch::kBFloat16) {
     f16_scale = scales.to(torch::kFloat16);
+    f16_input_a = input_a.to(torch::kFloat16);
   }
 
   at::Tensor output = at::zeros(outputshape, f16_scale.options());
   if (g_idx.has_value()) {
-    onnxruntime_gptq::Launch_gemv_g(input_a, qweight, output, f16_scale, qzeros,
+    onnxruntime_gptq::Launch_gemv_g(f16_input_a, qweight, output, f16_scale, qzeros,
                                     g_idx.value(), bits);
 
   }else{
-    onnxruntime_gptq::lauch_Gemv_kernel(output, input_a, qweight, f16_scale, qzeros, bits, groupsize, mat_m, in_features, qweight.size(1), add_zero_bias);
+    onnxruntime_gptq::lauch_Gemv_kernel(output, f16_input_a, qweight, f16_scale, qzeros, bits, groupsize, mat_m, in_features, qweight.size(1), add_zero_bias);
   }
 
   if (ori_dtype == torch::kBFloat16) {
