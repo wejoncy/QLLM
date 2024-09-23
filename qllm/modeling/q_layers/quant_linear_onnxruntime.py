@@ -62,6 +62,7 @@ def dequantize_blockwise_4bits(quant_values, scale, zero_point, g_idx, rows, col
             zero_point.unsqueeze(-1) >> torch.tensor([[[[0, 4]]]], dtype=torch.int32, device=quant_values.device)
         ) & 0x0F
         expand_zero_point = expand_zero_point.reshape(*quant_values.shape[:-1], -1)
+        expand_zero_point = expand_zero_point[..., : aligned_scale.shape[-1]]
     if g_idx is not None and g_idx[:32].sum().item() != 0:
         float_values = (
             (expand_quant_value.reshape(expand_quant_value.shape[0], -1) - expand_zero_point[:, g_idx, 0])
