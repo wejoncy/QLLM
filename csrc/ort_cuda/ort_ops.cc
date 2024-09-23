@@ -1,12 +1,41 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/extension.h>
+#include <sstream>
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) \
   CHECK_CUDA(x);       \
   CHECK_CONTIGUOUS(x)
+
+class OptionalCUDAGuard {
+int set_device_ = -1;
+int current_device_ = -1;
+public:
+  OptionalCUDAGuard(int device) :set_device_(device) {
+    cudaError_t err = cudaGetDevice(&current_device_);
+    std::stringstream ss;
+
+    if (err != cudaSuccess) {
+      ss << "cudaGetDevice failed with error code " << cudaGetErrorString(err);
+      TORCH_CHECK(err == cudaSuccess, ss.str());
+    }
+    if (current_device_ == device) {
+      return;
+    }
+    err = cudaSetDevice(device);
+    if (err != cudaSuccess) {
+      ss << "cudaGetDevice failed with error code " << cudaGetErrorString(err);
+      TORCH_CHECK(err == cudaSuccess, ss.str());
+    }
+  }
+
+  ~OptionalCUDAGuard() {
+  if (set_device_ != current_device_)
+    cudaSetDevice(current_device_);
+  }
+};
 
 namespace onnxruntime_gptq {
 void lauch_deqantize_cuda_pt_kernel(torch::Tensor& b_fp16, const torch::Tensor& qweight_i32,
@@ -44,6 +73,8 @@ torch::Tensor dequant_any_bit(const torch::Tensor &qweight,
               "input and weight/qzeros must be on the same device");
 #ifndef GENERAL_TORCH
   at::cuda::OptionalCUDAGuard guard(qweight.device());
+#else
+  OptionalCUDAGuard guard(qweight.device().index());
 #endif
   auto f16_scale = scales;
   auto ori_dtype = scales.scalar_type();
@@ -76,6 +107,8 @@ torch::Tensor op_gemv(const torch::Tensor &input_a,
   TORCH_CHECK(qweight.device().index() == input_a.device().index(), "input and weight must be on the same device");
 #ifndef GENERAL_TORCH
   at::cuda::OptionalCUDAGuard guard(qweight.device());
+#else
+  OptionalCUDAGuard guard(qweight.device().index());
 #endif
   std::vector<int64_t> outputshape ={input_a.size(0), qweight.size(1)};
   uint32_t mat_m = input_a.size(0);
@@ -84,18 +117,20 @@ torch::Tensor op_gemv(const torch::Tensor &input_a,
     mat_m *= input_a.size(1);
   }
   auto f16_scale = scales;
+  auto f16_input_a = input_a;
   auto ori_dtype = scales.scalar_type();
   if (ori_dtype == torch::kBFloat16) {
     f16_scale = scales.to(torch::kFloat16);
+    f16_input_a = input_a.to(torch::kFloat16);
   }
 
   at::Tensor output = at::zeros(outputshape, f16_scale.options());
   if (g_idx.has_value()) {
-    onnxruntime_gptq::Launch_gemv_g(input_a, qweight, output, f16_scale, qzeros,
+    onnxruntime_gptq::Launch_gemv_g(f16_input_a, qweight, output, f16_scale, qzeros,
                                     g_idx.value(), bits);
 
   }else{
-    onnxruntime_gptq::lauch_Gemv_kernel(output, input_a, qweight, f16_scale, qzeros, bits, groupsize, mat_m, in_features, qweight.size(1), add_zero_bias);
+    onnxruntime_gptq::lauch_Gemv_kernel(output, f16_input_a, qweight, f16_scale, qzeros, bits, groupsize, mat_m, in_features, qweight.size(1), add_zero_bias);
   }
 
   if (ori_dtype == torch::kBFloat16) {
@@ -118,7 +153,7 @@ int Dequantize4Bits(T *output, const uint8_t *quant_data, const T *scales_data,
 
 #define QLLM_DISPATCH_CASE_FLOATING_TYPES(...)                                 \
   AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)
-  //  AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__) \
+  //  AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__) 
 
 #define QLLM_DISPATCH_FLOATING_TYPES(TYPE, NAME, ...)                          \
   AT_DISPATCH_SWITCH(TYPE, NAME, QLLM_DISPATCH_CASE_FLOATING_TYPES(__VA_ARGS__))
@@ -137,6 +172,8 @@ torch::Tensor Dequantize4Bits(const torch::Tensor &qweight,
   }
 #ifndef GENERAL_TORCH
   at::cuda::OptionalCUDAGuard guard(qweight.device());
+#else
+  OptionalCUDAGuard guard(qweight.device().index());
 #endif
 
   torch::Tensor out = torch::empty({out_features, in_features}, scales.options());

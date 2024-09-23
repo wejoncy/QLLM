@@ -30,7 +30,7 @@ class BaseQuantizeConfig:
 
     @property
     def version(self):
-        return self.quant_config["version"]
+        return self.quant_config["version"].upper()
     
     def dict(self):
         return self.quant_config

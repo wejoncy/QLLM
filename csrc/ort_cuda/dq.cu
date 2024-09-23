@@ -80,9 +80,14 @@ template <class T>
 __global__ void Dequantize4BitsKernelReOrder(
     T *output, const uint8_t *quant_data, const T *scale_data,
     const uint8_t *zero_points, const int32_t *reorder_idx, int block_size,
-    int groups_per_K, int groups_per_threadblock, int total_groups) {
-  int group_id =
-      blockIdx.x * groups_per_threadblock + ((threadIdx.x * 8) / block_size);
+    int groups_per_K, int groups_per_threadblock, int coorperate_blocks_a_block, int total_groups) {
+  int coorperate_blocks_outer_id = blockIdx.x / coorperate_blocks_a_block;
+  int coorperate_blocks_inner_id = blockIdx.x % coorperate_blocks_a_block;
+  int coorperate_threadIdx_x = (coorperate_blocks_inner_id * GridDim::maxThreadsPerBlock+threadIdx.x);
+  if (coorperate_threadIdx_x * 8 >= block_size) {
+    return;
+  }
+  int group_id = coorperate_blocks_outer_id * groups_per_threadblock + ((coorperate_threadIdx_x * 8) / block_size);
   if (group_id >= total_groups) {
     return;
   }
@@ -94,20 +99,24 @@ __global__ void Dequantize4BitsKernelReOrder(
   const int scales_shape_x = groups_per_K;
   int n_idx = group_id / scales_shape_x;
   int kb_idx = group_id % scales_shape_x;
-  int element_offset =
-      group_id * block_size + ((threadIdx.x * 8) & (block_size - 1));
+  int element_offset = group_id * block_size + (coorperate_threadIdx_x * 8);
+
   T *output_i = output + element_offset;
   uint32_t quant_value =
       *(reinterpret_cast<const uint32_t *>(quant_data + element_offset / 2));
-  const int32_t* reorder_idx_with_off = reorder_idx+kb_idx * block_size + ((threadIdx.x * 8) &
+  const int32_t* reorder_idx_with_off = reorder_idx+kb_idx * block_size + ((coorperate_threadIdx_x * 8) &
                               (block_size - 1));
   for (int i = 0; i < 8; i++) {
     int32_t rid = reorder_idx_with_off[i];
     T scale = *(scale_data + n_idx * scales_shape_x + rid);
     uint8_t zp = 8;
     if (zero_points) {
-      zp = zero_points[n_idx * zero_point_shape_x + rid / 2];
-      zp = (rid & 0x01) ? (zp >> 4) : (zp & 0x0f);
+      if (scales_shape_x == 1) {
+        zp = zero_points[group_id] >> 4;
+      } else {
+        zp = zero_points[n_idx * zero_point_shape_x + rid / 2];
+        zp = (rid & 0x01) ? (zp >> 4) : (zp & 0x0f);;
+      }
     }
 
     if constexpr (std::is_same_v<T, half>) {
@@ -125,15 +134,20 @@ template <class T, typename ZeroT = uint8_t>
 __global__ void
 Dequantize4BitsKernel(T *output, const uint8_t *quant_data, const T *scale_data,
                       const ZeroT *zero_points, int block_size,
-                      int groups_per_K, int groups_per_threadblock,
+                      int groups_per_K, int groups_per_threadblock, int coorperate_blocks_a_block,
                       int total_groups) {
-  int block_id =
-      blockIdx.x * groups_per_threadblock + ((threadIdx.x * 8) / block_size);
+  int coorperate_blocks_outer_id = blockIdx.x / coorperate_blocks_a_block;
+  int coorperate_blocks_inner_id = blockIdx.x % coorperate_blocks_a_block;
+  int coorperate_threadIdx_x = (coorperate_blocks_inner_id * GridDim::maxThreadsPerBlock+threadIdx.x);
+  // assume block_size is multiple of 8
+  if (coorperate_threadIdx_x * 8 >= block_size) {
+    return;
+  }
+  int block_id = coorperate_blocks_outer_id * groups_per_threadblock + ((coorperate_threadIdx_x * 8) / block_size);
   if (block_id >= total_groups) {
     return;
   }
-  int element_offset =
-      block_id * block_size + ((threadIdx.x * 8) & (block_size - 1));
+  int element_offset = block_id * block_size + (coorperate_threadIdx_x * 8);
   uint32_t quant_value =
       *(reinterpret_cast<const uint32_t *>(quant_data + element_offset / 2));
   T scale = *(scale_data + block_id);
@@ -145,8 +159,12 @@ Dequantize4BitsKernel(T *output, const uint8_t *quant_data, const T *scale_data,
     int n_idx = block_id / scales_shape_x;
     uint8_t zp = 8;
     if (zero_points) {
-      zp = zero_points[n_idx * zero_point_shape_x + kb_idx / 2];
-      zp = (kb_idx & 0x01) ? (zp >> 4) : (zp & 0x0f);
+      if (scales_shape_x == 1) {
+        zp = zero_points[block_id] & 0x0f;
+      } else {
+        zp = zero_points[n_idx * zero_point_shape_x + kb_idx / 2];
+        zp = (kb_idx & 0x01) ? (zp >> 4) : (zp & 0x0f);
+      }
     }
     zero_point_value = static_cast<T>(zp);
   } else {
@@ -166,23 +184,28 @@ int Dequantize4Bits(T *output, const uint8_t *quant_data, const T *scales_data,
   // k is padded and equal to block_per_K * block_size
   //ORT_ENFORCE(k % block_size == 0, "k must be a multiplier of block_size");
   constexpr int element_per_thread = 8;
-  int groups_per_threadblock =
-      GridDim::maxThreadsPerBlock * element_per_thread / block_size;
+  int multiple_blocks = 1;
+
+  int groups_per_threadblock = GridDim::maxThreadsPerBlock * element_per_thread / block_size;
+  while (groups_per_threadblock  == 0){
+    multiple_blocks *= 2;
+    groups_per_threadblock = GridDim::maxThreadsPerBlock * multiple_blocks * element_per_thread / block_size;
+  }
   int groups_per_K = k / block_size;
   int total_groups = n * groups_per_K; // total elemenets in quant_data
   int groups_per_grid =
-      static_cast<int>(CeilDiv(total_groups, groups_per_threadblock));
+      static_cast<int>(CeilDiv(total_groups*multiple_blocks, groups_per_threadblock));
   if (!reorder_idx) {
     Dequantize4BitsKernel<T, ZeroT>
         <<<groups_per_grid, GridDim::maxThreadsPerBlock, 0, stream>>>(
             output, quant_data, scales_data, zero_points, block_size,
-            groups_per_K, groups_per_threadblock, total_groups);
+            groups_per_K, groups_per_threadblock, multiple_blocks, total_groups);
   } else {
     // static_assert(std::is_same_v<ZeroT, uint8_t>, "ZeroT must be uint8_t");
     Dequantize4BitsKernelReOrder<<<groups_per_grid, GridDim::maxThreadsPerBlock,
                                    0, stream>>>(
         output, quant_data, scales_data, (const uint8_t *)zero_points,
-        reorder_idx, block_size, groups_per_K, groups_per_threadblock,
+        reorder_idx, block_size, groups_per_K, groups_per_threadblock, multiple_blocks,
         total_groups);
   }
 

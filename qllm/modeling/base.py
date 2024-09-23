@@ -130,7 +130,7 @@ def _load_check_point(model, model_name_or_path, get_keys_only: bool = False):
     if len(checkpoint_files) > 0:
         for i in tqdm.tqdm(range(len(checkpoint_files)), desc="loading weights"):
             if not checkpoint_files[i].endswith("safetensors"):
-                weights = torch.load(checkpoint_files[i], map_location="cpu")
+                weights = torch.load(checkpoint_files[i], map_location="cpu", weights_only=True)
             else:
                 weights = safetensors.torch.load_file(checkpoint_files[i], device="cpu")
             if get_keys_only:

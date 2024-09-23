@@ -165,6 +165,7 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
             else:
                 bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
             new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None)
+            new_module.bias = tmp.bias.data if tmp.bias is not None else None
             set_op_by_name(module, module_name, new_module)
     return        
     #if isinstance(module, target_layer):
