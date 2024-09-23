@@ -8,7 +8,7 @@ from ...utils import comm_utils
 if has_awq_inference_engine():
     from qllm import awq_inference_engine as marlin_cuda
 else:
-    print("marlin_cuda is not installed. marlin_cuda is not use")
+    print("marlin_cuda is not installed.")
 
 DEBUG_ = False
 
