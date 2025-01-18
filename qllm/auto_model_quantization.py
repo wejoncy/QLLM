@@ -28,7 +28,7 @@ class AutoModelQuantization(object):
             model_name_or_path, use_fast=True, trust_remote_code=True)
         attn_implementation = "flash_attention_2" if os.getenv('USE_FLASH_ATTN', "0")=="1" else None
         return AutoQuantizedModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True,
-        attn_implementation=attn_implementation)
+        attn_implementation=attn_implementation, torch_dtype="auto")
 
     def get_datasets(self, tokenizer, dataset, nsamples, seed):
         return get_sample_datas_for_quantization(tokenizer, dataset, nsamples, seed)
@@ -41,6 +41,7 @@ class AutoModelQuantization(object):
     @torch.no_grad()
     def __dispatch_quant(self, model, inputs_dataloader, config, dev):
         quantizer = quantization.get_quantizer(config)
+        quantizer.set_tokenizer(self.tokenizer)
         return quantizer.quantize(model, inputs_dataloader, dev)
 
     @torch.inference_mode()
@@ -104,7 +105,7 @@ class AutoModelQuantization(object):
 
             qlayers[name].pack(attention_layers[name], scale, zero, g_idx)
 
-        model.quant_config.version = qlayers[name].pack_mode
+        model.quant_config.version = qlayers[name].pack_mode if qlayers else ""
         if os.getenv('COMPATIBLE_WITH_AUTOGPTQ', None) == "1" and pack_mode == "GPTQ":
             model.quant_config["COMPATIBLE_WITH_AUTOGPTQ"] = 1
         model.quant_config_by_layer = quant_config_by_layer
@@ -184,6 +185,13 @@ class AutoModelQuantization(object):
         from .utils.comm_utils import set_seed
         set_seed(args.seed)
 
+        if args.quant_method == "vptq" and (args.quant_config.name == "help" or
+                                            not args.quant_config.exists()) :
+            example_config = quantization.config_builder.VPTQConfig().to_dict()
+            example_config['model_name'] = args.model
+            logger.info("An example VPTQ config looks like:\n" + json.dumps(example_config, indent=4))
+            return
+
         if args.pack_mode == "AUTO" and args.allow_mix_bits:
             assert args.quant_method == "gptq", "only gptq support allow_mix_bits mode"
             args.pack_mode = "GPTQ"
@@ -213,7 +221,7 @@ class AutoModelQuantization(object):
 Please run with `-h` to refer the usage.")
 
         if not args.load and args.wbits < 16:
-            if args.quant_method == "hqq":
+            if args.quant_method in ["hqq", "vptq"]:
                 inputs_dataloader = None
             else:
                 inputs_dataloader = self.get_datasets(args.tokenizer, args.dataset, args.nsamples, args.seed)

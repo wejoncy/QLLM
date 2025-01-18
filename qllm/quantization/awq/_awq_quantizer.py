@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from ..utils.comm_utils import clear_memory
-from ..utils.modelutils import get_op_name, get_op_by_name, set_op_by_name
+from ...utils.comm_utils import clear_memory
+from ...utils.modelutils import get_op_name, get_op_by_name, set_op_by_name
 from .sequential_layes_awq_config import auto_detect_sequential_layers
 USE_ACCUMULATE_BATCH = -1
 

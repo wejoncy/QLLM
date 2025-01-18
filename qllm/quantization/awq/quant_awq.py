@@ -3,11 +3,11 @@ import tqdm
 import functools
 from collections import defaultdict
 
-from ..utils.comm_utils import clear_memory
-from ..utils.modelutils import set_op_by_name
+from ...utils.comm_utils import clear_memory
+from ...utils.modelutils import set_op_by_name
 
-from .quant_frame_base import QuantFrameBase
-from ..utils import find_layers
+from ..quant_frame_base import QuantFrameBase
+from ...utils import find_layers
 from ._awq_quantizer import (InternalAWQuantizer, pseudo_quantize_tensor,
                              USE_ACCUMULATE_BATCH, ScaledActivation)
 
@@ -105,7 +105,7 @@ class AWQQuant(QuantFrameBase):
 
     @torch.no_grad()
     def do_quantize(self, model, dataloader, model_prefix, dev):
-        inps, outs, attention_layers, layer_kwargs = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
+        inps, attention_layers, layer_kwargs = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
         run_batch = len(dataloader) if USE_ACCUMULATE_BATCH == -1 else USE_ACCUMULATE_BATCH
         if layer_kwargs.get('attention_mask', None) is not None:
             layer_kwargs['attention_mask'] = layer_kwargs['attention_mask'].expand(run_batch, -1, -1, -1)        

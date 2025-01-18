@@ -6,8 +6,8 @@ import torch.nn as nn
 import transformers
 from ._gptq_quantizer import InternalGPTQQuantizer
 from texttable import Texttable
-from ..utils import torch_snr_error
-from ..utils.logger import get_logger
+from ...utils import torch_snr_error
+from ...utils.logger import get_logger
 
 logger = get_logger('qllm')
 
