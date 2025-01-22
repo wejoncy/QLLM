@@ -5,9 +5,11 @@ import tqdm
 from ...utils.logger import get_logger
 
 # load Hessian from files
-def load_hessian(hessian_path, logger=None):
-    if logger is None:
+def load_hessian(hessian_path, pbar=None, logger=None):
+    if logger is None and pbar is None:
         print(f'load Hessian from {hessian_path}')
+    elif pbar is not None:
+        pbar.set_postfix_str(f'load Hessian from {hessian_path}')
     else:
         logger.info(f'load Hessian from {hessian_path}')
     H_data = torch.load(f'{hessian_path}', weights_only=True, map_location='cpu')
@@ -47,9 +49,9 @@ def main(args):
     hessian_files = [f for f in os.listdir(
         args.load_hessian_dir) if f.endswith('.pt')]
 
-    for hessian_file in tqdm.tqdm(hessian_files, desc="Inverting Hessian"):
+    for hessian_file in (pbar := tqdm.tqdm(hessian_files, desc="Inverting Hessian")):
         hessian_path = os.path.join(args.load_hessian_dir, hessian_file)
-        hessian, mu = load_hessian(hessian_path, logger=logger)
+        hessian, mu = load_hessian(hessian_path, pbar=pbar, logger=logger)
         dev = 'cuda'
         hessian = hessian.to(dev)
 
@@ -81,7 +83,7 @@ def main(args):
                         'perm': perm.to('cpu'),
                         'zero_idx': zero_idx.to('cpu')}, save_path)
         
-        logger.info(f'Saved inverted Hessian to {save_path}')
+        pbar.set_postfix_str(f'Saved inverted Hessian to {save_path}')
 
 if __name__ == "__main__":
     parser = ArgumentParser()
