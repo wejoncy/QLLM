@@ -295,7 +295,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
                         'after_layer': transformer_layer_index,
                         'timestamp': str(datetime.datetime.now())
                     }, f'{args.scratch_path}/dev_activations.pt')
-                    move_q.put((f'{args.scratch_path}/dev_activations.pt', f'{args.save_path}/dev_activations.pt'))
+                    # move_q.put((f'{args.scratch_path}/dev_activations.pt', f'{args.save_path}/dev_activations.pt'))
             else:
                 torch.save({
                     'dev_emb': dev_emb,

@@ -37,28 +37,6 @@ class VQuantLinear(nn.Module, CompressWeight):
         else:
             self.bias = None
 
-    def handle_qzeros_for_autogptq(self):
-        if self.qzeros.numel() == 0:
-            return
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        qzeros = self.qzeros.to(device)
-        zeros = torch.zeros((self.outfeatures, self.infeatures // self.groupsize),
-                            dtype=torch.int32, device=qzeros.device).T.contiguous()
-
-        general_unpack_on_row(qzeros, zeros, self.bits)
-
-        zeros += 1
-        torch.bitwise_and(zeros, (2 ** self.bits) - 1, out=zeros)
-
-        general_pack_on_row(qzeros, zeros, self.bits)
-
-        self.qzeros = qzeros.to("cpu", non_blocking=True)
-
+    
     def forward(self, x):
-        if self.act_order is None:
-            self.act_order = self.g_idx[:self.groupsize].sum() != 0
-        g_idx = self.g_idx if self.act_order else None
-        out = QuantLinearTorchFunction_forward(x, self.qweight, self.scales,
-                                               self.qzeros, g_idx, self.bits, self.groupsize, self.infeatures)
-        out = out + self.bias if self.bias is not None else out
-        return out
+        return x
