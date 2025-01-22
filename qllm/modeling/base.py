@@ -175,6 +175,7 @@ class AutoQuantizedModelForCausalLM:
         cls.disable_double_init()
         trust_remote_code = kwargs.pop("trust_remote_code", False)
         attn_implementation = kwargs.pop("attn_implementation", None)
+        torch_dtype = kwargs.pop("torch_dtype", torch.float16)
 
         # with accelerate.init_empty_weights():
         #     auto_conf = transformers.AutoConfig.from_pretrained(
@@ -192,7 +193,7 @@ class AutoQuantizedModelForCausalLM:
 
         llm = AutoModelForCausalLM.from_pretrained(
             pretrained_model_name_or_path,
-            torch_dtype=torch.float16,
+            torch_dtype=torch_dtype,
             trust_remote_code=trust_remote_code,
             attn_implementation=attn_implementation,
             # device_map="auto",

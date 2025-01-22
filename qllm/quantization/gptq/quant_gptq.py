@@ -2,10 +2,10 @@ import torch
 import tqdm
 from texttable import Texttable
 
-from .quant_frame_base import QuantFrameBase
+from ..quant_frame_base import QuantFrameBase
 from .gptq import GPTQ, Observer
-from ..utils import find_layers, gen_conditions
-from ..utils.logger import get_logger
+from ...utils import find_layers, gen_conditions
+from ...utils.logger import get_logger
 from . import sequential_layes_gptq_config
 logger = get_logger('qllm')
 
@@ -88,7 +88,8 @@ class GPTQQuant(QuantFrameBase):
 
     @torch.inference_mode()
     def do_quantize(self, model, dataloader, model_prefix, dev):
-        inps, outs, attention_layers, layer_input_args = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
+        inps, attention_layers, layer_input_args = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
+        outs = torch.zeros_like(inps)
         print('Ready.')
 
         quantizers = {}

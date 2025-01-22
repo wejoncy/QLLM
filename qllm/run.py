@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from .auto_model_quantization import AutoModelQuantization
 from .args_config import FakeArgs
@@ -15,11 +16,11 @@ A typical usage is:
 --dataset=pileval --nsamples=16  --use_plugin --save ./Llama-2-7b-chat-hf_awq_q4/ \
 --export_onnx ./onnx_models/
 
-    quant_method can be 'awq' or 'gptq', 'hqq' """,
+    quant_method can be ['awq' or 'gptq', 'hqq', "vptq"] """,
                                      formatter_class=argparse.RawTextHelpFormatter)
     default_args = FakeArgs()
     parser.add_argument('--quant_method', type=str, default=default_args.quant_method,
-                        choices=["gptq", "awq", "hqq"], help='the quantization quant_method')
+                        choices=["gptq", "awq", "hqq", "vptq"], help='the quantization quant_method')
     parser.add_argument('--model', type=str, default="",
                         help='float/float16 model to load, such as [mosaicml/mpt-7b]')
     parser.add_argument('--tokenizer', type=str, default="", help='default same as [model]')
@@ -29,6 +30,8 @@ A typical usage is:
     parser.add_argument('--nsamples', type=int, default=default_args.nsamples, help='Number of calibration data samples.')
     parser.add_argument('--percdamp', type=float, default=default_args.percdamp,
                         help='Percent of the average Hessian diagonal to use for dampening.')
+    parser.add_argument('--quant_config', type=Path, default=None,
+                        help='a json file to config quantization like vptq. pass "--quant_config help" to get a example config')
     parser.add_argument(
             '--static-groups', action='store_true',
             help='(gptq only.) Whether to use static groups; recommended when using `--actorder` for more efficient inference.'

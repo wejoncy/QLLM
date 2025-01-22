@@ -1,10 +1,10 @@
 import torch
 import tqdm
 
-from .quant_frame_base import QuantFrameBase
+from ..quant_frame_base import QuantFrameBase
 from ._hqq_quantizer import InternalHQQQuantizer
-from ..utils import find_layers
-from ..utils.logger import get_logger
+from ...utils import find_layers
+from ...utils.logger import get_logger
 logger = get_logger('qllm')
 
 class HQQQuant(QuantFrameBase):
@@ -16,7 +16,7 @@ class HQQQuant(QuantFrameBase):
     @torch.inference_mode()
     def do_quantize(self, model, dataloader, model_prefix, dev):
         dataloader = []
-        _,_, attention_layers, layer_input_args = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
+        _, attention_layers, layer_input_args = self.hijack_block_inputs(model, dataloader, model_prefix, dev)
         print('Ready.')
         bits, groupsize = self.quant_config.to_meta.bits, self.quant_config.to_meta.group_size
         quantizers = {}
