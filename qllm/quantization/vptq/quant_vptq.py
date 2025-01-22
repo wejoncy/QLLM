@@ -48,18 +48,8 @@ class VPTQQuant(QuantFrameBase):
         #     --base_model {self.quant_config.model_name} --save_path Meta-Llama-3-70B-1 \
         #         --act_save_rate 50 --sample_proc 4"
         from .qllm_hessian import process_collect_hessian
-        SampleArgs = type("ARGS", (object,), {"init1": lambda: None})
-        sample_args = SampleArgs()
-        sample_args.batch_size = 2
-        sample_args.devset_size = 32#3072
-        sample_args.iter_size = 16
-        sample_args.ctx_size = 8192
-        sample_args.chunk_size = 256
+        sample_args = self.quant_config.hessian_config
         sample_args.base_model = self.quant_config.model_name
-        sample_args.act_save_rate = 50
-        sample_args.sample_proc = 4
-        sample_args.scratch_path = None
-        sample_args.save_activations = None
         sample_args.save_path = f"./hessian_path/{sample_args.base_model}_{sample_args.devset_size}_{sample_args.ctx_size}"
         
         self.quant_config.hessian_path = sample_args.save_path
@@ -101,12 +91,15 @@ class VPTQQuant(QuantFrameBase):
         def fetch_next_task(future):
             comm_utils.clear_memory()
             pbar.update(1)
+            pbar.set_postfix_str(f'gpu memory: {torch.cuda.memory_allocated(future.gpu_idx)/1024**3:.2f}GB')
             output_queue.put(future.gpu_idx)
             torch.save(future.result(), quant_tmp/f"layer_{future.layer_idx}.pt")
 
         for layer_idx,layer in enumerate(attention_layers):
             if (quant_tmp/f"layer_{layer_idx}.pt").exists():
-                attention_layers[layer_idx] = torch.load(quant_tmp/f"layer_{layer_idx}.pt")
+                import warnings
+                warnings.simplefilter(action='ignore', category=FutureWarning)
+                attention_layers[layer_idx] = torch.load(quant_tmp / f"layer_{layer_idx}.pt", weights_only=False)
                 pbar.update(1)
                 continue
             free_gpu_id = output_queue.get()
@@ -134,7 +127,7 @@ class VPTQQuant(QuantFrameBase):
             from vptq.utils.pack import absorb_perm, pack_model
             from vptq import VQuantLinear
         except ImportError:
-            print("VPTQ is not installed, skipping VPTQ quantization")
+            logger.warning("VPTQ is not installed, skipping VPTQ quantization")
             return {}
         attention_layers, layer_input_args = self.collect_hessian_pre(model, model_prefix, dev)
         print('Ready.')

@@ -1,5 +1,6 @@
 import torch
 import os
+import tqdm
 import argparse
 
 def parse_args():
@@ -57,8 +58,9 @@ def merge_and_save_hessian(base_dir, groups, save_dir, entry):
 def main(args):    
     # Use the first group to get the list of files to process
     first_group_dir = f'{args.base_dir}{args.groups[0]}'
-    for entry in os.listdir(first_group_dir):
-        if entry.endswith('.txt'):continue
+    for entry in (pbar := tqdm.tqdm(os.listdir(first_group_dir), desc="Merging Hessian")):
+        if not entry.endswith('.pt'): continue
+        pbar.set_postfix_str(f'Processing {entry}')
         merge_and_save_hessian(
             args.base_dir,
             args.groups,
