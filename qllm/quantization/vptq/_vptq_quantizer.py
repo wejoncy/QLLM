@@ -29,7 +29,7 @@ class InternalVPTQQuantizer(nn.Module):
             from vptq.layer_quantizer import layer_quantizer
             from vptq.quantize_executer import setup_logging
         except ImportError:
-            print("Please install vptq first: pip install vptq")
+            logger.warning("Please install vptq by 'pip install -U vptq'")
             raise
             
         layer, layer_idx = tasks
