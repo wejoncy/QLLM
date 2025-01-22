@@ -9,7 +9,7 @@ def load_hessian(hessian_path, pbar=None, logger=None):
     if logger is None and pbar is None:
         print(f'load Hessian from {hessian_path}')
     elif pbar is not None:
-        pbar.set_postfix_str(f'load Hessian from {hessian_path}')
+        pbar.set_postfix_str(f'load Hessian from {hessian_path[-10:]}')
     else:
         logger.info(f'load Hessian from {hessian_path}')
     H_data = torch.load(f'{hessian_path}', weights_only=True, map_location='cpu')

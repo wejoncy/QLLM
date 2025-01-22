@@ -239,8 +239,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
     attention_mask = _prepare_4d_causal_attention_mask(*kargs, **kwargs)
     for transformer_layer_index in (pbar := tqdm.trange(len(attention_layers), 
             desc='processing hessian layers', leave=False)):
-        free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
-        pbar.set_postfix_str(f"used: {(total_gpu_memory-free_gpu_memory) / 1024**3:.2f}GB")
+        pbar.set_postfix_str(f"used: {(torch.cuda.max_memory_allocated() ) / 1024**3:.2f}GB")
         transformer_layer = attention_layers[transformer_layer_index]
         # check that there are four layers, as expected
         # assert (len([m for m in transformer_layer.modules() if isinstance(m, torch.nn.Linear)]) == 7)
