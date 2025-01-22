@@ -1,6 +1,8 @@
 import torch
 from argparse import ArgumentParser
 import os
+import tqdm
+from ...utils.logger import get_logger
 
 # load Hessian from files
 def load_hessian(hessian_path, logger=None):
@@ -37,6 +39,7 @@ def load_hessian(hessian_path, logger=None):
     return H, mu
 
 def main(args):
+    logger = get_logger("qllm")
     # create folder
     os.makedirs(args.store_inv_hessian_dir, exist_ok=True)
 
@@ -44,9 +47,9 @@ def main(args):
     hessian_files = [f for f in os.listdir(
         args.load_hessian_dir) if f.endswith('.pt')]
 
-    for hessian_file in hessian_files:
+    for hessian_file in tqdm.tqdm(hessian_files, desc="Inverting Hessian"):
         hessian_path = os.path.join(args.load_hessian_dir, hessian_file)
-        hessian, mu = load_hessian(hessian_path)
+        hessian, mu = load_hessian(hessian_path, logger=logger)
         dev = 'cuda'
         hessian = hessian.to(dev)
 
@@ -78,7 +81,7 @@ def main(args):
                         'perm': perm.to('cpu'),
                         'zero_idx': zero_idx.to('cpu')}, save_path)
         
-        print(f'Saved inverted Hessian to {save_path}')
+        logger.info(f'Saved inverted Hessian to {save_path}')
 
 if __name__ == "__main__":
     parser = ArgumentParser()

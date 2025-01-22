@@ -186,7 +186,7 @@ def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
     tokenizer.pad_token = tokenizer.eos_token
     devset = sample_rp1t(tokenizer, args.devset_size, args.ctx_size, args.save_path, nproc=args.sample_proc, seed=0)
 
-    for idx, start in enumerate(range(0, devset_size, args.iter_size)):
+    for idx, start in enumerate(tqdm.tqdm(range(0, devset_size, args.iter_size), desc="processing hessian groups")):
         logger.info(f"Processing group {idx} with start {start}")
         args.devset_size = min(args.iter_size, devset_size + start)
         args.save_path = save_dir + f'_{idx}'
@@ -234,7 +234,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
         kwargs = dict(sliding_window=model.config.sliding_window)
     attention_mask = _prepare_4d_causal_attention_mask(*kargs, **kwargs)
     for transformer_layer_index in tqdm.trange(len(attention_layers), 
-            desc='hessian collection--processing layers'):
+            desc='processing hessian layers', leave=False):
         transformer_layer = attention_layers[transformer_layer_index]
         # check that there are four layers, as expected
         # assert (len([m for m in transformer_layer.modules() if isinstance(m, torch.nn.Linear)]) == 7)

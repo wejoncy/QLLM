@@ -134,7 +134,7 @@ class VPTQQuant(QuantFrameBase):
             from vptq.utils.pack import absorb_perm, pack_model
             from vptq import VQuantLinear
         except ImportError:
-            print("VPTQ is not installed, skipping VPTQ quantization")
+            logger.warning("VPTQ is not installed, skipping VPTQ quantization")
             return {}
         attention_layers, layer_input_args = self.collect_hessian_pre(model, model_prefix, dev)
         print('Ready.')
