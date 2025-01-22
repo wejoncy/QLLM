@@ -38,13 +38,13 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04, windows-latest]
-        pyver: ["3.8", "3.9", "3.10", "3.11"]
-        cuda: ["11.8.0", "12.1.1"]
+        pyver: ["3.10", "3.11", "3.12"]
+        cuda: ["12.1.1", "12.4.1"]
     defaults:
       run:
         shell: pwsh
     env:
-      PYPI_CUDA_VERSION: "11.8.0"  
+      PYPI_CUDA_VERSION: "12.1.1"  
       CUDA_VERSION: ${{ matrix.cuda }}
     
     steps:
@@ -71,7 +71,7 @@ jobs:
         with:
           activate-environment: "build"
           python-version: ${{ matrix.pyver }}
-          miniforge-variant: Mambaforge
+          miniforge-variant: Miniforge3
           miniforge-version: latest
           use-mamba: true
           add-pip-as-python-dependency: true
@@ -88,7 +88,10 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          if ([int]$cudaVersionPytorch -gt 118) { $pytorchVersion = "torch==2.2.2" } else {$pytorchVersion = "torch==2.2.2"}
+          if ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
+          echo "pytorchVersion=$pytorchVersion"
+          echo "cudaVersion=<$cudaVersion>"
+          echo "cudaVersionPytorch=$cudaVersionPytorch"
           python -m pip install --upgrade --no-cache-dir $pytorchVersion+cu$cudaVersionPytorch --index-url https://download.pytorch.org/whl/cu$cudaVersionPytorch
           python -m pip install build setuptools==69.5.1 wheel ninja
           # Print version information

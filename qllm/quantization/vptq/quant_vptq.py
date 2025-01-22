@@ -18,6 +18,9 @@ class VPTQQuant(QuantFrameBase):
     def __init__(self, config) -> None:
         super().__init__()
         self.quant_config = config
+        self.quant_config.output_dir = Path(self.quant_config.output_dir) / self.quant_config.model_name
+        for k, v in self.quant_config.layer_config.to_dict().items():
+            setattr(self.quant_config, k, v)
 
     def set_tokenizer(self, tokenizer):
         self.tokenizer = tokenizer
@@ -139,6 +142,7 @@ class VPTQQuant(QuantFrameBase):
         quantize_layer = vptq_quantizer.quantize_layer
         quantizers = {}
         quant_tmp = Path("quant_tmp")
+        quant_tmp.mkdir(exist_ok=True)
 
         if num_gpus > 1:
             self.parallel_quantize(quantize_layer, attention_layers, num_gpus, dev)
