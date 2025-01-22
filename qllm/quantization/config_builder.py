@@ -1,6 +1,7 @@
 import dataclasses
 from dataclasses import dataclass, asdict
 import json
+import typing
 
 @dataclass
 class MetaConfig:
@@ -80,50 +81,43 @@ class HessianConfig(MetaInterface):
     save_path: str = None
 
 @dataclass
+class VPTQLayerConfig(MetaInterface):
+    bias: bool = dataclasses.field(default=False)
+    enable_norm: bool = dataclasses.field(default=True)
+    enable_perm: bool = dataclasses.field(default=False)
+    group_num: int = dataclasses.field(default=1)
+    outlier_size: int = dataclasses.field(default=0)
+    group_size: int = dataclasses.field(default=-1)
+    vector_lens: tuple = (-1, 8)
+    num_centroids: tuple = (-1, 65536)
+    num_res_centroids: tuple = (-1, 256)
+
+@dataclass
 class VPTQConfig(MetaInterface):
-    # model_name: str = dataclasses.field(default="meta-llama/Meta-Llama-3.1-8B-Instruct")
-    # seq_len: typing.Optional[int] = dataclasses.field(default=None)
-    # quant_step: int = dataclasses.field(default=1)
-    # percdamp: float = dataclasses.field(default=0.01)
-    # blocksize: int = dataclasses.field(default=128)
-    # output_dir: str = dataclasses.field(default="outputs")
-    # seed: int = dataclasses.field(default=0)
-    # eval: bool = dataclasses.field(default=False)
-    # new_eval: bool = dataclasses.field(default=False)
-    # save_model: bool = dataclasses.field(default=False)
-    # save_packed_model: bool = dataclasses.field(default=False)
+    model_name: str = dataclasses.field(default="meta-llama/Meta-Llama-3.1-8B-Instruct")
+    seq_len: int = dataclasses.field(default=8192)
+    quant_step: int = dataclasses.field(default=1)
+    percdamp: float = dataclasses.field(default=0.01)
+    blocksize: int = dataclasses.field(default=128)
+    output_dir: str = dataclasses.field(default="outputs")
+    seed: int = dataclasses.field(default=0)
+    save_model: bool = dataclasses.field(default=False)
     # disable_actorder: bool = dataclasses.field(default=False)
-    # hessian_path: typing.Optional[str] = dataclasses.field(default=None)
-    # inv_hessian_path: typing.Optional[str] = dataclasses.field(default=None)
-    # num_gpus: int = dataclasses.field(default=1)
+    hessian_path: typing.Optional[str] = dataclasses.field(default=None)
+    inv_hessian_path: typing.Optional[str] = dataclasses.field(default=None)
+    num_gpus: int = dataclasses.field(default=1)
     # eval_nsamples: int = dataclasses.field(default=128)
     save_qlinear: bool = dataclasses.field(default=False)
     absorb_perm: bool = dataclasses.field(default=True)
-    group_size: int = -1
     
-    model_name: str = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-    output_dir : str = "outputs/Meta-Llama-3.1-8B-Instruct"
-    vector_lens : tuple = (-1, 8)
-    group_num : int = 1
-    num_centroids : tuple = (-1, 65536)
-    num_res_centroids : tuple = (-1, 256)
-    npercent : int =0
-    blocksize : int = 128 
-    new_eval : bool = True
-    seq_len : int = 8192
+    npercent : int = 0
     kmeans_mode : str= "hessian"
-    num_gpus : int = 1
-    enable_perm : bool = True
-    enable_norm : bool = True
     norm_dim : int = 1
-    save_model : bool = True
-    save_packed_model : bool = True
-    hessian_path :str = None
-    inv_hessian_path :str = None
     ktol : float =  1e-5
     kiter :int = 100
 
     hessian_config: HessianConfig = dataclasses.field(default_factory=HessianConfig)
+    layer_config: VPTQLayerConfig = dataclasses.field(default_factory=VPTQLayerConfig)
     version: str = ""
     quant_method: str = "vptq"
 
