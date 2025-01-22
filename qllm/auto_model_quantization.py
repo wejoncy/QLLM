@@ -177,7 +177,7 @@ class AutoModelQuantization(object):
         config = quantization.build_config(args)
 
         inputs_dataloader = self.get_datasets(self.tokenizer, args.dataset, args.nsamples, args.seed)
-        quantizers = self.__dispatch_quant(model, inputs_dataloader, config, "cuda")
+        quantizers = self.__dispatch_quant(model, inputs_dataloader, config, dev=torch.device("cuda:0"))
         model = self.pack_model(model, quantizers, args.pack_mode)
         return model
 

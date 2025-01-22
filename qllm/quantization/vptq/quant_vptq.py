@@ -143,10 +143,9 @@ class VPTQQuant(QuantFrameBase):
         if num_gpus > 1:
             self.parallel_quantize(quantize_layer, attention_layers, num_gpus, dev)
         else:        
-            
             for layer_idx in tqdm.trange((len(attention_layers)), desc="running VPTQ"):
                 attention_layers[layer_idx] = quantize_layer(
-                    (attention_layers[layer_idx], layer_idx), self.quant_config, self.quant_config, dev
+                    (attention_layers[layer_idx], layer_idx), self.quant_config, self.quant_config, dev=dev
                 )
 
         config_for_layers = {k:v.init_args for k,v in  find_layers(model, [VQuantLinear]).items()}
