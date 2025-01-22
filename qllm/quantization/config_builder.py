@@ -101,6 +101,7 @@ class VPTQConfig(MetaInterface):
     num_gpus : int = 1
     enable_perm : bool = True
     enable_norm : bool = True
+    norm_dim : int = 1
     save_model : bool = True
     save_packed_model : bool = True
     hessian_path :str = None
