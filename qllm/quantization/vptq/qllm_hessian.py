@@ -186,12 +186,20 @@ def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
     tokenizer.pad_token = tokenizer.eos_token
     devset = sample_rp1t(tokenizer, args.devset_size, args.ctx_size, args.save_path, nproc=args.sample_proc, seed=0)
 
-    for idx, start in enumerate(tqdm.tqdm(range(0, devset_size, args.iter_size), desc="processing hessian groups")):
-        logger.info(f"Processing group {idx} with start {start}")
+    free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
+    logger.info(f"free_gpu_memory: {free_gpu_memory/1024**3:.2f}GB, " +
+                f"total_gpu_memory: {total_gpu_memory/1024**3:.2f}GB")
+
+    for idx, start in enumerate(tqdm.trange(0, devset_size, args.iter_size, desc="processing hessian groups")):
+        # logger.info(f"Processing group {idx} with start {start}")
         args.devset_size = min(args.iter_size, devset_size + start)
         args.save_path = save_dir + f'_{idx}'
         args.seed = idx
         out = partion_collect_hessian(args, embed_forward_func, model, devset[start:start+args.devset_size], dev)
+
+    free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
+    logger.info(f"free_gpu_memory: {free_gpu_memory/1024**3:.2f}GB, " +
+                f"total_gpu_memory: {total_gpu_memory/1024**3:.2f}GB")
 
     if devset_size > args.iter_size:
         args.base_dir = save_dir+'_'
@@ -217,11 +225,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
     dev_emb, attention_layers, layer_args = embed_forward_func(model, [(devset,)])
     comm_utils.clear_memory((devset,))
 
-    free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
-    logger.info(f"free_gpu_memory: {free_gpu_memory/1024**3:.2f}GB, " +
-                f"total_gpu_memory: {total_gpu_memory/1024**3:.2f}GB")
-
-    logger.info(f"dev_emb dtype: {dev_emb.dtype}")
+    # logger.info(f"dev_emb dtype: {dev_emb.dtype}")
     dev_emb.share_memory_()
 
     position_ids = torch.arange(args.ctx_size, dtype=torch.int64)[None, :] + \
@@ -233,8 +237,10 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
     if hasattr(model.config, 'sliding_window'):
         kwargs = dict(sliding_window=model.config.sliding_window)
     attention_mask = _prepare_4d_causal_attention_mask(*kargs, **kwargs)
-    for transformer_layer_index in tqdm.trange(len(attention_layers), 
-            desc='processing hessian layers', leave=False):
+    for transformer_layer_index in (pbar := tqdm.trange(len(attention_layers), 
+            desc='processing hessian layers', leave=False)):
+        free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
+        pbar.set_postfix_str(f"used: {(total_gpu_memory-free_gpu_memory) / 1024**3:.2f}GB")
         transformer_layer = attention_layers[transformer_layer_index]
         # check that there are four layers, as expected
         # assert (len([m for m in transformer_layer.modules() if isinstance(m, torch.nn.Linear)]) == 7)
