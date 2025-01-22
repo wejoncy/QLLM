@@ -232,7 +232,7 @@ Please run with `-h` to refer the usage.")
                 args.mix_qlayer_conf = {}
             tick = time.time()
             config = quantization.build_config(args)
-            quantizers = self.__dispatch_quant(model, inputs_dataloader, config, "cuda")
+            quantizers = self.__dispatch_quant(model, inputs_dataloader, config, torch.device("cuda:0"))
             model = self.pack_model(model, quantizers, args.pack_mode)
             logger.info(f"Finished quantization and packing weight, time cost:{time.time() - tick}")
 
