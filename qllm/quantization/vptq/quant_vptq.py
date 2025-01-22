@@ -85,7 +85,6 @@ class VPTQQuant(QuantFrameBase):
         pbar = tqdm.tqdm(total=len(attention_layers), desc=f"running VPTQ on {num_gpus} GPUs")
         output_queue = theading_queue.Queue()
         quant_tmp = Path("quant_tmp")
-        quant_tmp.mkdir(exist_ok=True)
         for i in range(num_gpus):
             output_queue.put(i) # poison pill
         def fetch_next_task(future):
@@ -139,11 +138,15 @@ class VPTQQuant(QuantFrameBase):
         vptq_quantizer = InternalVPTQQuantizer()
         quantize_layer = vptq_quantizer.quantize_layer
         quantizers = {}
+        quant_tmp = Path("quant_tmp")
 
         if num_gpus > 1:
             self.parallel_quantize(quantize_layer, attention_layers, num_gpus, dev)
         else:        
             for layer_idx in tqdm.trange((len(attention_layers)), desc="running VPTQ"):
+                if (quant_tmp/f"layer_{layer_idx}.pt").exists():
+                    attention_layers[layer_idx] = torch.load(quant_tmp / f"layer_{layer_idx}.pt", weights_only=False)
+                    continue
                 attention_layers[layer_idx] = quantize_layer(
                     (attention_layers[layer_idx], layer_idx), self.quant_config, self.quant_config, dev=dev
                 )
