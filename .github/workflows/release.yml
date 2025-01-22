@@ -39,12 +39,12 @@ jobs:
       matrix:
         os: [ubuntu-20.04, windows-latest]
         pyver: ["3.10", "3.11", "3.12"]
-        cuda: ["12.1.1", "12.4.1"]
+        cuda: ["12.4.1"]
     defaults:
       run:
         shell: pwsh
     env:
-      PYPI_CUDA_VERSION: "12.1.1"  
+      PYPI_CUDA_VERSION: "12.4.1"  
       CUDA_VERSION: ${{ matrix.cuda }}
     
     steps:
