@@ -48,18 +48,19 @@ class VPTQQuant(QuantFrameBase):
         #     --base_model {self.quant_config.model_name} --save_path Meta-Llama-3-70B-1 \
         #         --act_save_rate 50 --sample_proc 4"
         from .qllm_hessian import process_collect_hessian
-        SampleArgs = type("ARGS", (object,), {"init1": lambda: None})
-        sample_args = SampleArgs()
-        sample_args.batch_size = 2
-        sample_args.devset_size = 32#3072
-        sample_args.iter_size = 16
-        sample_args.ctx_size = 8192
-        sample_args.chunk_size = 256
+        sample_args = self.quant_config.hessian_config
+        # SampleArgs = type("ARGS", (object,), {"init1": lambda: None})
+        # sample_args = SampleArgs()
+        # sample_args.batch_size = 2
+        # sample_args.devset_size = 32#3072
+        # sample_args.iter_size = 16
+        # sample_args.ctx_size = 8192
+        # sample_args.chunk_size = 256
         sample_args.base_model = self.quant_config.model_name
-        sample_args.act_save_rate = 50
-        sample_args.sample_proc = 4
-        sample_args.scratch_path = None
-        sample_args.save_activations = None
+        # sample_args.act_save_rate = 50
+        # sample_args.sample_proc = 4
+        # sample_args.scratch_path = None
+        # sample_args.save_activations = None
         sample_args.save_path = f"./hessian_path/{sample_args.base_model}_{sample_args.devset_size}_{sample_args.ctx_size}"
         
         self.quant_config.hessian_path = sample_args.save_path

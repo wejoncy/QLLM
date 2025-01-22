@@ -64,7 +64,21 @@ def dataclass_from_dict(klass, d):
         return klass(**{f:dataclass_from_dict(fieldtypes[f], d[f]) for f in d})
     except:
         return d # Not a dataclass field
-    
+
+@dataclass
+class HessianConfig(MetaInterface):
+    batch_size : int = 2
+    devset_size : int = 32  # 3072
+    iter_size : int = 16
+    ctx_size : int = 8192
+    chunk_size : int = 256
+    base_model : str = None
+    act_save_rate : int = 50
+    sample_proc : int = 4
+    scratch_path: str = None
+    save_activations: bool = False
+    save_path: str = None
+
 @dataclass
 class VPTQConfig(MetaInterface):
     # model_name: str = dataclasses.field(default="meta-llama/Meta-Llama-3.1-8B-Instruct")
@@ -107,12 +121,15 @@ class VPTQConfig(MetaInterface):
     inv_hessian_path :str = None
     ktol : float =  1e-5
     kiter :int = 100
+
+    hessian_config: HessianConfig = dataclasses.field(default_factory=HessianConfig)
     version: str = ""
     quant_method: str = "vptq"
 
     @classmethod
     def from_dict(cls, config: dict):
         return dataclass_from_dict(cls, config)
+
 
 
 def build_config(args):
