@@ -20,7 +20,7 @@ jobs:
       run:
         shell: pwsh
     env:
-      PYPI_CUDA_VERSION: "12.4.1"  
+      PYPI_CUDA_VERSION: "12.1.1"  
       CUDA_VERSION: ${{ matrix.cuda }}
     
     steps:
