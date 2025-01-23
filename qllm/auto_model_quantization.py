@@ -23,19 +23,15 @@ class AutoModelQuantization(object):
         self.quant_layers = [torch.nn.Linear]
         self.tokenizer = None
 
-    def get_torch_model(self, model_name_or_path):
+    def from_pretrained(self, model_name_or_path):
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(
             model_name_or_path, use_fast=True, trust_remote_code=True)
         attn_implementation = "flash_attention_2" if os.getenv('USE_FLASH_ATTN', "0")=="1" else None
         return AutoQuantizedModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True,
-        attn_implementation=attn_implementation, torch_dtype="auto")
+        attn_implementation=attn_implementation)
 
     def get_datasets(self, tokenizer, dataset, nsamples, seed):
         return get_sample_datas_for_quantization(tokenizer, dataset, nsamples, seed)
-
-    def __load_quant(self, quant_model_name_or_path):
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(quant_model_name_or_path, use_fast=True, trust_remote_code=True)
-        return AutoQuantizedModelForCausalLM.from_quantized(quant_model_name_or_path, trust_remote_code=True)
 
     # you shouldn't rewrite this function
     @torch.no_grad()
@@ -174,7 +170,7 @@ class AutoModelQuantization(object):
         if not isinstance(self, AutoModelQuantization):
             raise ValueError("api_quantize should be called by AutoModelQuantization instance")
         if isinstance(model_or_model_path, str):
-            model = self.get_torch_model(model_or_model_path)
+            model = self.from_pretrained(model_or_model_path)
         else:
             model = model_or_model_path
             self.tokenizer = tokenizer
@@ -214,18 +210,14 @@ class AutoModelQuantization(object):
         if args.tokenizer == "":
             args.tokenizer = args.load if args.load else args.model
 
-        if args.load:
-            if args.model != "":
-                logger.warn(
-                    f"--model={args.model} will be ignored when --load is specified")
-            model = self.__load_quant(args.load)
-            model.eval()
-        elif args.model:
-            model = self.get_torch_model(args.model)
-            model.eval()
-        else:
+        if args.load and args.model:
+            logger.warning(
+                f"--model={args.model} will be ignored when --load is specified")
+        elif not args.load and not args.model:
             raise ValueError("either --model or --load must be specified. \
 Please run with `-h` to refer the usage.")
+        model = self.from_pretrained(args.load)
+        model.eval()
 
         if not args.load and args.wbits < 16:
             if args.quant_method in ["hqq", "vptq"]:

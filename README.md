@@ -11,26 +11,27 @@
     </a>
 </p>
 
-KeyWords **Quantization**, **GPTQ,AWQ, HQQ**, **ONNX, ONNXRuntime**, **VLLM**
+KeyWords **Quantization**, **GPTQ,AWQ, HQQ, VPTQ**, **ONNX, ONNXRuntime**, **VLLM**
 
 <font size=5>
-<center>Quantize all LLMs in HuggingFace/Transformers with GPTQ/AWQ/HQQ in mixed bits(2-8bit), and export to onnx model</center>
+<center>Quantize all LLMs in HuggingFace/Transformers with GPTQ/AWQ/HQQ/VPTQ in mixed bits(2-8bit), and export to onnx model</center>
 </font>
 <br><br>
 QLLM is a out-of-box quantization toolbox for large language models, It is designed to be a auto-quantization framework which takes layer by layer for any LLMs. It can also be used to export quantized model to onnx with only one args `--export_onnx ./onnx_model`, and inference with onnxruntime.
-Besides, model quantized by different quantization method (GPTQ/AWQ/HQQ) can be loaded from huggingface/transformers and transfor to each other without extra effort. 
+Besides, model quantized by different quantization method (GPTQ/AWQ/HQQ/VPTQ) can be loaded from huggingface/transformers and transfor to each other without extra effort. 
 
 We alread supported 
 - [x] GPTQ quantization 
 - [x] AWQ quantization
 - [x] HQQ quantization
+- [x] VPTQ quantization
 
 
 Features:
 - [x] GPTQ supports all LLM models in huggingface/transformers, it will automatically detect the model type and quantize it.
 - [x] We support to quantize model by 2-8 bits, and support to quantize model with different quantization bits for different layers.
 - [x] Auto promoting bits/group-size for better accuracy
-- [x] Export to ONNX model, Running by OnnxRuntime 
+- [x] Export to ONNX model, inference by OnnxRuntime 
 
 *Latest News* 🔥
 - [2024/03] ONNX Models export API
@@ -38,23 +39,23 @@ Features:
 - [2023/12] The first PyPi package released 
 
 ## Installation
-Easy to install qllm from PyPi [cu121]
+Easy to install qllm from PyPi [cu124]
 
 `pip install qllm`
 
 
-Install from release package, CUDA-118/121 is supported.
-[py38, py39, py310] https://github.com/wejoncy/QLLM/releases
+Install from release package, CUDA-124 is supported.
+[py310,py311,py312] https://github.com/wejoncy/QLLM/releases
 
 Build from Source
 
 **Please set ENV EXCLUDE_EXTENTION_FOR_FAST_BUILD=1 for fast build**
 
-If you are using CUDA-121
+If you are using CUDA-124
 ```
 pip install git+https://github.com/wejoncy/QLLM.git --no-build-isolation
 ```
-OR CUDA-118/117
+OR CUDA-118/121
 ```
 git clone https://github.com/wejoncy/QLLM.git
 cd QLLM
@@ -182,14 +183,14 @@ python -m qllm --model  meta-llama/Llama-2-7b-chat-hf  --quant_method=gptq  --da
 
 ## use QLLM with API
 ```python
-from qllm import AutoModelQuantization
+from qllm.auto_model_quantization import AutoModelQuantization
 
 quantizer = AutoModelQuantization()
 q_model = quantizer.api_quantize(model_or_model_path='meta-llama/Llama-2-7b-hf', method='gptq', wbits=4, groupsize=128)
 ```
 OR 
 ```python
-from qllm import AutoModelQuantization
+from qllm.auto_model_quantization import AutoModelQuantization
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf", use_fast=True, trust_remote_code=True)
@@ -221,3 +222,4 @@ windows cmd
 [AutoAWQ](https://github.com/casper-hansen/AutoAWQ).
 
 [HQQ](https://github.com/mobiusml/hqq)
+[VPTQ](https://github.com/microsoft/VPTQ)

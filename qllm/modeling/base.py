@@ -173,11 +173,14 @@ class AutoQuantizedModelForCausalLM:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading model from {pretrained_model_name_or_path}")
         cls.disable_double_init()
-        trust_remote_code = kwargs.pop("trust_remote_code", False)
-        attn_implementation = kwargs.pop("attn_implementation", None)
+        trust_remote_code = kwargs.get("trust_remote_code", False)
+        attn_implementation = kwargs.get("attn_implementation", None)
         auto_conf = transformers.AutoConfig.from_pretrained(
             pretrained_model_name_or_path, trust_remote_code=trust_remote_code
         )
+        if "quantization_config" in auto_conf:
+            return cls.from_quantized(pretrained_model_name_or_path, **kwargs)
+
         torch_dtype = kwargs.pop("torch_dtype", auto_conf.torch_dtype)
 
         llm = AutoModelForCausalLM.from_pretrained(
@@ -197,17 +200,11 @@ class AutoQuantizedModelForCausalLM:
             cls,
             model_name_or_path: Optional[str],
             device_map: Optional[Union[str, Dict[str, Union[int, str]]]] = "auto",
-            max_memory: Optional[dict] = None,
-            device: Optional[Union[str, int]] = "cuda",
-            low_cpu_mem_usage: bool = True,
-            use_triton: bool = False,
             torch_dtype: Optional[torch.dtype] = None,
-            use_safetensors: bool = True,
             trust_remote_code: bool = False,
-            warmup_triton: bool = False,
             **kwargs) -> AutoModelForCausalLM:
 
-        cls.disable_double_init()
+        # cls.disable_double_init()
 
         if isinstance(device_map, str):
             assert device_map in ["auto", "balanced", "balanced_low_0", "sequential"], \
