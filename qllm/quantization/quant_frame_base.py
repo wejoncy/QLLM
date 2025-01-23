@@ -103,6 +103,12 @@ class QuantFrameBase:
         inps = torch.cat(inps, dim=0) if inps else torch.tensor([])
         return inps, attention_layers, layer_input_args
 
+    def hook_before_qlayer(self, layer_id, config):
+        mix_qlayer_conf = {}
+        if str(layer_id + 1) in mix_qlayer_conf:
+            layer_key = str(layer_id + 1)
+            self.quant_config.wbits = mix_qlayer_conf[layer_key].get("wbits", self.quant_config.wbits)
+            self.quant_config.groupsize = mix_qlayer_conf[layer_key].get("groupsize", self.quant_config.groupsize)
 
     def do_quantize(self, model, dataloader, model_prefix, dev):
         raise NotImplementedError
