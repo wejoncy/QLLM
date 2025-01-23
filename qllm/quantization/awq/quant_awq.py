@@ -129,7 +129,6 @@ class AWQQuant(QuantFrameBase):
             layer = layer.cpu()
             # Haotian: check activation replacement
             clear_memory(input_feat)
-            break
         # real_quantize_model_weight(attention_layers, self.quant_config.to_meta.bits, self.quant_config)
 
         return quantizers
