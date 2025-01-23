@@ -6,7 +6,7 @@ from .args_config import FakeArgs
 
 def define_basic_args():
     parser = argparse.ArgumentParser(description="""
-A general tool to quantize LLMs with the GPTQ/AWQ/HQQ quant_method.
+A general tool to quantize LLMs with the GPTQ/AWQ/HQQ/VPTQ quant_method.
 you can easily quantize your model and save to checkpoint, which is compatiable with \
 [vLLM](https://github.com/vllm-project/vllm).
 You can also test the quantized model with a conversation plugin.
