@@ -93,6 +93,8 @@ def general_unpack_on_row(pack_tensor, ori_int32_tensor, bits: int):
 
 
 class CompressWeight(object):
+    def __init__(self, dtype=torch.float16):
+        self.dtype = dtype
     def _quant_weight(self, weight, scales, zeros, g_idx, need_transpose=True):
         scale_zeros = zeros * scales
         scale_mat = scales[g_idx]
@@ -104,13 +106,13 @@ class CompressWeight(object):
         scale_zeros = zeros * scales
         scale_mat = scales[g_idx]
         scale_zeros_mat = scale_zeros[g_idx]
-        qdq_weight_T = intweight * scale_mat - scale_zeros_mat.half()
+        qdq_weight_T = intweight * scale_mat - scale_zeros_mat.to(self.dtype)
 
         return qdq_weight_T
 
     def weight_qdq(self, linear, scales, zeros, g_idx=None):
         if linear.bias is not None:
-            self.bias = linear.bias.clone().half()
+            self.bias = linear.bias.clone().to(self.dtype)
         g_idx = self.g_idx.to(scales.device) if g_idx is None else g_idx
         weight = linear.weight.data
         q_weight = self._quant_weight(weight.T, scales.T, zeros.T, g_idx).T
@@ -188,7 +190,7 @@ class CompressWeight(object):
             assert (fw == self.orig_fp_weight.to(device)).all()
 
     def accelerate_pack_on_device(self, layer_weight, scales, zeros, g_idx=None, device="cuda"):
-        self.scales = scales.T.contiguous().half().to("cpu", non_blocking=True)
+        self.scales = scales.T.contiguous().to(self.dtype).to("cpu", non_blocking=True)
         if g_idx is None:
             g_idx = self.g_idx.to(device) if g_idx is None else g_idx
         else:

@@ -87,7 +87,8 @@ class AWQQuant(QuantFrameBase):
         groupsize = self.quant_config.to_meta.group_size
         for name, linear_layer in named_linears.items():
             # NOTE: small regression in perplexity if linear layer uses .cpu().float()
-            linear_layer = linear_layer.cuda().half()
+            # NOTE: use the original dtype of the model
+            linear_layer = linear_layer.cuda()
 
             linear_layer.weight.data, scales, zeros = pseudo_quantize_tensor(
                 linear_layer.weight.data,
@@ -128,6 +129,7 @@ class AWQQuant(QuantFrameBase):
             layer = layer.cpu()
             # Haotian: check activation replacement
             clear_memory(input_feat)
+            break
         # real_quantize_model_weight(attention_layers, self.quant_config.to_meta.bits, self.quant_config)
 
         return quantizers

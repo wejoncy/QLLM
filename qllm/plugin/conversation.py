@@ -3,7 +3,7 @@ from .chatcli import chat_loop, generate
 
 
 def loop_in_chat_completion(tokenizer, llm:nn.Module):
-    llm = llm.cuda().half()
+    llm = llm.cuda()
 
     chat_loop(
         llm,

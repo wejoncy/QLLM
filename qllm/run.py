@@ -22,7 +22,7 @@ A typical usage is:
     parser.add_argument('--quant_method', type=str, default=default_args.quant_method,
                         choices=["gptq", "awq", "hqq", "vptq"], help='the quantization quant_method')
     parser.add_argument('--model', type=str, default="",
-                        help='float/float16 model to load, such as [mosaicml/mpt-7b]')
+                        help='float/float16/bfloat16 model to load, such as [mosaicml/mpt-7b]')
     parser.add_argument('--tokenizer', type=str, default="", help='default same as [model]')
     parser.add_argument('--dataset', type=str, default=default_args.dataset,
                         choices=['wikitext2', 'ptb', 'c4', 'ptb-new', 'c4-new', "pileval"], help='Where to extract calibration data from.')

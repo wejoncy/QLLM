@@ -26,11 +26,19 @@ def calculate_zeros_width(in_features, group_size=128, pack_num=8):
     base_width = make_divisible(base_width, size_multiplier) * size_multiplier
     return base_width
 
+def auto_cast(*args):
+    out = []
+    for arg in args:
+        if isinstance(arg, torch.Tensor) and arg.dtype == torch.bfloat16:
+            out.append(arg.to(torch.float16))
+        else:
+            out.append(arg)
+    return tuple(out)
 
 class WQLinear_GEMM(nn.Module, CompressWeight):
-    def __init__(self, w_bit, group_size, in_features, out_features, bias):
+    def __init__(self, w_bit, group_size, in_features, out_features, bias, dtype=None):
         super().__init__()
-
+        self.dtype = torch.get_default_dtype() if dtype is None else dtype
         if w_bit not in [4]:
             raise NotImplementedError("Only 4-bit are supported for now.")
 
@@ -53,9 +61,9 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
         self.register_buffer('qzeros', torch.zeros((in_features // self.group_size,
                              out_features // (32 // self.w_bit)), dtype=torch.int32))
         self.register_buffer('scales', torch.zeros(
-            (in_features // self.group_size, out_features), dtype=torch.float16))
+            (in_features // self.group_size, out_features), dtype=self.dtype))
         if bias:
-            self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16))
+            self.register_buffer("bias", torch.zeros((out_features), dtype=self.dtype))
         else:
             self.bias = None
 
@@ -134,7 +142,8 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.outfeatures, )
         out = awq_inference_engine.gemm_forward_cuda(
-            x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8)
+            *auto_cast(x.reshape(-1, x.shape[-1]), self.qweight, self.scales, self.qzeros, 8))
+        out = out.to(x.dtype)
         out = out + self.bias if self.bias is not None else out
         return out.reshape(out_shape)
 
@@ -145,8 +154,9 @@ class WQLinear_GEMM(nn.Module, CompressWeight):
 
 
 class WQLinear_GEMV(nn.Module):
-    def __init__(self, w_bit, group_size, in_features, out_features, bias):
+    def __init__(self, w_bit, group_size, in_features, out_features, bias, dtype=None):
         super().__init__()
+        dtype = torch.get_default_dtype() if dtype is None else dtype
 
         if w_bit not in [4]:
             raise NotImplementedError("Only 4-bit are supported for now.")
@@ -168,9 +178,9 @@ class WQLinear_GEMV(nn.Module):
         self.register_buffer('qzeros', torch.zeros((out_features, calculate_zeros_width(
             in_features, self.group_size)), dtype=torch.int32, device=dev))
         self.register_buffer('scales', torch.zeros((out_features, calculate_zeros_width(
-            in_features, self.group_size) * pack_num), dtype=torch.float16, device=dev))
+            in_features, self.group_size) * pack_num), dtype=dtype, device=dev))
         if bias:
-            self.register_buffer('bias', torch.zeros((out_features), dtype=torch.float16, device=dev))
+            self.register_buffer('bias', torch.zeros((out_features), dtype=dtype, device=dev))
         else:
             self.bias = None
 
@@ -194,7 +204,7 @@ class WQLinear_GEMV(nn.Module):
         qscales[:, :scales.shape[1]] = scales
         awq_linear.scales = qscales
         if linear.bias is not None:
-            awq_linear.bias = linear.bias.clone().half()
+            awq_linear.bias = linear.bias.clone().to(qscales.dtype)
 
         intweight = []
         for idx in range(awq_linear.in_features):

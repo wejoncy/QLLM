@@ -112,7 +112,8 @@ class GPTQ:
             quantizer = InternalGPTQQuantizer()
             quantizer.configure(8, perchannel=False, sym=True, mse=False)
             quantizer.find_params(self.inp1)
-            q_in = quantizer.quantize(self.inp1).type(torch.float16)
+            dtype = next(iter(self.layer.parameters())).dtype
+            q_in = quantizer.quantize(self.inp1).type(dtype)
             q_out = self.layer(q_in)
 
             # get kinds of SNR
