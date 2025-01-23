@@ -77,7 +77,7 @@ jobs:
         set -x
         MAX_JOBS=2 python -m build
     - name: upload wheel artifacts   
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheel-${{ matrix.python-version }}
         path: dist/*.whl

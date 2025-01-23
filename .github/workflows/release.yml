@@ -91,9 +91,9 @@ jobs:
         env:
           PLAT_ARG: ${{ contains(runner.os, 'Linux') && '--plat-name manylinux2014_x86_64' || '--plat-name win_amd64' }}
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: 'wheels'
+          name: 'wheels_${{runner.os}}_${{matrix.pyver}}_${{matrix.cuda}}'
           path: ./dist/*.whl
           overwrite: true
 
@@ -122,9 +122,10 @@ jobs:
           script: |	
             const script = require('.github/workflows/scripts/github_create_release.js')	
             await script(github, context, core)
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: 'wheels'
+          pattern: wheels_*
+          merge-multiple: true
           path: ./dist/
       - name: Upload Assets
         uses: shogo82148/actions-upload-release-asset@v1
