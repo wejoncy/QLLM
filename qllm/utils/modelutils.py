@@ -55,14 +55,14 @@ def select_quant_linear(pack_mode: str, wbits:int, quant_method:str):
 
     if quant_method == "vptq":
         target_layer = VQuantLinear
-    elif pack_mode == "GEMM" or (pack_mode == "AUTO" and is_the_machine_support_awq_engine(wbits)):
-        target_layer = WQLinear_GEMM
     elif pack_mode == "ORT":
         target_layer = QuantLinearORT
     elif quant_method == "hqq":
         target_layer = QuantLinearHQQ
     elif pack_mode == "MARLIN":
         target_layer = QuantLinearMarlin
+    elif pack_mode == "GEMM" or (pack_mode == "AUTO" and is_the_machine_support_awq_engine(wbits)):
+        target_layer = WQLinear_GEMM
     else:
         target_layer = QuantLinearGPTQ
     return target_layer
@@ -159,6 +159,7 @@ def append_str_prefix(x, prefix):
 
 
 def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='', target_layer=None):
+    dtype = next(iter(module.parameters())).dtype
     for module_name, sub_module in tqdm.tqdm(module.named_modules(), total=len(list(module.named_modules())),
                     desc="Replacing linear layers..."):
         if module_name in replaced_names:
@@ -167,7 +168,9 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
                 bits, groupsize = quant_info['wbits'], quant_info['groupsize']
             else:
                 bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
-            new_module = target_layer(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None)
+            new_module = target_layer(
+                bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None, dtype=dtype
+            )
             new_module.bias = tmp.bias.data if tmp.bias is not None else None
             set_op_by_name(module, module_name, new_module)
     return        

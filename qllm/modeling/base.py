@@ -175,21 +175,10 @@ class AutoQuantizedModelForCausalLM:
         cls.disable_double_init()
         trust_remote_code = kwargs.pop("trust_remote_code", False)
         attn_implementation = kwargs.pop("attn_implementation", None)
-        torch_dtype = kwargs.pop("torch_dtype", torch.float16)
-
-        # with accelerate.init_empty_weights():
-        #     auto_conf = transformers.AutoConfig.from_pretrained(
-        #         pretrained_model_name_or_path, trust_remote_code=trust_remote_code)
-        #     model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code)
-        # llm = accelerate.load_checkpoint_and_dispatch(
-        #     model,
-        #     checkpoint=pretrained_model_name_or_path,
-        #     device_map="auto",
-        #     max_memory={0: 1 * 1024 * 1024 * 1024, "cpu": 5 * 1024 * 1024 * 1024},
-        #     dtype=torch.float16,
-        #     no_split_module_classes=get_no_split_layer_type_name(model),
-        #     offload_folder="/tmp/a2",
-        # )
+        auto_conf = transformers.AutoConfig.from_pretrained(
+            pretrained_model_name_or_path, trust_remote_code=trust_remote_code
+        )
+        torch_dtype = kwargs.pop("torch_dtype", auto_conf.torch_dtype)
 
         llm = AutoModelForCausalLM.from_pretrained(
             pretrained_model_name_or_path,
@@ -212,7 +201,7 @@ class AutoQuantizedModelForCausalLM:
             device: Optional[Union[str, int]] = "cuda",
             low_cpu_mem_usage: bool = True,
             use_triton: bool = False,
-            torch_dtype: Optional[torch.dtype] = torch.float16,
+            torch_dtype: Optional[torch.dtype] = None,
             use_safetensors: bool = True,
             trust_remote_code: bool = False,
             warmup_triton: bool = False,
@@ -227,14 +216,15 @@ class AutoQuantizedModelForCausalLM:
         if model_name_or_path is None:
             raise ValueError("model_name_or_path must be specified.")
         logger.info(f"loading quantized model from {model_name_or_path}")
+        auto_conf = transformers.AutoConfig.from_pretrained(
+            model_name_or_path, trust_remote_code=trust_remote_code)
+        torch_dtype = torch_dtype if torch_dtype is not None else auto_conf.torch_dtype
         init_contexts = [
             transformers.modeling_utils.no_init_weights(),
             # no_init_weights(),
             replace_default_dtype(torch_dtype),
             # accelerate.init_empty_weights(include_buffers=False)
         ]
-        auto_conf = transformers.AutoConfig.from_pretrained(
-            model_name_or_path, trust_remote_code=trust_remote_code)
         with transformers.utils.generic.ContextManagers(init_contexts):
             model = AutoModelForCausalLM.from_config(auto_conf, trust_remote_code=trust_remote_code)
         # device_map = accelerate.infer_auto_device_map(
@@ -271,7 +261,7 @@ class AutoQuantizedModelForCausalLM:
             model, layers, quant_config.quant_config_by_op, target_layer=target_layer)
         torch.set_default_device("cpu")
         if quant_config.quant_method == "awq":
-            from ..quantization.quant_awq import scale_activations
+            from ..quantization.awq.quant_awq import scale_activations
             scale_activations(model)
         del layers
         model.tie_weights()  # works with init_empty_weights and load_checkpoint_and_dispatch

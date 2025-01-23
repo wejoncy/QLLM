@@ -83,8 +83,9 @@ def dequantize_blockwise_4bits(quant_values, scale, zero_point, g_idx, rows, col
 
 
 class QuantLinearORT(nn.Module, CompressWeight):
-    def __init__(self, bits, groupsize, infeatures, outfeatures, bias):
+    def __init__(self, bits, groupsize, infeatures, outfeatures, bias, dtype=None):
         super().__init__()
+        self.dtype = torch.get_default_dtype() if dtype is None else dtype
         if bits not in [2, 3, 4, 5, 6, 7, 8]:
             raise NotImplementedError("Only 2,4,5,6,7,8 bits are supported.")
         self.infeatures = infeatures
@@ -104,12 +105,10 @@ class QuantLinearORT(nn.Module, CompressWeight):
             "qzeros",
             torch.zeros((q_rows+(q_rows&1)) * (outfeatures // 8 * self.bits), dtype=torch.uint8),
         )
-        self.register_buffer(
-            "scales", torch.zeros((math.ceil(infeatures / self.groupsize) * outfeatures), dtype=torch.float16)
-        )
+        self.register_buffer("scales", torch.zeros((math.ceil(infeatures / self.groupsize) * outfeatures), dtype=self.dtype))
         self.register_buffer("g_idx", torch.tensor([i // self.groupsize for i in range(infeatures)], dtype=torch.int32))
         if bias:
-            self.register_buffer("bias", torch.zeros((outfeatures), dtype=torch.float16))
+            self.register_buffer("bias", torch.zeros((outfeatures), dtype=self.dtype))
         else:
             self.bias = None
 

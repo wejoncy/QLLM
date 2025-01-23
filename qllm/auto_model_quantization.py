@@ -128,7 +128,14 @@ class AutoModelQuantization(object):
                 desc=f"repacking model from pack_mode=`{old_pack_mode}` to `{new_pack_mode}`"):
             fp16_weight, scales, zeros = qlayer.unpack()
             qlayer.weight = fp16_weight
-            new_module = target_layer(qlayer.bits, qlayer.groupsize, qlayer.infeatures, qlayer.outfeatures, qlayer.bias is not None)
+            new_module = target_layer(
+                qlayer.bits,
+                qlayer.groupsize,
+                qlayer.infeatures,
+                qlayer.outfeatures,
+                qlayer.bias is not None,
+                dtype=qlayer.weight.dtype,
+        )
             new_module.bias = qlayer.bias if qlayer.bias is not None else None
             set_op_by_name(model, module_name, new_module)
             new_module.pack(qlayer, scales.T, zeros.T, qlayer.g_idx)

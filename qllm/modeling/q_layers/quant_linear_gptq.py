@@ -45,7 +45,7 @@ def DequantizeLinearBlockWise(qweight, scales, qzeros, groupsize, bits, in_featu
     else:
         scale_zeros = zeros * scales
         weight = weight.reshape(-1, groupsize, weight.shape[-1])
-        weight = (scales * weight - scale_zeros.half())
+        weight = (scales * weight - scale_zeros.to(scales.dtype))
 
     # weight = (scales * (weight - zeros))
     weight = weight.reshape(-1, weight.shape[2])
@@ -55,7 +55,7 @@ def DequantizeLinearBlockWise(qweight, scales, qzeros, groupsize, bits, in_featu
 class QuantLinearTorchFunction(torch.autograd.Function):
     @staticmethod
     def symbolic(g, inputs, qweight, scales, qzeros, groupsize, bits, in_features, g_idx):
-        bias = g.op("Constant", value_t=torch.tensor([], dtype=torch.float16))
+        # bias = g.op("Constant", value_t=torch.tensor([], dtype=torch.float16))
         g_idx = g.op("Constant", value_t=torch.tensor([], dtype=torch.int32)) if g_idx is None else g_idx
         use_gemm_op = True
         if use_gemm_op:
@@ -91,10 +91,11 @@ def QuantLinearTorchFunction_forward(input, qweight, scales, qzeros, g_idx, bits
 
 class QuantLinearGPTQ(nn.Module, CompressWeight):
 
-    def __init__(self, bits, groupsize, infeatures, outfeatures, bias):
+    def __init__(self, bits, groupsize, infeatures, outfeatures, bias, dtype=None):
         super().__init__()
         if bits not in [2, 3, 4, 5, 6, 7, 8]:
             raise NotImplementedError("Only 2,4,5,6,7,8 bits are supported.")
+        self.dtype = torch.get_default_dtype() if dtype is None else dtype
         self.infeatures = infeatures
         self.outfeatures = outfeatures
         self.bits = bits
@@ -108,10 +109,10 @@ class QuantLinearGPTQ(nn.Module, CompressWeight):
         self.register_buffer('qzeros', torch.zeros((math.ceil(infeatures / self.groupsize),
                              outfeatures // 32 * self.bits), dtype=torch.int32))
         self.register_buffer('scales', torch.zeros(
-            (math.ceil(infeatures / self.groupsize), outfeatures), dtype=torch.float16))
+            (math.ceil(infeatures / self.groupsize), outfeatures), dtype=self.dtype))
         self.register_buffer('g_idx', torch.tensor([i // self.groupsize for i in range(infeatures)], dtype=torch.int32))
         if bias:
-            self.register_buffer('bias', torch.zeros((outfeatures), dtype=torch.float16))
+            self.register_buffer("bias", torch.zeros((outfeatures), dtype=self.dtype))
         else:
             self.bias = None
 
