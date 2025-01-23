@@ -98,7 +98,7 @@ jobs:
           env:
             PLAT_ARG: ${{ contains(runner.os, 'Linux') && '--plat-name manylinux2014_x86_64' || '--plat-name win_amd64' }}
 
-        - uses: actions/upload-artifact@v3
+        - uses: actions/upload-artifact@v4
           with:
-            name: 'wheels'
+            name: wheel-${{ matrix.os }}
             path: ./dist/*.whl
