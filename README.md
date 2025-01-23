@@ -222,4 +222,5 @@ windows cmd
 [AutoAWQ](https://github.com/casper-hansen/AutoAWQ).
 
 [HQQ](https://github.com/mobiusml/hqq)
+
 [VPTQ](https://github.com/microsoft/VPTQ)
