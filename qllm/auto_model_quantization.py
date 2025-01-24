@@ -211,12 +211,13 @@ class AutoModelQuantization(object):
             args.tokenizer = args.load if args.load else args.model
 
         if args.load and args.model:
+            args.model = ""
             logger.warning(
                 f"--model={args.model} will be ignored when --load is specified")
         elif not args.load and not args.model:
             raise ValueError("either --model or --load must be specified. \
 Please run with `-h` to refer the usage.")
-        model = self.from_pretrained(args.load)
+        model = self.from_pretrained(args.load + args.model)
         model.eval()
 
         if not args.load and args.wbits < 16:
