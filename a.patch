@@ -1,0 +1,286 @@
+diff --git a/qllm/quantization/quant_frame_base.py b/qllm/quantization/quant_frame_base.py
+index f4d7950..bdb93ed 100644
+--- a/qllm/quantization/quant_frame_base.py
++++ b/qllm/quantization/quant_frame_base.py
+@@ -1,6 +1,6 @@
+ import torch
+ from torch import nn
+-from ..utils import comm_utils
++from ..utils import comm_utils, find_layers
+ from ..utils.logger import get_logger
+ from ..utils.modelutils import get_op_by_name
+ 
+@@ -20,7 +20,10 @@ class QuantFrameBase:
+         print('Starting ...')
+         self.rec_use_cache = getattr(model.config, 'use_cache', False)
+ 
+-        model = model.cpu()
++        if hasattr(model, 'hf_device_map') and len(model.hf_device_map) > 1:
++            pass
++        else:
++            model = model.cpu()
+         model.config.use_cache = False
+         return model
+ 
+@@ -85,6 +88,8 @@ class QuantFrameBase:
+ 
+         attention_layers, pre_layers_of_attention = self.extract_layers(model, model_prefix)
+         for layer in pre_layers_of_attention:
++            if isinstance(layer, torch.nn.Embedding) and hasattr(layer, '_old_forward'):
++                layer._hf_hook.execution_device = dev
+             layer = layer.to(dev)
+         attention_layers[0] = attention_layers[0].to(dev)
+         attention_layers[0] = Catcher(attention_layers[0])
+diff --git a/qllm/quantization/vptq/qllm_hessian.py b/qllm/quantization/vptq/qllm_hessian.py
+index e67e2f7..9024988 100644
+--- a/qllm/quantization/vptq/qllm_hessian.py
++++ b/qllm/quantization/vptq/qllm_hessian.py
+@@ -14,6 +14,8 @@ from pathlib import Path
+ 
+ from ...utils import comm_utils
+ from ...utils.logger import get_logger
++from ...utils import find_layers
++
+ logger = get_logger("qllm")
+ 
+ def set_seed(seed):
+@@ -100,9 +102,14 @@ def sym_to_flat(A):
+     return A[idxs.unbind()]
+ 
+ @torch.inference_mode()
+-def forward_layer(layer, position_ids, attention_mask, layer_args, bs, device, in_q, out_q):
++def forward_layer(layer, position_ids, attention_mask, layer_args,level_linear_name, bs, device, in_q, out_q):
+     torch.set_grad_enabled(False)
+-    layer = layer.to(device)
++    is_meta_device = next(iter(layer.parameters())).device == torch.device("meta")
++    if is_meta_device:
++        execution_device = layer._hf_hook.execution_device
++        layer._hf_hook.execution_device = device
++    else:
++        layer = layer.to(device)
+     position_ids = position_ids.to(device)
+     attention_mask = attention_mask.to(device)
+     for k,v in layer_args.items():
+@@ -113,18 +120,22 @@ def forward_layer(layer, position_ids, attention_mask, layer_args, bs, device, i
+             i.to(device) for i in  layer_args['position_embeddings']])
+ 
+     # register hooks
+-    done_qkv = register_H_hook(layer.self_attn.q_proj, device)
+-    done_o = register_H_hook(layer.self_attn.o_proj, device)
+-    done_up = register_H_hook(layer.mlp.up_proj, device)
+-    done_down = register_H_hook(layer.mlp.down_proj, device)
++    linear_layers = find_layers(layer)
++    output_map = {}
++    for layer_name in set(level_linear_name.values()):
++        out = register_H_hook(linear_layers[layer_name], device)
++        output_map[layer_name] = out
+ 
+     while True:
+         dev_emb = in_q.get()
+         if dev_emb is None:
+-            layer = layer.cpu()
++            if not is_meta_device:
++                layer = layer.cpu()
+             position_ids = position_ids.cpu()
+             attention_mask = attention_mask.cpu()
+-            out_q.put({'qkv': done_qkv(), 'o': done_o(), 'up': done_up(), 'down': done_down()})
++            for k in output_map:
++                output_map[k] = output_map[k]()
++            out_q.put(output_map)
+             return
+ 
+         assert len(dev_emb) % bs == 0
+@@ -142,6 +153,8 @@ def forward_layer(layer, position_ids, attention_mask, layer_args, bs, device, i
+             # clear cache every 4 batches
+             if i % (bs * 4) == 0:
+                 torch.cuda.empty_cache()
++    if is_meta_device:
++        layer._hf_hook.execution_device = execution_device
+ 
+ 
+ def accumulate(in_q, ngpus, args, transformer_layer_index):
+@@ -179,7 +192,7 @@ def accumulate(in_q, ngpus, args, transformer_layer_index):
+     del Hs, mus, cts, out
+ 
+ 
+-def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
++def process_collect_hessian(args, embed_forward_func, model, tokenizer, level_linear_name, dev):
+     from .merge_hessian import main as merge_hessian
+     devset_size = args.devset_size
+     save_dir = args.save_path
+@@ -195,7 +208,7 @@ def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
+         args.devset_size = min(args.iter_size, devset_size + start)
+         args.save_path = save_dir + f'_{idx}'
+         args.seed = idx
+-        out = partion_collect_hessian(args, embed_forward_func, model, devset[start:start+args.devset_size], dev)
++        out = partion_collect_hessian(args, embed_forward_func, model, devset[start:start+args.devset_size], level_linear_name, dev)
+ 
+     free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
+     logger.info(f"free_gpu_memory: {free_gpu_memory/1024**3:.2f}GB, " +
+@@ -216,7 +229,7 @@ def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
+     inv_hessian(args)
+     return out
+ 
+-def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
++def partion_collect_hessian(args, embed_forward_func, model, devset, level_linear_name, dev):
+     save_path = Path(args.save_path)
+     save_path.mkdir(parents=True, exist_ok=True)
+     if (save_path/"done.txt").exists():
+@@ -238,7 +251,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
+         kwargs = dict(sliding_window=model.config.sliding_window)
+     attention_mask = _prepare_4d_causal_attention_mask(*kargs, **kwargs)
+     for transformer_layer_index in (pbar := tqdm.trange(len(attention_layers), 
+-            desc='processing hessian layers', leave=False)):
++            desc='processing layers', leave=False)):
+         pbar.set_postfix_str(f"used: {(torch.cuda.max_memory_allocated() ) / 1024**3:.2f}GB")
+         transformer_layer = attention_layers[transformer_layer_index]
+         # check that there are four layers, as expected
+@@ -261,23 +274,25 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
+                 copy.deepcopy(position_ids), 
+                 copy.deepcopy(attention_mask), 
+                 copy.deepcopy(layer_args), 
++                level_linear_name,
+                 args.batch_size, i, in_q, out_q)
+             forward_procs.append(p)
+ 
+         assert len(dev_emb) % args.batch_size == 0 and chunk_size % args.batch_size == 0
+         i = 0
+         while i < len(dev_emb):
+-            next = min(i + chunk_size, len(dev_emb))
+-            in_q.put(dev_emb[i:next])
+-            i = next
++            next_start = min(i + chunk_size, len(dev_emb))
++            in_q.put(dev_emb[i:next_start])
++            i = next_start
+ 
+         for _ in range(ngpus):
+             in_q.put(None)
+ 
+         for p in forward_procs:
+             p.result()
+-
+-        transformer_layer.cpu()
++        is_meta_device = next(iter(transformer_layer.parameters())).device == torch.device("meta")
++        if not is_meta_device:
++            transformer_layer.cpu()
+         accumulate_proc.result()
+ 
+         gc.collect()
+diff --git a/qllm/quantization/vptq/quant_vptq.py b/qllm/quantization/vptq/quant_vptq.py
+index 2b0c02d..d434cd4 100644
+--- a/qllm/quantization/vptq/quant_vptq.py
++++ b/qllm/quantization/vptq/quant_vptq.py
+@@ -25,23 +25,58 @@ class VPTQQuant(QuantFrameBase):
+     def set_tokenizer(self, tokenizer):
+         self.tokenizer = tokenizer
+ 
+-    def hijack_internal_block(self, vptq, subset, layer_block, inps, layer_kwargs):
+-        dev = next(layer_block.parameters()).device
+-
+-        def add_batch(name):
+-            def tmp(_, inp, out):
+-                vptq[name].add_batch(inp[0].data, out.data)
+-            return tmp
+-
+-        handles = []
+-        for name in subset:
+-            handles.append(subset[name].register_forward_hook(add_batch(name)))
+-        for j in range(len(inps)):
+-            _ = layer_block(inps[j].unsqueeze(0).to(dev), **layer_kwargs)
+-        for h in handles:
+-            h.remove()
++    def get_level_order_linear(self, model, model_prefix, dev):
++        level_map = {}
++        class Catcher(torch.nn.Module):
++            def __init__(self, module):
++                super().__init__()
++                self.module = module
++
++            def forward(self, *args, **kwargs):
++                raise ValueError
++        def get_func(name):
++            def fake_forward(hidden_state, *args, **kwargs):
++                nonlocal level_map
++                if len(level_map) == 0:
++                    hidden_state *= 0
++                key = str(hidden_state[..., 0].item())
++                if key not in level_map:
++                    level_map[key] = []
++                level_map[key].append(name)
++                return hidden_state + 1
++            fake_forward.layer_name = name
++            return fake_forward
++
++        def fake_forward_2(hidden_state, *args, **kwargs):
++            return hidden_state
++
++        attention_layers, pre_layers_of_attention = self.extract_layers(model, model_prefix)
++        old_forwards = {}
++        for name1,child in attention_layers[0].named_modules():
++            old_forwards[name1] = (child, child.forward)
++            if len(list(child.modules())) > 1:
++                continue
++            if not isinstance(child, torch.nn.Linear):
++                child.forward = fake_forward_2
++            else:
++                child.forward = get_func(name1)
++        attention_layers[1] = Catcher(attention_layers[1])
++        try:  # noqa:SIM105
++            model(torch.ones([1, 1], dtype=torch.int64).to(dev))
++        except ValueError:
++            pass
++        attention_layers[1] = attention_layers[1].module
++        for _, l_layer in old_forwards.items():
++            l_layer[0].forward = l_layer[1]
++        return level_map
+         
+     def collect_hessian_pre(self, model, model_prefix, dev):
++        level_linear_names = self.get_level_order_linear(model, model_prefix, "cpu")
++        for k in list(level_linear_names.keys()):
++            for sub_name in level_linear_names[k]:
++                level_linear_names[sub_name] = level_linear_names[k][0]
++            level_linear_names.pop(k)
++        self.name2hessian = level_linear_names
+         if self.quant_config.hessian_path is not None and self.quant_config.inv_hessian_path is not None:
+             logger.info("read cached Hessian data")
+             _, attention_layers, layer_input_args = self.hijack_block_inputs(model, [(torch.tensor((1, 1), dtype=torch.int64), )], model_prefix, "cpu")
+@@ -67,7 +102,7 @@ class VPTQQuant(QuantFrameBase):
+             return attention_layers, layer_input_args
+ 
+         logger.info("Collecting Hessian====ctx_size=%s, devset_size=%s", sample_args.ctx_size, sample_args.devset_size)
+-        output = process_collect_hessian(sample_args, embed_func, model, self.tokenizer, dev)
++        output = process_collect_hessian(sample_args, embed_func, model, self.tokenizer, level_linear_names, dev)
+         with open(Path(sample_args.save_path)/"done.txt", "w") as f:
+             f.write("done")
+         comm_utils.clear_memory()
+@@ -110,6 +145,7 @@ class VPTQQuant(QuantFrameBase):
+                 (layer, layer_idx),
+                 self.quant_config,
+                 self.quant_config,
++                name2hessian=self.name2hessian,
+                 dev=torch.device(f"cuda:{free_gpu_id}"),
+             )
+             future_task.gpu_idx = free_gpu_id
+@@ -152,7 +188,8 @@ class VPTQQuant(QuantFrameBase):
+                     attention_layers[layer_idx] = torch.load(quant_tmp / f"layer_{layer_idx}.pt", weights_only=False)
+                     continue
+                 attention_layers[layer_idx] = quantize_layer(
+-                    (attention_layers[layer_idx], layer_idx), self.quant_config, self.quant_config, dev=dev
++                    (attention_layers[layer_idx], layer_idx), self.quant_config, self.quant_config, 
++                    name2hessian=self.name2hessian, dev=dev
+                 )
+ 
+         config_for_layers = {k:v.init_args for k,v in  find_layers(model, [VQuantLinear]).items()}
+diff --git a/qllm/utils/modelutils.py b/qllm/utils/modelutils.py
+index 77a8e23..2966f5d 100644
+--- a/qllm/utils/modelutils.py
++++ b/qllm/utils/modelutils.py
+@@ -15,7 +15,7 @@ class ScaledLinear(nn.Linear):
+ 
+ 
+ def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):  # noqa:B006
+-    if type(module) in layers:
++    if layers is None or type(module) in layers:
+         return {name: module}
+     res = {}
+     for name1, child in module.named_children():

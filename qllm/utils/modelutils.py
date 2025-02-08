@@ -15,7 +15,7 @@ class ScaledLinear(nn.Linear):
 
 
 def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):  # noqa:B006
-    if type(module) in layers:
+    if layers is None or type(module) in layers:
         return {name: module}
     res = {}
     for name1, child in module.named_children():
