@@ -34,16 +34,17 @@ class VPTQQuant(QuantFrameBase):
 
             def forward(self, *args, **kwargs):
                 raise ValueError
-        def get_func(name):
+        def get_func(name, out_fetures):
             def fake_forward(hidden_state, *args, **kwargs):
                 nonlocal level_map
                 if len(level_map) == 0:
                     hidden_state *= 0
-                key = str(hidden_state[..., 0].item())
+                key = int(hidden_state[..., 0].item())
                 if key not in level_map:
                     level_map[key] = []
                 level_map[key].append(name)
-                return hidden_state + 1
+                out = torch.ones(hidden_state.shape[:-1]+(out_fetures,), device=hidden_state.device)
+                return out*key + 1
             fake_forward.layer_name = name
             return fake_forward
 
@@ -59,7 +60,7 @@ class VPTQQuant(QuantFrameBase):
             if not isinstance(child, torch.nn.Linear):
                 child.forward = fake_forward_2
             else:
-                child.forward = get_func(name1)
+                child.forward = get_func(name1, child.out_features)
         attention_layers[1] = Catcher(attention_layers[1])
         try:  # noqa:SIM105
             model(torch.ones([1, 1], dtype=torch.int64).to(dev))
