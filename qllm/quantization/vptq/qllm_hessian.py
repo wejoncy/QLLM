@@ -4,6 +4,7 @@ import os
 import tqdm
 import concurrent
 import queue as theading_queue
+import functools
 
 import torch
 import torch.cuda.streams
@@ -14,6 +15,8 @@ from pathlib import Path
 
 from ...utils import comm_utils
 from ...utils.logger import get_logger
+from ...utils import find_layers
+
 logger = get_logger("qllm")
 
 def set_seed(seed):
@@ -99,10 +102,32 @@ def sym_to_flat(A):
     idxs = torch.tril_indices(N, N, device=A.device)
     return A[idxs.unbind()]
 
+def offload_layer(enabled=True):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            layer = args[0]
+            device = kwargs.get("device")
+            hooked_by_hf = hasattr(layer, '_hf_hook')
+            if hooked_by_hf:
+                execution_device = layer._hf_hook.execution_device
+                layer._hf_hook.execution_device = device
+            else:
+                layer = layer.to(device)
+            result = func(*args, **kwargs)
+            if hooked_by_hf:
+                layer._hf_hook.execution_device = execution_device
+            else:
+                layer = layer.cpu()
+            return result
+        return wrapper
+    return decorator
+
+
 @torch.inference_mode()
-def forward_layer(layer, position_ids, attention_mask, layer_args, bs, device, in_q, out_q):
+@offload_layer()
+def forward_layer(layer, position_ids, attention_mask, layer_args,level_linear_name, bs, in_q, out_q, device=None):
     torch.set_grad_enabled(False)
-    layer = layer.to(device)
     position_ids = position_ids.to(device)
     attention_mask = attention_mask.to(device)
     for k,v in layer_args.items():
@@ -113,18 +138,18 @@ def forward_layer(layer, position_ids, attention_mask, layer_args, bs, device, i
             i.to(device) for i in  layer_args['position_embeddings']])
 
     # register hooks
-    done_qkv = register_H_hook(layer.self_attn.q_proj, device)
-    done_o = register_H_hook(layer.self_attn.o_proj, device)
-    done_up = register_H_hook(layer.mlp.up_proj, device)
-    done_down = register_H_hook(layer.mlp.down_proj, device)
+    linear_layers = find_layers(layer)
+    output_map = {}
+    for layer_name in set(level_linear_name.values()):
+        out = register_H_hook(linear_layers[layer_name], device)
+        output_map[layer_name] = out
 
     while True:
         dev_emb = in_q.get()
         if dev_emb is None:
-            layer = layer.cpu()
             position_ids = position_ids.cpu()
             attention_mask = attention_mask.cpu()
-            out_q.put({'qkv': done_qkv(), 'o': done_o(), 'up': done_up(), 'down': done_down()})
+            out_q.put({k: v() for k,v in output_map.items()})
             return
 
         assert len(dev_emb) % bs == 0
@@ -179,7 +204,7 @@ def accumulate(in_q, ngpus, args, transformer_layer_index):
     del Hs, mus, cts, out
 
 
-def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
+def process_collect_hessian(args, embed_forward_func, model, tokenizer, level_linear_name, dev):
     from .merge_hessian import main as merge_hessian
     devset_size = args.devset_size
     save_dir = args.save_path
@@ -195,7 +220,7 @@ def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
         args.devset_size = min(args.iter_size, devset_size + start)
         args.save_path = save_dir + f'_{idx}'
         args.seed = idx
-        out = partion_collect_hessian(args, embed_forward_func, model, devset[start:start+args.devset_size], dev)
+        out = partion_collect_hessian(args, embed_forward_func, model, devset[start:start+args.devset_size], level_linear_name, dev)
 
     free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
     logger.info(f"free_gpu_memory: {free_gpu_memory/1024**3:.2f}GB, " +
@@ -216,7 +241,7 @@ def process_collect_hessian(args, embed_forward_func, model, tokenizer, dev):
     inv_hessian(args)
     return out
 
-def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
+def partion_collect_hessian(args, embed_forward_func, model, devset, level_linear_name, dev):
     save_path = Path(args.save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     if (save_path/"done.txt").exists():
@@ -238,7 +263,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
         kwargs = dict(sliding_window=model.config.sliding_window)
     attention_mask = _prepare_4d_causal_attention_mask(*kargs, **kwargs)
     for transformer_layer_index in (pbar := tqdm.trange(len(attention_layers), 
-            desc='processing hessian layers', leave=False)):
+            desc='processing layers', leave=False)):
         pbar.set_postfix_str(f"used: {(torch.cuda.max_memory_allocated() ) / 1024**3:.2f}GB")
         transformer_layer = attention_layers[transformer_layer_index]
         # check that there are four layers, as expected
@@ -254,30 +279,32 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, dev):
         accumulate_proc = executor.submit(accumulate, out_q, ngpus, args, transformer_layer_index)
 
         forward_procs = []
-        for i in range(ngpus):
+        for dev_id in range(ngpus):
             p = executor.submit(
                 forward_layer,
                 copy.deepcopy(transformer_layer), 
                 copy.deepcopy(position_ids), 
                 copy.deepcopy(attention_mask), 
                 copy.deepcopy(layer_args), 
-                args.batch_size, i, in_q, out_q)
+                level_linear_name,
+                args.batch_size, in_q, out_q, device=dev_id)
             forward_procs.append(p)
 
         assert len(dev_emb) % args.batch_size == 0 and chunk_size % args.batch_size == 0
         i = 0
         while i < len(dev_emb):
-            next = min(i + chunk_size, len(dev_emb))
-            in_q.put(dev_emb[i:next])
-            i = next
+            next_start = min(i + chunk_size, len(dev_emb))
+            in_q.put(dev_emb[i:next_start])
+            i = next_start
 
         for _ in range(ngpus):
             in_q.put(None)
 
         for p in forward_procs:
             p.result()
-
-        transformer_layer.cpu()
+        is_meta_device = next(iter(transformer_layer.parameters())).device == torch.device("meta")
+        if not is_meta_device:
+            transformer_layer.cpu()
         accumulate_proc.result()
 
         gc.collect()

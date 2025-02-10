@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from ..utils import comm_utils
+from ..utils import comm_utils, find_layers
 from ..utils.logger import get_logger
 from ..utils.modelutils import get_op_by_name
 
@@ -20,7 +20,10 @@ class QuantFrameBase:
         print('Starting ...')
         self.rec_use_cache = getattr(model.config, 'use_cache', False)
 
-        model = model.cpu()
+        if hasattr(model, 'hf_device_map') and len(model.hf_device_map) > 1:
+            pass
+        else:
+            model = model.cpu()
         model.config.use_cache = False
         return model
 
@@ -85,6 +88,8 @@ class QuantFrameBase:
 
         attention_layers, pre_layers_of_attention = self.extract_layers(model, model_prefix)
         for layer in pre_layers_of_attention:
+            if isinstance(layer, torch.nn.Embedding) and hasattr(layer, '_old_forward'):
+                layer._hf_hook.execution_device = dev
             layer = layer.to(dev)
         attention_layers[0] = attention_layers[0].to(dev)
         attention_layers[0] = Catcher(attention_layers[0])
