@@ -4,6 +4,7 @@ import os
 import tqdm
 import concurrent
 import queue as theading_queue
+import functools
 
 import torch
 import torch.cuda.streams
@@ -101,15 +102,32 @@ def sym_to_flat(A):
     idxs = torch.tril_indices(N, N, device=A.device)
     return A[idxs.unbind()]
 
+def offload_layer(enabled=True):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            layer = args[0]
+            device = kwargs.get("device")
+            hooked_by_hf = hasattr(layer, '_hf_hook')
+            if hooked_by_hf:
+                execution_device = layer._hf_hook.execution_device
+                layer._hf_hook.execution_device = device
+            else:
+                layer = layer.to(device)
+            result = func(*args, **kwargs)
+            if hooked_by_hf:
+                layer._hf_hook.execution_device = execution_device
+            else:
+                layer = layer.cpu()
+            return result
+        return wrapper
+    return decorator
+
+
 @torch.inference_mode()
-def forward_layer(layer, position_ids, attention_mask, layer_args,level_linear_name, bs, device, in_q, out_q):
+@offload_layer()
+def forward_layer(layer, position_ids, attention_mask, layer_args,level_linear_name, bs, in_q, out_q, device=None):
     torch.set_grad_enabled(False)
-    is_meta_device = next(iter(layer.parameters())).device == torch.device("meta")
-    if is_meta_device:
-        execution_device = layer._hf_hook.execution_device
-        layer._hf_hook.execution_device = device
-    else:
-        layer = layer.to(device)
     position_ids = position_ids.to(device)
     attention_mask = attention_mask.to(device)
     for k,v in layer_args.items():
@@ -129,8 +147,6 @@ def forward_layer(layer, position_ids, attention_mask, layer_args,level_linear_n
     while True:
         dev_emb = in_q.get()
         if dev_emb is None:
-            if not is_meta_device:
-                layer = layer.cpu()
             position_ids = position_ids.cpu()
             attention_mask = attention_mask.cpu()
             for k in output_map:
@@ -153,8 +169,6 @@ def forward_layer(layer, position_ids, attention_mask, layer_args,level_linear_n
             # clear cache every 4 batches
             if i % (bs * 4) == 0:
                 torch.cuda.empty_cache()
-    if is_meta_device:
-        layer._hf_hook.execution_device = execution_device
 
 
 def accumulate(in_q, ngpus, args, transformer_layer_index):
@@ -267,7 +281,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, level_linea
         accumulate_proc = executor.submit(accumulate, out_q, ngpus, args, transformer_layer_index)
 
         forward_procs = []
-        for i in range(ngpus):
+        for dev_id in range(ngpus):
             p = executor.submit(
                 forward_layer,
                 copy.deepcopy(transformer_layer), 
@@ -275,7 +289,7 @@ def partion_collect_hessian(args, embed_forward_func, model, devset, level_linea
                 copy.deepcopy(attention_mask), 
                 copy.deepcopy(layer_args), 
                 level_linear_name,
-                args.batch_size, i, in_q, out_q)
+                args.batch_size, in_q, out_q, device=dev_id)
             forward_procs.append(p)
 
         assert len(dev_emb) % args.batch_size == 0 and chunk_size % args.batch_size == 0
