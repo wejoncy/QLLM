@@ -149,9 +149,7 @@ def forward_layer(layer, position_ids, attention_mask, layer_args,level_linear_n
         if dev_emb is None:
             position_ids = position_ids.cpu()
             attention_mask = attention_mask.cpu()
-            for k in output_map:
-                output_map[k] = output_map[k]()
-            out_q.put(output_map)
+            out_q.put({k, v() for k,v in output_map})
             return
 
         assert len(dev_emb) % bs == 0
