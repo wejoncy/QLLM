@@ -79,6 +79,7 @@ class VPTQQuant(QuantFrameBase):
                 level_linear_names[sub_name] = level_linear_names[k][0]
             level_linear_names.pop(k)
         self.name2hessian = level_linear_names
+        logger.info("linear arch:"+str(level_linear_names))
         if self.quant_config.hessian_path is not None and self.quant_config.inv_hessian_path is not None:
             logger.info("read cached Hessian data")
             _, attention_layers, layer_input_args = self.hijack_block_inputs(model, [(torch.tensor((1, 1), dtype=torch.int64), )], model_prefix, "cpu")
@@ -90,7 +91,7 @@ class VPTQQuant(QuantFrameBase):
         from .qllm_hessian import process_collect_hessian
         sample_args = self.quant_config.hessian_config
         sample_args.base_model = self.quant_config.model_name
-        sample_args.save_path = f"{self.quant_config.output_dir}/hessian_path/{sample_args.base_model}_{sample_args.devset_size}_{sample_args.ctx_size}"
+        sample_args.save_path = f"{self.quant_config.output_dir}/hessian_path/dataset_{sample_args.devset_size}_{sample_args.ctx_size}"
         
         self.quant_config.hessian_path = sample_args.save_path
         self.quant_config.inv_hessian_path = sample_args.save_path+"_inv"
