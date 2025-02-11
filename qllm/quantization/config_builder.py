@@ -147,5 +147,6 @@ def build_config(args):
         with open(args.quant_config, 'r') as fp:
             dict_config = json.load(fp)
         config = VPTQConfig.from_dict(dict_config)
+        config.model_name = args.load + args.model # one of them is empty                                                                                                                                           
 
     return config
