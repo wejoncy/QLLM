@@ -21,6 +21,7 @@ class VPTQQuant(QuantFrameBase):
         self.quant_config.output_dir = Path(self.quant_config.output_dir) / self.quant_config.model_name
         for k, v in self.quant_config.layer_config.to_dict().items():
             setattr(self.quant_config, k, v)
+        self.quant_cache_dir = Path(f"{self.quant_config.output_dir}/quant_cache")
 
     def set_tokenizer(self, tokenizer):
         self.tokenizer = tokenizer
@@ -89,7 +90,7 @@ class VPTQQuant(QuantFrameBase):
         from .qllm_hessian import process_collect_hessian
         sample_args = self.quant_config.hessian_config
         sample_args.base_model = self.quant_config.model_name
-        sample_args.save_path = f"./hessian_path/{sample_args.base_model}_{sample_args.devset_size}_{sample_args.ctx_size}"
+        sample_args.save_path = f"{self.quant_config.output_dir}/hessian_path/{sample_args.base_model}_{sample_args.devset_size}_{sample_args.ctx_size}"
         
         self.quant_config.hessian_path = sample_args.save_path
         self.quant_config.inv_hessian_path = sample_args.save_path+"_inv"
@@ -123,7 +124,6 @@ class VPTQQuant(QuantFrameBase):
 
         pbar = tqdm.tqdm(total=len(attention_layers), desc=f"running VPTQ on {num_gpus} GPUs")
         output_queue = theading_queue.Queue()
-        quant_tmp = Path("quant_tmp")
         for i in range(num_gpus):
             output_queue.put(i) # poison pill
         def fetch_next_task(future):
@@ -131,13 +131,13 @@ class VPTQQuant(QuantFrameBase):
             pbar.update(1)
             pbar.set_postfix_str(f'gpu memory: {torch.cuda.memory_allocated(future.gpu_idx)/1024**3:.2f}GB')
             output_queue.put(future.gpu_idx)
-            torch.save(future.result(), quant_tmp/f"layer_{future.layer_idx}.pt")
+            torch.save(future.result(), self.quant_cache_dir/f"layer_{future.layer_idx}.pt")
 
         for layer_idx,layer in enumerate(attention_layers):
-            if (quant_tmp/f"layer_{layer_idx}.pt").exists():
+            if (self.quant_cache_dir/f"layer_{layer_idx}.pt").exists():
                 import warnings
                 warnings.simplefilter(action='ignore', category=FutureWarning)
-                attention_layers[layer_idx] = torch.load(quant_tmp / f"layer_{layer_idx}.pt", weights_only=False)
+                attention_layers[layer_idx] = torch.load(self.quant_cache_dir / f"layer_{layer_idx}.pt", weights_only=False)
                 pbar.update(1)
                 continue
             free_gpu_id = output_queue.get()
@@ -178,15 +178,14 @@ class VPTQQuant(QuantFrameBase):
         vptq_quantizer = InternalVPTQQuantizer()
         quantize_layer = vptq_quantizer.quantize_layer
         quantizers = {}
-        quant_tmp = Path("quant_tmp")
-        quant_tmp.mkdir(exist_ok=True)
+        self.quant_cache_dir.mkdir(exist_ok=True)
 
         if num_gpus > 1:
             self.parallel_quantize(quantize_layer, attention_layers, num_gpus, dev)
         else:        
             for layer_idx in tqdm.trange((len(attention_layers)), desc="running VPTQ"):
-                if (quant_tmp/f"layer_{layer_idx}.pt").exists():
-                    attention_layers[layer_idx] = torch.load(quant_tmp / f"layer_{layer_idx}.pt", weights_only=False)
+                if (self.quant_cache_dir/f"layer_{layer_idx}.pt").exists():
+                    attention_layers[layer_idx] = torch.load(self.quant_cache_dir / f"layer_{layer_idx}.pt", weights_only=False)
                     continue
                 attention_layers[layer_idx] = quantize_layer(
                     (attention_layers[layer_idx], layer_idx), self.quant_config, self.quant_config, 
