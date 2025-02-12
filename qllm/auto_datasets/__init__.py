@@ -23,7 +23,7 @@ def get_sample_datas_for_quantization(tokenizer_or_path, dataset, nsamples, seed
     logger.info(f"loading dataset from {dataset}")
     if cache_dir.exists():
         logger.info(f"found cached dataloader in {cache_dir}")
-        dataloader = torch.load(cache_dir)
+        dataloader = torch.load(cache_dir, weights_only=True)
     else:
         dataloader, _ = utils.get_loaders(dataset, nsamples=nsamples, seed=seed, tokenizer=tokenizer_or_path, seqlen=seqlen)
         torch.save(dataloader, str(cache_dir))
