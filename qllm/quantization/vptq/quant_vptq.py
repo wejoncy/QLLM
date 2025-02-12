@@ -202,6 +202,7 @@ class VPTQQuant(QuantFrameBase):
                     (attention_layers[layer_idx], layer_idx), self.quant_config, self.quant_config, 
                     name2hessian=self.name2hessian, dev=dev
                 )
+                torch.save(attention_layers[layer_idx], self.quant_cache_dir / f"layer_{layer_idx}.pt")
 
         config_for_layers = {k:v.init_args for k,v in  find_layers(model, [VQuantLinear]).items()}
         MetaConf = type(
