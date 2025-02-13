@@ -318,7 +318,7 @@ class AutoQuantizedModelForCausalLM:
         return model
 
     @staticmethod
-    def save_pretrained(model, tokenizer, save_directory: Union[str, Path], pack_mode: str, repack_func, safe_serialization: bool = False):
+    def save_pretrained(model, tokenizer, save_directory: Union[str, Path], pack_mode: str, repack_func, safe_serialization: bool = True):
         quant_config_by_layer, quant_config = model.quant_config_by_layer, model.quant_config
         if pack_mode != quant_config.version and pack_mode != "AUTO":
             repack_func()
@@ -327,6 +327,6 @@ class AutoQuantizedModelForCausalLM:
         tokenizer is not None and tokenizer.save_pretrained(save_directory)
 
         with open(save_directory + "/quant_config_by_layer.json", 'w') as fp:
-            fp.write(json.dumps(quant_config_by_layer))
+            fp.write(json.dumps(quant_config_by_layer, indent=4))
         with open(save_directory + "/quantize_config.json", 'w') as fp:
-            fp.write(json.dumps(quant_config.to_dict()))
+            fp.write(json.dumps(quant_config.to_dict(), indent=4))

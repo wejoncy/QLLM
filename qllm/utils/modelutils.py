@@ -43,7 +43,6 @@ def gen_conditions(_wbits, _groupsize):
 
 def select_quant_linear(pack_mode: str, wbits:int, quant_method:str):
     from ..modeling.q_layers import QuantLinearGPTQ
-    from ..modeling.q_layers.quant_linear_vptq import VQuantLinear
     from ..modeling.q_layers.quant_linear_awq import WQLinear_GEMM
     from ..modeling.q_layers.ext_package_checker import is_the_machine_support_awq_engine
     from ..modeling.q_layers.quant_linear_onnxruntime import QuantLinearORT
@@ -54,7 +53,8 @@ def select_quant_linear(pack_mode: str, wbits:int, quant_method:str):
     quant_method = quant_method.lower()
 
     if quant_method == "vptq":
-        target_layer = VQuantLinear
+        import vptq
+        target_layer = vptq.VQuantLinear
     elif pack_mode == "ORT":
         target_layer = QuantLinearORT
     elif quant_method == "hqq":
@@ -166,12 +166,18 @@ def make_mixbits_quant_linear(module, replaced_names, quant_info: dict, name='',
             tmp = sub_module
             if "groupsize" in quant_info and 'wbits' in quant_info:
                 bits, groupsize = quant_info['wbits'], quant_info['groupsize']
-            else:
+            elif 'wbits' in quant_info[module_name] and 'groupsize' in quant_info[module_name]:
                 bits, groupsize = quant_info[module_name]['wbits'], quant_info[module_name]['groupsize']
-            new_module = target_layer(
-                bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None, dtype=dtype
-            )
-            new_module.bias = tmp.bias.data if tmp.bias is not None else None
+            else:
+                bits = None
+            if bits is None:
+                new_module = target_layer(**quant_info[module_name], dtype=dtype)
+                new_module.bias = tmp.bias if tmp.bias is not None else None
+            else:
+                new_module = target_layer(
+                    bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None, dtype=dtype
+                )
+                new_module.bias = tmp.bias.data if tmp.bias is not None else None
             set_op_by_name(module, module_name, new_module)
     return        
     #if isinstance(module, target_layer):
