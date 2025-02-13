@@ -84,7 +84,7 @@ class HessianConfig(MetaInterface):
 class VPTQLayerConfig(MetaInterface):
     bias: bool = dataclasses.field(default=False)
     enable_norm: bool = dataclasses.field(default=True)
-    enable_perm: bool = dataclasses.field(default=False)
+    enable_perm: bool = dataclasses.field(default=True)
     group_num: int = dataclasses.field(default=1)
     outlier_size: int = dataclasses.field(default=0)
     group_size: int = dataclasses.field(default=-1)
@@ -125,6 +125,13 @@ class VPTQConfig(MetaInterface):
     def from_dict(cls, config: dict):
         return dataclass_from_dict(cls, config)
 
+@dataclass
+class VPTQInferConfig(MetaInterface):
+    group_size: int = 8
+    bits: int = 2
+    version: str = ""
+    quant_method: str = "vptq"
+    config_for_layers: typing.Dict[str, dict] = dataclasses.field(default_factory=dict)
 
 
 def build_config(args):

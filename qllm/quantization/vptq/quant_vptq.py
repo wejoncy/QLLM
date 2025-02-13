@@ -205,20 +205,8 @@ class VPTQQuant(QuantFrameBase):
                 torch.save(attention_layers[layer_idx], self.quant_cache_dir / f"layer_{layer_idx}.pt")
 
         config_for_layers = {k:v.init_args for k,v in  find_layers(model, [VQuantLinear]).items()}
-        MetaConf = type(
-            "MetaConf",
-            (object,),
-            {
-                "version": "AUTO",
-                "quant_method": "vptq",
-                "bits": 2,
-                "to_dict": lambda self: self.config_for_layers,
-                "to_meta": property(lambda self: self),
-            },
-        )
-        meta_conf = MetaConf()
-        meta_conf.config_for_layers = {"config_for_layers": config_for_layers}
-        self.quant_config = meta_conf
+        from qllm.quantization.config_builder import VPTQInferConfig
+        self.quant_config = VPTQInferConfig(config_for_layers=config_for_layers)
         model.quant_config_by_layer = {}
         model = pack_model(model, from_type=torch.uint16, to_type=torch.uint16, as_type=torch.int16)
         # if self.quant_config.absorb_perm:

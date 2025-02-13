@@ -75,6 +75,8 @@ class BaseQuantizeConfig:
         with open(Path(model_name_or_path) / "quant_config_by_layer.json") as fp:
             qunat_info = json.load(fp)
             self.quant_config_by_op = qunat_info
+        if self.quant_method == "vptq":
+            self.quant_config_by_op = self.quant_config.get('config_for_layers', None)
 
     def load_quant_config(self, model_name_or_path):
         while True:
@@ -100,7 +102,9 @@ class BaseQuantizeConfig:
 
         wbits = quant_config.get("w_bit", quant_config.get("bits", None))
         groupsize = quant_config.get("q_group_size", quant_config.get("group_size", None))
-        assert wbits is not None and groupsize is not None
+        quant_method = quant_config.get("quant_method", None)
+        if quant_method != "vptq":
+            assert wbits is not None and groupsize is not None
 
         if quant_config.get('COMPATIBLE_WITH_AUTOGPTQ', None):
             self.COMPATIBLE_WITH_AUTOGPTQ = True

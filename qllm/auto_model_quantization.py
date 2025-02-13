@@ -58,6 +58,7 @@ class AutoModelQuantization(object):
 
         inputs = self.tokenizer(
             "compared with awq, gptq is", return_tensors="pt").to(model.device)
+        inputs["pad_token_id"] = self.tokenizer.eos_token_id
         out = model.generate(**inputs, max_length=50)
 
         # from .plugin import perplexity_utils
@@ -76,6 +77,9 @@ class AutoModelQuantization(object):
 
     # TODO: perform packing on GPU
     def pack_model(self, model, quantizers, pack_mode):
+        if not quantizers:
+            logger.warning("No quantized layers found, skip packing, If you are not using VPTQ, please check the log")
+            return model
         attention_layers = find_layers(model, self.quant_layers+[ScaledLinear])
         attention_layers = {n: attention_layers[n] for n in quantizers}
 
@@ -239,7 +243,7 @@ Please run with `-h` to refer the usage.")
         if args.save:
             def repack_func(): return self.repack_to_new_mode(model, args.pack_mode)
             AutoQuantizedModelForCausalLM.save_pretrained(model, self.tokenizer, args.save,
-                                                          args.pack_mode, repack_func, safe_serialization=False)
+                                                          args.pack_mode, repack_func)
 
         if args.eval:
             self.eval_model(model, args.pack_mode, "cuda")
