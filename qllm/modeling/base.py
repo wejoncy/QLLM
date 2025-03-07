@@ -102,6 +102,10 @@ def _get_resolved_weight_or_index_file(model_name_or_path):
 
 
 def parallel_download_decorator(task_func_shard, *args, **kwargs):
+    pretrained_model_name_or_path = args[0]
+    if Path(pretrained_model_name_or_path).exists():
+        return task_func_shard(*args, **kwargs)
+
     with  concurrent.futures.ThreadPoolExecutor() as executor:
         def cached_file_func_in_thread(task_func, *args, **kwargs):
             return executor.submit(task_func, *args, **kwargs)
