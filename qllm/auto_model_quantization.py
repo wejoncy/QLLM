@@ -139,6 +139,7 @@ class AutoModelQuantization(object):
             new_module.bias = qlayer.bias if qlayer.bias is not None else None
             set_op_by_name(model, module_name, new_module)
             new_module.pack(qlayer, scales.T, zeros.T, qlayer.g_idx)
+            del qlayer.weight
             qlayer.to('cpu')
             new_module.to('cpu')
         del qlayers
