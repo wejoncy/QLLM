@@ -28,6 +28,11 @@ def export_onnx(
 
     # input_keys would be usesful if the model has some special inputs
     input_keys, onnx_inputs, past_key_value = large_model_exporter.retrieve_onnx_inputs(model, sample_inputs, with_past)
+    # some model will have inputs like kwargs:{}, it's invalid in onnx input
+    if 'kwargs' in input_keys:
+        onnx_inputs.pop(input_keys.index('kwargs'))
+        input_keys.remove('kwargs')
+
     if "position_ids" in input_keys:
         onnx_inputs[input_keys.index("position_ids")] = torch.arange(
             0, onnx_inputs[0].shape[1], dtype=torch.int64, device=onnx_inputs[0].device
