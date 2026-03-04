@@ -22,6 +22,23 @@ logger = utils.logger.get_logger()
 
 
 @contextlib.contextmanager
+def _no_init_weights():
+    """Replace transformers.modeling_utils.no_init_weights removed in transformers >= 5."""
+    import torch.nn.init as init
+    _orig = {}
+    skip = lambda *a, **kw: None
+    for name in list(vars(init)):
+        if name.endswith('_') and callable(getattr(init, name)):
+            _orig[name] = getattr(init, name)
+            setattr(init, name, skip)
+    try:
+        yield
+    finally:
+        for name, fn in _orig.items():
+            setattr(init, name, fn)
+
+
+@contextlib.contextmanager
 def replace_default_dtype(dtype):
     old_dtype = torch.get_default_dtype()
     torch.set_default_dtype(dtype)
@@ -244,7 +261,7 @@ class AutoQuantizedModelForCausalLM:
             model_name_or_path, trust_remote_code=trust_remote_code)
         torch_dtype = torch_dtype if torch_dtype is not None else auto_conf.torch_dtype
         init_contexts = [
-            transformers.modeling_utils.no_init_weights(),
+            transformers.modeling_utils.no_init_weights() if hasattr(transformers.modeling_utils, 'no_init_weights') else _no_init_weights(),
             # no_init_weights(),
             replace_default_dtype(torch_dtype),
             # accelerate.init_empty_weights(include_buffers=False)
