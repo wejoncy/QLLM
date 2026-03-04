@@ -38,7 +38,6 @@ class VPTQQuant(QuantFrameBase):
                 raise ValueError
         def get_func(name, out_fetures):
             def fake_forward(hidden_state, *args, **kwargs):
-                nonlocal level_map
                 if len(level_map) == 0:
                     hidden_state *= 0
                 input_shape = hidden_state.shape
