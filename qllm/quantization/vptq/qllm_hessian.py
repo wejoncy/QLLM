@@ -73,7 +73,7 @@ def register_H_hook(module, device):
     ct = 0
 
     def H_hook(module, x):
-        nonlocal H, mu, ct, n
+        nonlocal ct
         x = x[0].reshape(-1, n).to(torch.float64)
         mu.add_(x.sum(dim=0))
         H.addmm_(x.T, x)
@@ -82,7 +82,6 @@ def register_H_hook(module, device):
     hook = module.register_forward_pre_hook(H_hook)
 
     def done():
-        nonlocal H, mu, ct, hook
         hook.remove()
         return H.cpu(), mu.cpu(), ct
 

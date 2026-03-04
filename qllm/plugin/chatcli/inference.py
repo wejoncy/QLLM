@@ -31,8 +31,8 @@ def chat_loop(
     if _fastchat_available:
         return chat_loop_v2(model, tokenizer)
     model_type = str(type(model)).lower()
-    #if "llama" not in model_type and hasattr(tokenizer, 'apply_chat_template'):
-    #    return chat_loop_v3(model, tokenizer)
+    if "llama" not in model_type and hasattr(tokenizer, 'apply_chat_template'):
+        return chat_loop_v3(model, tokenizer)
     assert "llama" in model_type, 'have you installed fschat? please run `pip install fschat` and try again.'
     assert generate_stream_func is not None or generate_func is not None, 'should set generate function.'
 

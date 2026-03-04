@@ -81,6 +81,14 @@ class QuantFrameBase:
                 super().__init__()
                 self.module = module
 
+            def __getattr__(self, name):
+                if name == 'module':
+                    return super().__getattr__(name)
+                try:
+                    return super().__getattr__(name)
+                except AttributeError:
+                    return getattr(self.module, name)
+
             def forward(self, inp, **kwargs):
                 inps.append(inp.to(swap_device))
                 layer_input_args.update(kwargs)
