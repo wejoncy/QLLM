@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - "fix/ci-build"
   workflow_dispatch:
 
 jobs:
