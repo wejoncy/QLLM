@@ -43,7 +43,7 @@ jobs:
     - name: Install CUDA ${{ matrix.cuda-version }}
       if: github.event.pull_request.merged == true
       run: |
-        bash -x .github/workflows/scripts/cuda-install.sh ${{ matrix.cuda-version }} ubuntu-20.04
+        bash -x .github/workflows/scripts/cuda-install.sh ${{ matrix.cuda-version }} ubuntu-22.04
 
     - name: Install PyTorch 2.2.2 with CUDA ${{ matrix.cuda-version }}
       if: github.event.pull_request.merged == true

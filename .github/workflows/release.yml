@@ -12,8 +12,9 @@ jobs:
     # needs: release
     
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-20.04, windows-latest]
+        os: [ubuntu-22.04, windows-latest]
         pyver: ["3.10", "3.11", "3.12"]
         cuda: ["12.4.1"]
     defaults:
@@ -36,14 +37,18 @@ jobs:
           docker-images: true
           swap-storage: false
         
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.pyver }}
 
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Setup Mamba
-        uses: conda-incubator/setup-miniconda@v2.2.0
+        uses: conda-incubator/setup-miniconda@v3
         with:
           activate-environment: "build"
           python-version: ${{ matrix.pyver }}
@@ -106,7 +111,7 @@ jobs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}	
     steps:	
       - name: Checkout	
-        uses: actions/checkout@v3	
+        uses: actions/checkout@v4	
 
       - name: Extract branch info	
         shell: bash	
