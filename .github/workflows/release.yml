@@ -20,6 +20,19 @@ jobs:
         os: [ubuntu-22.04, windows-latest]
         pyver: ["3.10", "3.11", "3.12"]
         cuda: ["13.0.0"]
+        exclude:
+          - os: windows-latest
+            cuda: "13.0.0"
+        include:
+          - os: windows-latest
+            pyver: "3.10"
+            cuda: "12.6.3"
+          - os: windows-latest
+            pyver: "3.11"
+            cuda: "12.6.3"
+          - os: windows-latest
+            pyver: "3.12"
+            cuda: "12.6.3"
     defaults:
       run:
         shell: pwsh
@@ -72,7 +85,7 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          if ([int]$cudaVersionPytorch -gt 129) { $pytorchVersion = "torch==2.10.0" } elseif ([int]$cudaVersionPytorch -gt 126) { $pytorchVersion = "torch==2.7.0" } elseif ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
+          if ([int]$cudaVersionPytorch -gt 129) { $pytorchVersion = "torch==2.10.0" } elseif ([int]$cudaVersionPytorch -gt 126) { $pytorchVersion = "torch==2.7.0" } elseif ([int]$cudaVersionPytorch -gt 124) { $pytorchVersion = "torch==2.10.0" } elseif ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
           echo "pytorchVersion=$pytorchVersion"
           echo "cudaVersion=<$cudaVersion>"
           echo "cudaVersionPytorch=$cudaVersionPytorch"
@@ -86,10 +99,12 @@ jobs:
           python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
       - name: Build Wheel (Linux)
         if: runner.os == 'Linux'
-        shell: bash
+        shell: bash -el {0}
         run: |
           export CUDA_PATH=$CONDA_PREFIX
           export CUDA_HOME=$CONDA_PREFIX
+          
+          echo "CONDA_PREFIX=$CONDA_PREFIX"
           
           # Find thrust include dir
           THRUST_H=$(find $CONDA_PREFIX -path '*/thrust/complex.h' 2>/dev/null | head -1)
@@ -98,7 +113,6 @@ jobs:
             echo "Found thrust in: $CUDA_INCLUDE"
             export CXXFLAGS="-I$CUDA_INCLUDE"
             export CFLAGS="-I$CUDA_INCLUDE"
-            # Check if this dir has bin/nvcc
             CUDA_BASE=$(dirname "$CUDA_INCLUDE")
             if [ -f "$CUDA_BASE/bin/nvcc" ]; then
               export CUDA_HOME=$CUDA_BASE
