@@ -64,7 +64,7 @@ jobs:
       - name: Install Dependencies
         run: |
           # Install CUDA toolkit
-          mamba install -y 'cuda' -c "nvidia/label/cuda-${env:CUDA_VERSION}"
+          mamba install -y "cuda=${env:CUDA_VERSION}" -c "nvidia/label/cuda-${env:CUDA_VERSION}"
           # Env variables
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
