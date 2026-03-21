@@ -64,7 +64,7 @@ jobs:
       - name: Install Dependencies
         run: |
           # Install CUDA toolkit
-          mamba install -y "cuda=${env:CUDA_VERSION}" -c "nvidia/label/cuda-${env:CUDA_VERSION}"
+          mamba install -y "cuda=${env:CUDA_VERSION}" "cuda-cudart-dev" "cuda-nvcc" -c "nvidia/label/cuda-${env:CUDA_VERSION}"
           # Env variables
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
@@ -94,6 +94,7 @@ jobs:
           }
           # echo "{CUDA_VERSION}=$env:CUDA_VERSION" >> $GITHUB_ENV
           $env:GENERAL_TORCH = 1 # OptionalCUDAGuard
+          $env:DISTUTILS_USE_SDK = 1
           python setup.py sdist bdist_wheel -k $env:PLAT_ARG.split()
           ls dist/*.whl
         env:
