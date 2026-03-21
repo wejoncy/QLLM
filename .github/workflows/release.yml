@@ -20,19 +20,6 @@ jobs:
         os: [ubuntu-22.04, windows-latest]
         pyver: ["3.10", "3.11", "3.12"]
         cuda: ["13.0.0"]
-        exclude:
-          - os: windows-latest
-            cuda: "13.0.0"
-        include:
-          - os: windows-latest
-            pyver: "3.10"
-            cuda: "12.6.3"
-          - os: windows-latest
-            pyver: "3.11"
-            cuda: "12.6.3"
-          - os: windows-latest
-            pyver: "3.12"
-            cuda: "12.6.3"
     defaults:
       run:
         shell: pwsh
@@ -85,7 +72,7 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          if ([int]$cudaVersionPytorch -gt 129) { $pytorchVersion = "torch==2.10.0" } elseif ([int]$cudaVersionPytorch -gt 126) { $pytorchVersion = "torch==2.7.0" } elseif ([int]$cudaVersionPytorch -gt 124) { $pytorchVersion = "torch==2.10.0" } elseif ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
+          if ([int]$cudaVersionPytorch -gt 129) { $pytorchVersion = "torch==2.10.0" } elseif ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
           echo "pytorchVersion=$pytorchVersion"
           echo "cudaVersion=<$cudaVersion>"
           echo "cudaVersionPytorch=$cudaVersionPytorch"
@@ -139,6 +126,14 @@ jobs:
             echo "Setting CUDA_HOME to $cudaDir"
             $env:CUDA_HOME = $cudaDir
             $env:CUDA_PATH = $cudaDir
+          }
+          
+          # Patch PyTorch compiled_autograd.h for MSVC + CUDA 13 std:: ambiguity
+          # See https://github.com/pytorch/pytorch/pull/144707#issuecomment-2692282551
+          $header = python -c "import torch; import os; print(os.path.join(os.path.dirname(torch.__file__), 'include', 'torch', 'csrc', 'dynamo', 'compiled_autograd.h'))"
+          if (Test-Path $header) {
+            (Get-Content $header) -replace '\} else if constexpr \(::std::is_same_v<T, ::std::string>\) \{', '// } else if constexpr (::std::is_same_v<T, ::std::string>) {' -replace 'return at::StringType::get\(\);', '// return at::StringType::get();' | Set-Content $header
+            echo "Patched compiled_autograd.h"
           }
           
           if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
