@@ -88,27 +88,28 @@ jobs:
         run: |
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
-          # Debug: find cuda_runtime_api.h and nvcc
           echo "CONDA_PREFIX=$env:CONDA_PREFIX"
+          
           if ($IsLinux) {
-            bash -c "find $env:CONDA_PREFIX -name 'cuda_runtime_api.h' 2>/dev/null"
-            bash -c "find $env:CONDA_PREFIX -name 'nvcc' -type f 2>/dev/null"
-            bash -c "ls -la $env:CONDA_PREFIX/include/cuda_runtime_api.h 2>/dev/null || echo 'not in include/'"
-            bash -c "ls -la $env:CONDA_PREFIX/targets/x86_64-linux/include/cuda_runtime_api.h 2>/dev/null || echo 'not in targets/'"
+            # Find cuda include dir containing thrust/complex.h
+            $thrustDir = bash -c "dirname `find $env:CONDA_PREFIX -path '*/thrust/complex.h' 2>/dev/null | head -1` 2>/dev/null"
+            if ($thrustDir -and $thrustDir -ne ".") {
+              $cudaInclude = Split-Path $thrustDir
+              echo "Found thrust in: $cudaInclude"
+              # Set CUDA_HOME to parent of include (for nvcc)
+              $cudaBase = Split-Path $cudaInclude
+              if (Test-Path "$cudaBase/bin/nvcc") {
+                $env:CUDA_HOME = $cudaBase
+                $env:CUDA_PATH = $cudaBase
+                echo "CUDA_HOME=$cudaBase"
+              }
+              # Add to compiler include paths
+              $env:CXXFLAGS = "-I$cudaInclude"
+              $env:CFLAGS = "-I$cudaInclude"
+              echo "CXXFLAGS=$env:CXXFLAGS"
+            }
           } else {
-            Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "cuda_runtime_api.h" -ErrorAction SilentlyContinue | Select-Object FullName
-            Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "nvcc.exe" -ErrorAction SilentlyContinue | Select-Object FullName
-          }
-          # Set include path for Linux if needed
-          if ($IsLinux -and (Test-Path "$env:CONDA_PREFIX/targets/x86_64-linux/include/cuda_runtime_api.h")) {
-            # Symlink CUDA headers to CONDA_PREFIX/include so g++ can find thrust/cub
-            bash -c "for d in thrust cub nv cuda; do [ -e $env:CONDA_PREFIX/targets/x86_64-linux/include/\$d ] && ln -sfn $env:CONDA_PREFIX/targets/x86_64-linux/include/\$d $env:CONDA_PREFIX/include/\$d; done"
-            bash -c "for f in $env:CONDA_PREFIX/targets/x86_64-linux/include/cuda*.h; do [ -f \$f ] && ln -sfn \$f $env:CONDA_PREFIX/include/; done"
-            $env:CUDA_HOME = "$env:CONDA_PREFIX/targets/x86_64-linux"
-            $env:CUDA_PATH = "$env:CONDA_PREFIX/targets/x86_64-linux"
-          }
-          # Set nvcc path for Windows if needed
-          if (!$IsLinux) {
+            # Windows: find nvcc.exe and set CUDA_HOME
             $nvcc = Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "nvcc.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($nvcc) {
               $cudaDir = Split-Path (Split-Path $nvcc.FullName)
@@ -117,11 +118,10 @@ jobs:
               $env:CUDA_PATH = $cudaDir
             }
           }
-          # Only add +cu118 to wheel if not releasing on PyPi
+          
           if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
             $env:PYPI_BUILD = 1
           }
-          # echo "{CUDA_VERSION}=$env:CUDA_VERSION" >> $GITHUB_ENV
           $env:GENERAL_TORCH = 1 # OptionalCUDAGuard
           $env:DISTUTILS_USE_SDK = 1
           python setup.py sdist bdist_wheel -k $env:PLAT_ARG.split()
