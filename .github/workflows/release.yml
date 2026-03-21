@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - "feat/pypi-deploy"
   workflow_dispatch:
 
 jobs:
@@ -206,3 +208,19 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: ./dist/
+
+  test_deploy:
+    name: Test Deploy (dry-run)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download wheels from latest GitHub Release
+        run: |
+          mkdir -p dist
+          gh release download --pattern '*.whl' --dir dist
+          echo "Downloaded wheels:"
+          ls -la dist/
+          echo "Dry-run: would publish these to PyPI"
+        env:
+          GH_TOKEN: ${{ github.token }}
