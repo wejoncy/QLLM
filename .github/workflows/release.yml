@@ -72,7 +72,7 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          if ([int]$cudaVersionPytorch -gt 129) { $pytorchVersion = "torch==2.9.0" } elseif ([int]$cudaVersionPytorch -gt 126) { $pytorchVersion = "torch==2.7.0" } elseif ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
+          if ([int]$cudaVersionPytorch -gt 129) { $pytorchVersion = "torch==2.10.0" } elseif ([int]$cudaVersionPytorch -gt 126) { $pytorchVersion = "torch==2.7.0" } elseif ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
           echo "pytorchVersion=$pytorchVersion"
           echo "cudaVersion=<$cudaVersion>"
           echo "cudaVersionPytorch=$cudaVersionPytorch"
@@ -101,8 +101,9 @@ jobs:
           }
           # Set include path for Linux if needed
           if ($IsLinux -and (Test-Path "$env:CONDA_PREFIX/targets/x86_64-linux/include/cuda_runtime_api.h")) {
-            $env:CPLUS_INCLUDE_PATH = "$env:CONDA_PREFIX/targets/x86_64-linux/include"
-            $env:C_INCLUDE_PATH = "$env:CONDA_PREFIX/targets/x86_64-linux/include"
+            # Symlink CUDA headers to CONDA_PREFIX/include so g++ can find thrust/cub
+            bash -c "for d in thrust cub nv cuda; do [ -e $env:CONDA_PREFIX/targets/x86_64-linux/include/\$d ] && ln -sfn $env:CONDA_PREFIX/targets/x86_64-linux/include/\$d $env:CONDA_PREFIX/include/\$d; done"
+            bash -c "for f in $env:CONDA_PREFIX/targets/x86_64-linux/include/cuda*.h; do [ -f \$f ] && ln -sfn \$f $env:CONDA_PREFIX/include/; done"
             $env:CUDA_HOME = "$env:CONDA_PREFIX/targets/x86_64-linux"
             $env:CUDA_PATH = "$env:CONDA_PREFIX/targets/x86_64-linux"
           }
