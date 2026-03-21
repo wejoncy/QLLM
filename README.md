@@ -34,32 +34,27 @@ Features:
 - [x] Export to ONNX model, inference by OnnxRuntime 
 
 *Latest News* 🔥
+- [2026/03] CUDA 13.0 support, PyTorch 2.10, Python 3.11-3.13
+- [2026/03] Support H100/H200 (sm_90), B200/B300 (sm_100), RTX 5090 (sm_120)
 - [2024/03] ONNX Models export API
 - [2024/01] Support [HQQ](https://github.com/mobiusml/hqq) algorithm
 - [2023/12] The first PyPi package released 
 
 ## Installation
-Easy to install qllm from PyPi [cu124]
+Easy to install qllm from PyPi
 
 `pip install qllm`
 
 
-Install from release package, CUDA-124 is supported.
-[py310,py311,py312] https://github.com/wejoncy/QLLM/releases
+Install from release package, CUDA 13.0 is supported.
+[py311, py312, py313] https://github.com/wejoncy/QLLM/releases
 
 Build from Source
 
 **Please set ENV EXCLUDE_EXTENTION_FOR_FAST_BUILD=1 for fast build**
 
-If you are using CUDA-124
 ```
 pip install git+https://github.com/wejoncy/QLLM.git --no-build-isolation
-```
-OR CUDA-118/121
-```
-git clone https://github.com/wejoncy/QLLM.git
-cd QLLM
-python setup.py install
 ```
 
 # How to use it
