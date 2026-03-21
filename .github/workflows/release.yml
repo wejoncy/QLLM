@@ -84,50 +84,56 @@ jobs:
           python -c "import torch; print('CUDA:', torch.version.cuda)"
           python -c "import os; print('CUDA_HOME:', os.getenv('CUDA_HOME', None))"
           python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
-      - name: Build Wheel
+      - name: Build Wheel (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          export CUDA_PATH=$CONDA_PREFIX
+          export CUDA_HOME=$CONDA_PREFIX
+          
+          # Find thrust include dir
+          THRUST_H=$(find $CONDA_PREFIX -path '*/thrust/complex.h' 2>/dev/null | head -1)
+          if [ -n "$THRUST_H" ]; then
+            CUDA_INCLUDE=$(dirname $(dirname "$THRUST_H"))
+            echo "Found thrust in: $CUDA_INCLUDE"
+            export CXXFLAGS="-I$CUDA_INCLUDE"
+            export CFLAGS="-I$CUDA_INCLUDE"
+            # Check if this dir has bin/nvcc
+            CUDA_BASE=$(dirname "$CUDA_INCLUDE")
+            if [ -f "$CUDA_BASE/bin/nvcc" ]; then
+              export CUDA_HOME=$CUDA_BASE
+              export CUDA_PATH=$CUDA_BASE
+            fi
+          fi
+          echo "CUDA_HOME=$CUDA_HOME"
+          echo "CXXFLAGS=$CXXFLAGS"
+          
+          export GENERAL_TORCH=1
+          python setup.py sdist bdist_wheel -k --plat-name manylinux2014_x86_64
+          ls dist/*.whl
+
+      - name: Build Wheel (Windows)
+        if: runner.os == 'Windows'
         run: |
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
-          echo "CONDA_PREFIX=$env:CONDA_PREFIX"
           
-          if ($IsLinux) {
-            # Find cuda include dir containing thrust/complex.h
-            $thrustDir = bash -c "dirname `find $env:CONDA_PREFIX -path '*/thrust/complex.h' 2>/dev/null | head -1` 2>/dev/null"
-            if ($thrustDir -and $thrustDir -ne ".") {
-              $cudaInclude = Split-Path $thrustDir
-              echo "Found thrust in: $cudaInclude"
-              # Set CUDA_HOME to parent of include (for nvcc)
-              $cudaBase = Split-Path $cudaInclude
-              if (Test-Path "$cudaBase/bin/nvcc") {
-                $env:CUDA_HOME = $cudaBase
-                $env:CUDA_PATH = $cudaBase
-                echo "CUDA_HOME=$cudaBase"
-              }
-              # Add to compiler include paths
-              $env:CXXFLAGS = "-I$cudaInclude"
-              $env:CFLAGS = "-I$cudaInclude"
-              echo "CXXFLAGS=$env:CXXFLAGS"
-            }
-          } else {
-            # Windows: find nvcc.exe and set CUDA_HOME
-            $nvcc = Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "nvcc.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($nvcc) {
-              $cudaDir = Split-Path (Split-Path $nvcc.FullName)
-              echo "Setting CUDA_HOME to $cudaDir"
-              $env:CUDA_HOME = $cudaDir
-              $env:CUDA_PATH = $cudaDir
-            }
+          # Find nvcc.exe and set CUDA_HOME
+          $nvcc = Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "nvcc.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($nvcc) {
+            $cudaDir = Split-Path (Split-Path $nvcc.FullName)
+            echo "Setting CUDA_HOME to $cudaDir"
+            $env:CUDA_HOME = $cudaDir
+            $env:CUDA_PATH = $cudaDir
           }
           
           if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
             $env:PYPI_BUILD = 1
           }
-          $env:GENERAL_TORCH = 1 # OptionalCUDAGuard
+          $env:GENERAL_TORCH = 1
           $env:DISTUTILS_USE_SDK = 1
-          python setup.py sdist bdist_wheel -k $env:PLAT_ARG.split()
+          python setup.py sdist bdist_wheel -k --plat-name win_amd64
           ls dist/*.whl
-        env:
-          PLAT_ARG: ${{ contains(runner.os, 'Linux') && '--plat-name manylinux2014_x86_64' || '--plat-name win_amd64' }}
 
       - uses: actions/upload-artifact@v4
         with:
