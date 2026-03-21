@@ -19,7 +19,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-latest]
         pyver: ["3.10", "3.11", "3.12"]
-        cuda: ["12.4.1"]
+        cuda: ["12.9.0"]
     defaults:
       run:
         shell: pwsh
@@ -72,7 +72,7 @@ jobs:
           # Install torch
           $cudaVersion = $env:CUDA_VERSION.Replace('.', '')
           $cudaVersionPytorch = $cudaVersion.Substring(0, $cudaVersion.Length - 1)
-          if ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
+          if ([int]$cudaVersionPytorch -gt 126) { $pytorchVersion = "torch==2.7.0" } elseif ([int]$cudaVersionPytorch -gt 121) { $pytorchVersion = "torch==2.5.1" } else {$pytorchVersion = "torch==2.4.1"}
           echo "pytorchVersion=$pytorchVersion"
           echo "cudaVersion=<$cudaVersion>"
           echo "cudaVersionPytorch=$cudaVersionPytorch"
