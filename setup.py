@@ -80,8 +80,10 @@ def get_compute_capabilities(compute_capabilities: Set[int], lower: int = 70):
         compute_capabilities.add(80)
         compute_capabilities.add(86)
         compute_capabilities.add(89)
-
-    if len(compute_capabilities) == 0:
+        compute_capabilities.add(90)
+        if nvcc_cuda_version >= Version("12.8"):
+            compute_capabilities.add(100)
+            compute_capabilities.add(120)
         for i in range(torch.cuda.device_count()):
             major, minor = torch.cuda.get_device_capability(i)
             if major*10+minor < lower:
@@ -99,6 +101,9 @@ def get_compute_capabilities(compute_capabilities: Set[int], lower: int = 70):
         if nvcc_cuda_version > Version("11.8"):
             compute_capabilities.add(89)
             compute_capabilities.add(90)
+        if nvcc_cuda_version >= Version("12.8"):
+            compute_capabilities.add(100)
+            compute_capabilities.add(120)
 
     print(f"build pacakge for archs: {compute_capabilities}")
     capability_flags = []
@@ -211,7 +216,6 @@ setuptools.setup(
         "Documentation": "https://github.com/wejoncy/QLLM",
     },
     classifiers=[
-        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
@@ -219,7 +223,7 @@ setuptools.setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     packages=setuptools.find_packages(exclude=("")),
-    python_requires=">=3.10",
+    python_requires=">=3.11",
     install_requires=get_requirements(),
     ext_modules=build_cuda_extensions(),
     cmdclass={'build_ext': BuildExtension},
