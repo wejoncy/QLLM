@@ -88,6 +88,34 @@ jobs:
         run: |
           $env:CUDA_PATH = $env:CONDA_PREFIX
           $env:CUDA_HOME = $env:CONDA_PREFIX
+          # Debug: find cuda_runtime_api.h and nvcc
+          echo "CONDA_PREFIX=$env:CONDA_PREFIX"
+          if ($IsLinux) {
+            bash -c "find $env:CONDA_PREFIX -name 'cuda_runtime_api.h' 2>/dev/null"
+            bash -c "find $env:CONDA_PREFIX -name 'nvcc' -type f 2>/dev/null"
+            bash -c "ls -la $env:CONDA_PREFIX/include/cuda_runtime_api.h 2>/dev/null || echo 'not in include/'"
+            bash -c "ls -la $env:CONDA_PREFIX/targets/x86_64-linux/include/cuda_runtime_api.h 2>/dev/null || echo 'not in targets/'"
+          } else {
+            Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "cuda_runtime_api.h" -ErrorAction SilentlyContinue | Select-Object FullName
+            Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "nvcc.exe" -ErrorAction SilentlyContinue | Select-Object FullName
+          }
+          # Set include path for Linux if needed
+          if ($IsLinux -and (Test-Path "$env:CONDA_PREFIX/targets/x86_64-linux/include/cuda_runtime_api.h")) {
+            $env:CPLUS_INCLUDE_PATH = "$env:CONDA_PREFIX/targets/x86_64-linux/include"
+            $env:C_INCLUDE_PATH = "$env:CONDA_PREFIX/targets/x86_64-linux/include"
+            $env:CUDA_HOME = "$env:CONDA_PREFIX/targets/x86_64-linux"
+            $env:CUDA_PATH = "$env:CONDA_PREFIX/targets/x86_64-linux"
+          }
+          # Set nvcc path for Windows if needed
+          if (!$IsLinux) {
+            $nvcc = Get-ChildItem -Path $env:CONDA_PREFIX -Recurse -Filter "nvcc.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($nvcc) {
+              $cudaDir = Split-Path (Split-Path $nvcc.FullName)
+              echo "Setting CUDA_HOME to $cudaDir"
+              $env:CUDA_HOME = $cudaDir
+              $env:CUDA_PATH = $cudaDir
+            }
+          }
           # Only add +cu118 to wheel if not releasing on PyPi
           if ( $env:CUDA_VERSION -eq $env:PYPI_CUDA_VERSION ){
             $env:PYPI_BUILD = 1
