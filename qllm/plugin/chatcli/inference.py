@@ -1,5 +1,7 @@
 import time
 import torch
+import transformers
+from packaging.version import Version, InvalidVersion
 try:
     import fastchat
     #from fastchat.conversation import Conversation, SeparatorStyle
@@ -28,9 +30,16 @@ def chat_loop(
     debug: bool = True,
     echo: bool = False,
 ):
-    if _fastchat_available:
-        return chat_loop_v2(model, tokenizer)
     model_type = str(type(model)).lower()
+    use_fastchat_v2 = False
+    if _fastchat_available:
+        try:
+            use_fastchat_v2 = Version(transformers.__version__) < Version("4.3") and "llama" not in model_type
+        except InvalidVersion:
+            use_fastchat_v2 = False
+
+    if use_fastchat_v2:
+        return chat_loop_v2(model, tokenizer)
     if "llama" not in model_type and hasattr(tokenizer, 'apply_chat_template'):
         return chat_loop_v3(model, tokenizer)
     assert "llama" in model_type, 'have you installed fschat? please run `pip install fschat` and try again.'
