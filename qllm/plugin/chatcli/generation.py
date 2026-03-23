@@ -10,7 +10,7 @@ def generate_stream(model, tokenizer, prompt: str, device, max_new_tokens: int, 
 
     lhs_tokens = torch.tensor(inputs.input_ids, dtype=torch.int64, device=device).unsqueeze(0)
 
-    past_kvs = transformers.DynamicCache()
+    past_kvs = None
     output_ids = list(inputs.input_ids)
     input_echo_len = len(output_ids)
 
@@ -70,7 +70,7 @@ def generate(model, tokenizer, prompt: str, max_new_tokens:int, context_len: int
 
     lhs_tokens = torch.tensor(inputs.input_ids, dtype=torch.int64, device=device).unsqueeze(0)
 
-    past_kvs = transformers.DynamicCache()
+    past_kvs = None
     output_ids = list(inputs.input_ids)
     input_echo_len = len(output_ids)
 
